@@ -468,12 +468,14 @@ class LibraryManager(tk.Toplevel):
         self.add_btn.pack(fill="x", padx=16)
 
         # 공유 — 항목 단위로 동료와 주고받기 (개선안 30)
-        share_row = tk.Frame(self, bg=BG, padx=16)
-        share_row.pack(fill="x", pady=(6, 0))
-        tk.Button(share_row, text="이 탭 내보내기", command=self._export_tab,
+        # self. 로 보관하는 이유: 추가 버튼이 탭 전환 때 이 줄 앞(before=)에
+        # 다시 붙어야 해서 앵커로 쓴다.
+        self.share_row = tk.Frame(self, bg=BG, padx=16)
+        self.share_row.pack(fill="x", pady=(6, 0))
+        tk.Button(self.share_row, text="이 탭 내보내기", command=self._export_tab,
                   font=(FONT, theme.fs(8)), fg=TEXT, bg=CARD, activebackground=BORDER,
                   bd=1, padx=8, pady=4, cursor="hand2").pack(side="left")
-        tk.Button(share_row, text="가져오기", command=self._import_archive,
+        tk.Button(self.share_row, text="가져오기", command=self._import_archive,
                   font=(FONT, theme.fs(8)), fg=TEXT, bg=CARD, activebackground=BORDER,
                   bd=1, padx=8, pady=4, cursor="hand2").pack(side="left", padx=(6, 0))
 
@@ -502,24 +504,31 @@ class LibraryManager(tk.Toplevel):
         self.current_cat = cat
         for c, b in self.tab_btns.items():
             active = c == cat
-            b.config(bg=ACCENT if active else CARD, fg="white" if active else TEXT)
+            base = ACCENT if active else CARD
+            b.config(bg=base, fg="white" if active else TEXT)
+            # 호버 애니메이션의 기준색도 함께 갱신 — 안 하면 마우스를 뗄 때
+            # 창이 열리던 순간의 색(대부분 흰색)으로 되돌아가, 활성 탭이
+            # 흰 배경 + 흰 글자가 되어 통째로 사라져 보였다 (2026-07-25 버그).
+            ui_fx.rebase(b, base)
         self.desc_label.config(text=TAB_DESC[cat])
+        # 추가 버튼 자리는 **항상 공유 줄 앞** — 내장 탭에서 pack_forget 했다가
+        # 앵커 없이 다시 pack 하면 맨 아래로 떨어졌다 (2026-07-25 버그).
         if cat == "서식":
             self.add_btn.config(text="+ 지금 선택한 글자에서 캡처해서 추가",
                                  command=self._add_style)
-            self.add_btn.pack(fill="x", padx=16)
+            self.add_btn.pack(fill="x", padx=16, before=self.share_row)
         elif cat == "문자":
             self.add_btn.config(text="+ 새 문자/문구 추가",
                                  command=self._add_char)
-            self.add_btn.pack(fill="x", padx=16)
+            self.add_btn.pack(fill="x", padx=16, before=self.share_row)
         elif cat == "템플릿":
             self.add_btn.config(text="+ 지금 선택 영역을 템플릿으로 저장",
                                  command=self._add_template)
-            self.add_btn.pack(fill="x", padx=16)
+            self.add_btn.pack(fill="x", padx=16, before=self.share_row)
         elif cat == "양식":
             self.add_btn.config(text="+ hwp 파일을 양식으로 등록",
                                  command=self._add_form)
-            self.add_btn.pack(fill="x", padx=16)
+            self.add_btn.pack(fill="x", padx=16, before=self.share_row)
         else:  # 내장 — 추가 불가(읽기 전용)
             self.add_btn.pack_forget()
         # 내장 탭은 분류 필터 대신 검색만 사용

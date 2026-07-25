@@ -52,7 +52,11 @@ CELL_MIN_PX = 16
 CELL_GAP = 2
 HEADER_ROWS = 1          # 격자 맨 위 열 머리글 한 줄 (좌표 계산 시 빼야 한다)
 HEADER_COLS = 1          # 격자 맨 왼쪽 줄 머리글 한 칸 (칸 번호와 짝을 맞춘다)
-HEADER_PX = 12           # 그 머리글이 차지하는 높이(px)
+# 머리글 크기를 px 상수로 두지 않는다 (2026-07-25 버그 수정). 예전 HEADER_PX=12 는
+# 글씨 25% 확대 이후의 실제 머리글 높이(≈18px)와 달랐고, 왼쪽 줄 번호 칸의
+# **폭(≈21px)은 아예 계산에서 빠져 있어** 클릭한 칸보다 오른쪽 칸이 칠해졌다.
+# 지금은 _xy_to_cell 이 첫 칸의 실제 자리(grid_bbox)를 재서 쓴다 — 글씨 크기를
+# 다시 바꿔도 어긋나지 않는다.
 EMPTY_BG = "#fbfbfd"     # 빈칸 배경
 RANGE_BG = "#d8e9ff"     # 끌어서 지정 중인 범위
 
@@ -287,9 +291,13 @@ class SettingsWindow(tk.Toplevel):
         self._used_cells = set()
         self._new_from = None      # 빈칸을 끌어 새 블럭 자리를 잡는 중
         self._new_to = None
-        self._lifted = None        # 끌면서 들어 올린 타일 (커서를 따라온다)
+        self._lifted = None        # 끌면서 들어 올린 타일의 유령 창
+        self._lift_failed = False  # 이번 끌기에서 유령 생성 실패 — 재시도 금지
         self._grab_xy = None
         self._extra_rows = 0       # ＋줄 추가로 늘린 빈 줄 수
+        self._grid_origin = None   # 격자 첫 칸의 실측 위치 (_xy_to_cell)
+        self._blocks_now = []      # 지금 그려진 블럭 스냅샷 (드래그 중 참조)
+        self._size_tip = None      # 크기 조절 중 커서 옆에 뜨는 안내
 
         tk.Label(self, text="팔레트 설정", font=(FONT, theme.fs(12), "bold"),
                  bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(12, 2))
@@ -621,6 +629,8 @@ class SettingsWindow(tk.Toplevel):
         self._grid_cell_px = cell_px
         self._grid_total_rows = total_rows
         self._grid_cols = cols
+        self._grid_origin = None        # 첫 칸 자리 — _xy_to_cell 이 실측해 채움
+        self._blocks_now = blocks       # 드래그 중 디스크 재읽기 방지 스냅샷
         grid.bind("<B1-Motion>", self._empty_motion)
 
         self.after_idle(self._fit_window)
@@ -729,9 +739,17 @@ class SettingsWindow(tk.Toplevel):
         g = getattr(self, "_grid_widget", None)
         if g is None or not g.winfo_exists():
             return None
+        origin = self._grid_origin
+        if origin is None:
+            # 첫 데이터 칸(머리글 다음)의 실제 자리를 Tk 에게 직접 묻는다.
+            # 상수로 빼서 계산하면 머리글 폭이 글꼴 크기에 따라 변할 때마다
+            # 어긋난다 — 실측이면 영원히 맞는다. 렌더마다 한 번만 재고 캐시.
+            g.update_idletasks()
+            bx, by, _bw, _bh = g.grid_bbox(column=HEADER_COLS, row=HEADER_ROWS)
+            origin = self._grid_origin = (bx, by)
         px = self._grid_cell_px + CELL_GAP
-        c = (x_root - g.winfo_rootx() - 2) // px
-        r = (y_root - g.winfo_rooty() - 2 - HEADER_PX) // px
+        c = (x_root - g.winfo_rootx() - origin[0]) // px
+        r = (y_root - g.winfo_rooty() - origin[1]) // px
         if 0 <= c < self._grid_cols and 0 <= r < self._grid_total_rows:
             return (int(r), int(c))
         return None
@@ -850,7 +868,9 @@ class SettingsWindow(tk.Toplevel):
     # 만들려면 다섯 번이다. 오른쪽 아래 모서리를 끌면 한 번에 끝난다.
     # (우클릭 메뉴는 남겨둔다 — 손잡이가 작아 잡기 어려울 때가 있다)
     def _add_grip(self, tile, i):
-        grip = tk.Frame(tile, bg=ACCENT, width=7, height=7,
+        # 크기는 글자 배율을 따라간다 — 7px 고정은 고해상도에서 못 잡았다
+        s = max(7, theme.fs(6))
+        grip = tk.Frame(tile, bg=ACCENT, width=s, height=s,
                         cursor="bottom_right_corner")
         grip.place(relx=1.0, rely=1.0, anchor="se")
         # tile 에 건 바인딩은 자식인 grip 에는 오지 않는다(Tk 는 위젯별 바인딩을
@@ -858,13 +878,47 @@ class SettingsWindow(tk.Toplevel):
         grip.bind("<ButtonPress-1>", lambda e, idx=i: self._grip_press(idx))
         grip.bind("<B1-Motion>", self._grip_motion)
         grip.bind("<ButtonRelease-1>", self._grip_release)
+        _tip(grip, "끌어서 크기 조절")
 
     def _grip_press(self, idx):
         self._set_selection(idx)
-        b = palette.load_tabs()[self.sel_tab]["blocks"][idx]
+        b = self._blocks_now[idx]
         self._grip = {"idx": idx,
                       "row": int(b.get("row", 0)), "col": int(b.get("col", 0)),
-                      "span": int(b.get("span", 1)), "rows": int(b.get("rows", 1))}
+                      "span": int(b.get("span", 1)), "rows": int(b.get("rows", 1)),
+                      "span0": int(b.get("span", 1)), "rows0": int(b.get("rows", 1))}
+
+    def _grip_paint(self, g):
+        """조절 중인 새 크기를 빈칸 위에 미리 칠한다 — 놓기 전에 결과가 보인다."""
+        r0, c0 = g["row"], g["col"]
+        for key, (rr, cc) in self._empty_map.items():
+            try:
+                w = self.nametowidget(key)
+            except Exception:
+                continue
+            inside = (r0 <= rr < r0 + g["rows"] and c0 <= cc < c0 + g["span"])
+            w.config(bg=RANGE_BG if inside else EMPTY_BG)
+
+    def _show_size_tip(self, x_root, y_root, text):
+        """커서 오른쪽 아래에 붙어 다니는 크기 안내 (툴팁과 같은 기법)."""
+        tip = self._size_tip
+        if tip is None:
+            tip = self._size_tip = tk.Toplevel(self)
+            tip.wm_overrideredirect(True)
+            tip.attributes("-topmost", True)
+            tk.Label(tip, text=text, font=(FONT, theme.fs(8)), bg="#333333",
+                     fg="#ffffff", padx=6, pady=2).pack()
+        else:
+            tip.winfo_children()[0].config(text=text)
+        tip.geometry(f"+{x_root + 14}+{y_root + 14}")
+
+    def _hide_size_tip(self):
+        if self._size_tip is not None:
+            try:
+                self._size_tip.destroy()
+            except Exception:
+                pass
+            self._size_tip = None
 
     def _grip_motion(self, e):
         g = getattr(self, "_grip", None)
@@ -876,20 +930,24 @@ class SettingsWindow(tk.Toplevel):
         r, c = rc
         span = max(1, c - g["col"] + 1)
         rows = max(1, r - g["row"] + 1)
+        self._show_size_tip(e.x_root, e.y_root, f"{span}×{rows}칸")
         if (span, rows) == (g["span"], g["rows"]):
             return
-        blocks = palette.load_tabs()[self.sel_tab]["blocks"]
-        if not palette.area_is_free(blocks, g["row"], g["col"], span, rows,
-                                    skip_index=g["idx"]):
+        if not palette.area_is_free(self._blocks_now, g["row"], g["col"],
+                                    span, rows, skip_index=g["idx"]):
             return                      # 다른 블럭 위로는 넘어가지 않는다
         g["span"], g["rows"] = span, rows
-        self._say(f"{span}×{rows}칸 으로 조절 중")
+        self._grip_paint(g)             # 커지는 만큼 빈칸이 미리 칠해진다
 
     def _grip_release(self, e):
         g = getattr(self, "_grip", None)
         self._grip = None
+        self._hide_size_tip()
         if not g:
             return
+        if (g["span"], g["rows"]) == (g["span0"], g["rows0"]):
+            self._grip_paint({**g, "span": 0, "rows": 0})   # 칠만 지운다
+            return                      # 크기 그대로 — 다시 그릴 필요 없다
         palette.set_block_area(self.sel_tab, g["idx"], g["row"], g["col"],
                                g["span"], g["rows"])
         self._render_blocks()
@@ -1022,51 +1080,82 @@ class SettingsWindow(tk.Toplevel):
         # 끌기 준비 — 실제로 '들어 올리는' 것은 손이 조금 움직인 뒤다.
         # 바로 들면 그냥 클릭한 것도 타일이 튀어 보인다.
         self._lifted = None
+        self._lift_failed = False
         self._grab_xy = (event.x_root, event.y_root) if event else None
 
     def _lift_tile(self, idx, x_root, y_root):
-        r"""끌고 있는 타일을 격자에서 **들어 올려** 커서를 따라오게 한다.
+        r"""끌고 있는 타일의 **유령**을 만들어 커서를 따라오게 한다.
 
-        예전에는 타일이 제자리에 붙어 있고 테두리 색만 바뀌어, 끄는 동안
-        아무것도 안 움직여 '끊긴다'고 느껴졌다 (2026-07-25).
-        물감을 짜서 옮기듯 타일 자체가 손을 따라오면 그 느낌이 사라진다.
+        예전에는 타일 위젯 자체를 place 로 떼어 옮기려 했는데, Tk 의 부모-자식
+        규칙 위반(place 의 in_ 은 부모의 조상이면 안 된다)으로 **항상 실패**했다
+        (2026-07-25 실측: app.log 에 같은 TclError 890건). 실패 결과 타일이
+        끄는 내내 사라지고, 모션마다 재시도→오류 로그 기록이 반복돼 그것이
+        버벅임의 최대 원인이었다.
+        지금은 툴팁(_tip)과 같은 기법 — 테두리 없는 작은 창을 커서에 붙인다.
+        원본 타일은 제자리에 흐리게 남아 '어디서 들었는지'를 보여준다.
         """
         tile = getattr(self, "_tiles", {}).get(idx)
         if tile is None:
             return False
         try:
-            info = tile.grid_info()
             w, h = tile.winfo_width(), tile.winfo_height()
-            # 커서 안에서 잡은 지점 — 타일이 커서에 '붙어' 따라오게 한다
             off = (x_root - tile.winfo_rootx(), y_root - tile.winfo_rooty())
-            tile.grid_forget()
-            tile.place(in_=self.block_area, x=0, y=0, width=w, height=h)
-            tile.lift()
-            self._lifted = {"tile": tile, "grid": info, "off": off,
-                            "size": (w, h)}
+            blk = self._blocks_now[idx] if idx < len(self._blocks_now) else {}
+            bg = theme.block_color(blk)
+            ghost = tk.Toplevel(self)
+            ghost.wm_overrideredirect(True)
+            ghost.attributes("-topmost", True)
+            try:
+                ghost.attributes("-alpha", 0.85)    # 반투명 — '들려 있는' 느낌
+            except Exception:
+                pass
+            tk.Label(ghost, text=self._tile_text(blk, int(blk.get("span", 1))),
+                     bg=bg, fg=theme.text_on(bg),
+                     font=(FONT, theme.fs(10 if blk.get("type") == "char"
+                                          else 8))).pack(fill="both", expand=True)
+            ghost.geometry(f"{w}x{h}+{x_root - off[0]}+{y_root - off[1]}")
+            # 원본은 빈칸처럼 흐리게 — 들어 올린 자리가 비어 보인다
+            dimmed = []
+            for wdg in (tile, *tile.winfo_children()):
+                try:
+                    dimmed.append((wdg, wdg.cget("bg")))
+                    wdg.config(bg=EMPTY_BG)
+                    if isinstance(wdg, tk.Label):
+                        wdg.config(fg=MUTED)
+                except Exception:
+                    pass
+            self._lifted = {"ghost": ghost, "off": off, "dimmed": dimmed}
             return True
         except Exception as e:
-            applog.exc("타일 들어 올리기 실패 — 예전 방식으로 끕니다", e)
+            applog.exc("타일 유령 만들기 실패 — 강조 표시로만 끕니다", e)
             self._lifted = None
             return False
 
     def _drop_tile(self):
-        """들어 올린 타일을 내려놓는다 (자리 계산은 호출부가 한다)."""
+        """유령을 없애고 원본 타일 색을 되살린다."""
         lifted = self._lifted
         self._lifted = None
         if not lifted:
             return
         try:
-            lifted["tile"].place_forget()
-            lifted["tile"].grid(**lifted["grid"])
+            lifted["ghost"].destroy()
         except Exception:
-            pass                    # 곧 _render_blocks 가 다시 그린다
+            pass
+        for wdg, bg in lifted.get("dimmed", []):
+            try:
+                wdg.config(bg=bg)
+            except Exception:
+                pass                # 곧 _render_blocks 가 다시 그린다
 
     def _cell_owner(self, rc):
-        """그 칸을 차지한 블럭 index. 빈칸이면 None."""
+        """그 칸을 차지한 블럭 index. 빈칸이면 None.
+
+        드래그 중 매 이벤트마다 불리므로 디스크(config.json)를 다시 읽지 않고
+        _render_blocks 가 떠 둔 스냅샷(_blocks_now)을 쓴다 (2026-07-25).
+        """
         if rc is None:
             return None
-        blocks = palette.load_tabs()[self.sel_tab]["blocks"]
+        blocks = getattr(self, "_blocks_now", [])
         r, c = rc
         for i, b in enumerate(blocks):
             r0, c0 = int(b.get("row", 0)), int(b.get("col", 0))
@@ -1079,17 +1168,19 @@ class SettingsWindow(tk.Toplevel):
         """드래그 중 — 타일이 커서를 따라오고, 놓일 자리를 미리 칠한다."""
         if self._drag_from is None:
             return
-        # 손이 4px 넘게 움직인 뒤에야 들어 올린다 — 그냥 클릭한 것과 구분
-        if self._lifted is None and self._grab_xy:
+        # 손이 4px 넘게 움직인 뒤에야 들어 올린다 — 그냥 클릭한 것과 구분.
+        # 실패했으면 **다시 시도하지 않는다** — 예전에는 모션마다 재시도하며
+        # 오류 로그를 디스크에 써서 그 자체가 버벅임이 됐다 (2026-07-25).
+        if self._lifted is None and not self._lift_failed and self._grab_xy:
             if (abs(e.x_root - self._grab_xy[0]) > 4
                     or abs(e.y_root - self._grab_xy[1]) > 4):
-                self._lift_tile(self._drag_from, *self._grab_xy)
+                if not self._lift_tile(self._drag_from, *self._grab_xy):
+                    self._lift_failed = True
         if self._lifted:
             try:
-                area = self.block_area
-                self._lifted["tile"].place(
-                    x=e.x_root - area.winfo_rootx() - self._lifted["off"][0],
-                    y=e.y_root - area.winfo_rooty() - self._lifted["off"][1])
+                self._lifted["ghost"].geometry(
+                    f"+{e.x_root - self._lifted['off'][0]}"
+                    f"+{e.y_root - self._lifted['off'][1]}")
             except Exception:
                 pass
         rc = self._xy_to_cell(e.x_root, e.y_root)
