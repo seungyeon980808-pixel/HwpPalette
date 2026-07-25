@@ -28,6 +28,7 @@ import builtin_chars
 import settings
 
 import appinfo
+import form_markdown               # 양식→AI 프롬프트 (기획 18번)
 import theme                       # 색은 theme.py 한 곳에서 (밝게/어둡게)
 import ui_fx                       # 호버 보간 (애플 A안)
 from roundbtn import RoundButton   # 둥근 모서리 버튼 (애플 A안)
@@ -548,6 +549,8 @@ class LibraryManager(tk.Toplevel):
         self.act_main = _dialog_btn(bar, "삽입", self._act_selected, primary=True)
         self.act_edit = _dialog_btn(bar, "수정", self._edit_selected)
         self.act_del = _dialog_btn(bar, "삭제", self._del_selected)
+        # ⋯ = 템플릿·양식 전용 추가 동작 (꺼내서 고치기 · AI 프롬프트)
+        self.act_more = _dialog_btn(bar, "⋯", self._more_menu)
         self.act_main.pack(side="right", padx=(6, 0))
         self.act_edit.pack(side="right", padx=(6, 0))
         self.act_del.pack(side="right", padx=(6, 0))
@@ -608,12 +611,14 @@ class LibraryManager(tk.Toplevel):
         # 전부 뗐다가 정해진 차례로 다시 붙인다 (주 동작이 맨 오른쪽).
         main_label = {"서식": "적용", "양식": "열기"}.get(cat, "삽입")
         self.act_main.set_text(main_label, pad_x=16, pad_y=6)
-        for b in (self.act_main, self.act_edit, self.act_del):
+        for b in (self.act_main, self.act_edit, self.act_del, self.act_more):
             b.pack_forget()
         self.act_main.pack(side="right", padx=(6, 0))
         if cat not in ("내장", "사진"):     # 읽기 전용 — 수정·삭제 없음
             self.act_edit.pack(side="right", padx=(6, 0))
             self.act_del.pack(side="right", padx=(6, 0))
+        if cat in ("템플릿", "양식"):       # 꺼내서 고치기 · AI 프롬프트
+            self.act_more.pack(side="right", padx=(6, 0))
         self._refresh(cat)
 
     def _build_chips(self):
@@ -979,6 +984,71 @@ class LibraryManager(tk.Toplevel):
             return
         self._delete(self._sel["cat"], self._sel["item"])
 
+    # ── 템플릿·양식 추가 동작 (⋯) ────────────────────
+    def _more_menu(self):
+        if not self._need_sel():
+            return
+        cat = self._sel["cat"]
+        pop = Popover(self, self.act_more)
+        if cat == "템플릿":
+            pop.add("꺼내서 고치기…  (한글에 펼쳐서 수정 후 덮어쓰기)",
+                    self._extract_edit)
+        pop.add("AI 프롬프트 복사  (빈칸을 AI 에게 채우게)",
+                self._copy_ai_prompt)
+        pop.show()
+
+    def _extract_edit(self):
+        r"""템플릿 꺼내서 고치기 (기획 15번).
+
+        조각을 한글 **새 탭**에 펼쳐 주고, 다 고치면 떠 있는 안내 창의
+        [덮어쓰기]가 그 문서 전체를 다시 캡처해 같은 항목에 저장한다.
+        id 가 유지되므로 팔레트 블럭 연결이 안 끊긴다.
+        """
+        item = self._sel["item"]
+        if not _ensure_hwp(self):
+            return
+        try:
+            engine_library.open_template_copy(library.template_path(item))
+        except Exception as e:
+            applog.exc("템플릿 꺼내기 실패", e)
+            messagebox.showerror("꺼내기 실패", f"{type(e).__name__}: {e}",
+                                 parent=self)
+            return
+        _RecaptureCoach(self, item)
+
+    def _copy_ai_prompt(self):
+        r"""AI 프롬프트 복사 (기획 18번) — 양식 구조(표 포함)를 보여주고,
+        답은 마크다운 변환이 이미 아는 문법으로 받게 하는 프롬프트."""
+        item = self._sel["item"]
+        if not _ensure_hwp(self):       # 구조를 읽으려면 한글이 필요하다
+            return
+        try:
+            md, slots = form_markdown.build_structure_md(
+                library.template_path(item))
+        except Exception as e:
+            applog.exc("양식 구조 읽기 실패", e)
+            messagebox.showerror("구조 읽기 실패", f"{type(e).__name__}: {e}",
+                                 parent=self)
+            return
+        if not slots:
+            messagebox.showinfo(
+                "빈칸 없음",
+                "이 항목에는 빈칸(\\)이 없어 AI 가 채울 것이 없습니다.\n"
+                "'꺼내서 고치기'로 빈칸 자리에 \\ 를 넣어두면 쓸 수 있습니다.",
+                parent=self)
+            return
+        label = item.get("label") or item["name"]
+        prompt = form_markdown.build_prompt(item["name"], label, md, slots)
+        self.clipboard_clear()
+        self.clipboard_append(prompt)
+        messagebox.showinfo(
+            "프롬프트 복사 완료",
+            f"빈칸 {slots}개짜리 프롬프트를 복사했습니다.\n\n"
+            "① ChatGPT·Claude 등에 붙여넣어 답을 받으세요\n"
+            "② 답 전체를 복사해 한글 문서에 붙여넣으세요\n"
+            "③ 그 부분을 드래그로 선택 → Ctrl+Alt+T\n"
+            "→ 진짜 양식이 삽입되면서 빈칸이 채워집니다", parent=self)
+
     # ── 서식 ─────────────────────────────────────────
     def _add_style(self):
         if not _ensure_hwp(self):
@@ -1167,6 +1237,72 @@ class _AskTextDialog(tk.Toplevel):
         commit_ime(self)
         self.result = self.var.get()
         self.destroy()
+
+
+class _RecaptureCoach(tk.Toplevel):
+    r"""'꺼내서 고치기'의 안내 창 — 한글에서 고치는 동안 옆에 떠 있는다.
+
+    modal(grab)이 아니다 — 사용자는 이 창을 둔 채 한글에서 자유롭게 편집한다.
+    [덮어쓰기]는 **지금 한글에 떠 있는 문서 전체**를 다시 캡처해 같은 항목에
+    저장한다. 문서 전체 = 아까 펼쳐 준 새 탭의 내용이라는 전제인데, 사용자가
+    다른 문서로 갈아탔을 수도 있으므로 문구로 분명히 말해 둔다.
+    """
+
+    def __init__(self, master, item):
+        super().__init__(master)
+        self._manager = master
+        self._item = item
+        self.title(appinfo.WINDOW_TITLE)
+        self.configure(bg=BG)
+        self.resizable(False, False)
+        self.attributes("-topmost", True)
+        tk.Label(self, text=f"'{item['name']}' 고치는 중",
+                 font=(FONT, theme.fs(11), "bold"), bg=BG, fg=TEXT).pack(
+                 anchor="w", padx=16, pady=(14, 2))
+        tk.Label(self,
+                 text="한글 새 탭에 템플릿을 펼쳐 두었습니다.\n"
+                      "내용을 고친 뒤 아래 [이 내용으로 덮어쓰기]를 누르세요.\n"
+                      "지금 한글에 보이는 문서 **전체**가 이 템플릿으로 저장됩니다.\n"
+                      "(고치던 탭은 저장하지 않고 닫아도 됩니다)",
+                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED,
+                 justify="left").pack(anchor="w", padx=16, pady=(0, 10))
+        foot = tk.Frame(self, bg=BG, padx=16, pady=12)
+        foot.pack(fill="x")
+        _dialog_btn(foot, "이 내용으로 덮어쓰기", self._overwrite,
+                    primary=True).pack(side="right")
+        _dialog_btn(foot, "취소", self.destroy).pack(side="right", padx=(0, 6))
+        self.update_idletasks()
+        self.geometry(f"+{master.winfo_rootx()+40}+{master.winfo_rooty()+80}")
+
+    def _overwrite(self):
+        if not _ensure_hwp(self):
+            return
+        try:
+            engine_library.select_all()     # 지금 문서 전체를 캡처 대상으로
+            ok = library.replace_template_fragment(
+                self._item["id"], engine_library.capture_fragment)
+        except Exception as e:
+            applog.exc("템플릿 덮어쓰기 실패", e)
+            messagebox.showerror("덮어쓰기 실패", f"{type(e).__name__}: {e}",
+                                 parent=self)
+            return
+        if not ok:
+            messagebox.showerror("덮어쓰기 실패",
+                                 "이 템플릿이 라이브러리에서 사라졌습니다.",
+                                 parent=self)
+            self.destroy()
+            return
+        self.destroy()
+        # 이 창은 관리 창의 자식이라, 여기가 살아 있으면 관리 창도 살아 있다
+        try:
+            self._manager._refresh("템플릿")
+            self._manager._notify()
+        except Exception:
+            pass
+        messagebox.showinfo("덮어쓰기 완료",
+                            f"'{self._item['name']}' 을(를) 새 내용으로 "
+                            "저장했습니다.\n고치던 한글 탭은 닫으셔도 됩니다.",
+                            parent=self._manager)
 
 
 class ShareDialog(tk.Toplevel):

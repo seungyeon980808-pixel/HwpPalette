@@ -287,10 +287,13 @@ def update_item(category, item_id, name=None, label=None, group=None):
 
 
 def replace_template_fragment(item_id, save_to, slot_count=None):
-    """템플릿의 조각 파일만 새로 캡처한 것으로 교체 (id·이름·라벨 유지).
+    r"""템플릿의 조각 파일만 새로 캡처한 것으로 교체 (id·이름·라벨 유지).
 
     save_to: 목적지 경로를 받아 조각을 저장하는 함수
              (add_template_from_capture 와 같은 방식 — WinError 32 회피).
+    '꺼내서 고치기'(2026-07-25)가 쓴다. 미리보기도 새 본문으로 갱신하고,
+    slot_count 를 안 주면 새 본문의 빈칸(\) 수를 세어 넣는다 — 고치면서
+    빈칸을 늘리거나 줄여도 안내가 어긋나지 않게.
     """
     data = load()
     target = next((it for it in data["템플릿"] if it.get("id") == item_id), None)
@@ -299,12 +302,14 @@ def replace_template_fragment(item_id, save_to, slot_count=None):
     old = FRAGMENTS_DIR / target["file"]
     fname = f"{uuid.uuid4().hex}.hwp"
     dest = FRAGMENTS_DIR / fname
-    save_to(dest)
+    text = save_to(dest) or ""      # capture_fragment 는 본문 글자를 돌려준다
     if not dest.exists():
         raise RuntimeError("조각 저장에 실패했습니다 (파일이 생성되지 않음)")
     target["file"] = fname
-    if slot_count is not None:
-        target["slot_count"] = int(slot_count)
+    target["preview"] = make_preview(text)
+    if slot_count is None:
+        slot_count = str(text).count("\\")
+    target["slot_count"] = int(slot_count)
     save(data)
     try:
         old.unlink(missing_ok=True)

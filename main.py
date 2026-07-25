@@ -71,6 +71,8 @@ import palette_ui
 import builtin_actions               # 팔레트에 놓는 '도구' 블럭 카탈로그
 import hotkey                        # 한글에서도 먹는 전역 단축키
 import ui_fx                         # 호버 보간·누름 피드백 (애플 A안)
+import help_ui                       # 도움말 창 (기능별 사전)
+import tutorial                      # 따라하기 (화면 위 안내)
 from roundbtn import RoundButton     # 둥근 모서리 버튼
 from popover import Popover          # 앱과 같은 얼굴의 팝업 메뉴
 
@@ -604,8 +606,56 @@ def _bar_active(btn, on):
 
 _gear = _bar_btn("⚙", lambda: _settings_menu(_gear), "설정")
 _gear.pack(side="left")
-# 도움말은 물음표 — 가장 널리 쓰이는 관습이라 글자를 안 읽어도 안다
-_help_btn = _bar_btn("?", lambda: _toggle_guide(), "사용법")
+
+
+# 도움말은 물음표 — 가장 널리 쓰이는 관습이라 글자를 안 읽어도 안다.
+# 눌렀을 때 바로 펼치지 않고 메뉴를 여는 이유 (사용자 결정 2026-07-25):
+# 도움말을 '기능별 사전'과 '따라하기'로 나눴다 — 읽는 것과 해 보는 것은
+# 다른 요구라서다. 기존 문법 요약도 세 번째 항목으로 남긴다.
+def _help_menu(anchor_widget):
+    _bar_active(anchor_widget, True)
+    (Popover(root, anchor_widget,
+             on_close=lambda: _bar_active(anchor_widget, False))
+     .add("도움말  (기능별 설명)", lambda: help_ui.open_help(root))
+     .add("따라하기  (화면 위 안내)", lambda: _start_tutorial())
+     .separator()
+     .add("문법 요약 펼치기/접기", lambda: _toggle_guide())
+     .show())
+
+
+def _start_tutorial():
+    """화면 위 따라하기 — 지금 실제 화면의 위젯들을 차례로 짚는다."""
+    steps = [
+        (lambda: quick_area, "공통 팔레트",
+         "어느 문서를 만들든 늘 보이는 도구들입니다.\n"
+         "파란 '마크다운 변환'이 이 프로그램의 본체 —\n"
+         "한글에서 변환할 부분을 드래그하고 누르세요.\n"
+         "(어디서든 Ctrl+Alt+T 로도 됩니다)"),
+        (lambda: pal_pick, "개인 팔레트 고르기",
+         "만드는 문서 종류(수능·학교 시험문제 …)별로\n"
+         "팔레트를 갈아끼웁니다. 눌러서 골라 보세요.\n"
+         "맨 아래 '팔레트 관리…'로 새로 만들 수도 있습니다."),
+        (lambda: pal_area, "개인 팔레트",
+         "고른 팔레트의 블럭(물감)들입니다.\n"
+         "누르면 그 내용이 한글에 바로 들어갑니다.\n"
+         "Ctrl+1~9 로 순서대로 실행할 수도 있습니다."),
+        (lambda: _gear, "설정",
+         "팔레트 설정 = 블럭을 어디에 놓을지\n"
+         "물감 설정 = 블럭에 무엇을 담을지\n"
+         "내보내기·가져오기 = 내 물감을 동료와 공유"),
+        (lambda: conn_dot, "알림등",
+         "방금 한 일이 잘 됐는지 색으로 말합니다.\n"
+         "초록 = 정상, 빨강 = 문제 발생.\n"
+         "누르면 지난 알림이 펼쳐집니다."),
+        (lambda: _help_btn, "도움말",
+         "막히면 언제든 여기 — 기능별 설명과\n"
+         "이 따라하기를 다시 볼 수 있습니다.\n"
+         "이제 직접 써 보세요!"),
+    ]
+    tutorial.Tutorial(root, steps).start()
+
+
+_help_btn = _bar_btn("?", lambda: _help_menu(_help_btn), "도움말")
 _help_btn.pack(side="left", padx=(4, 0))
 
 # 상태줄(최근 알림)을 이 줄 오른쪽 빈 자리에 둔다 (2026-07-25).

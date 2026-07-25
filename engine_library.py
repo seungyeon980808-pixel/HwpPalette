@@ -489,6 +489,51 @@ def export_as_hwpx(src_path, dst_path):
             applog.exc("HWPX 변환용 임시 문서 닫기 실패 — 창이 남아 있을 수 있음", e)
 
 
+def open_template_copy(path):
+    r"""템플릿 조각을 **새 탭**에 펼친다 — '꺼내서 고치기'용 (2026-07-25).
+
+    파일을 직접 열지 않고 빈 새 탭에 insert 한다. 직접 열면 한글이 조각
+    파일을 잠가(한 번 연 파일은 안 놓는다 — WinError 32 계보) 덮어쓰기
+    저장이 막히기 때문이다. 새 탭은 제목 없는 문서라 원본과 무관하다.
+    """
+    hwp = _h()
+    hwp.XHwpDocuments.Add(1)          # 1 = 새 탭
+    hwp.insert_file(str(path), keep_section=0, keep_charshape=1,
+                    keep_parashape=1, keep_style=1)
+
+
+def select_all():
+    """지금 문서 전체 선택 — '꺼내서 고치기'의 덮어쓰기 캡처가 쓴다."""
+    _h().HAction.Run("SelectAll")
+
+
+def read_file_structure(path):
+    r"""파일을 새 탭에서 읽어 (HWPML2X XML, 순수 텍스트) 를 돌려준다.
+
+    양식→AI 프롬프트 변환용. XML 은 표 구조까지 담고 있어 마크다운 표로
+    풀 수 있다. XML 추출이 실패하면 (None, 텍스트) — 호출부가 표 없이
+    텍스트로만 만든다. 현재 문서는 건드리지 않는다 (count_slots_in_file 방식).
+    """
+    hwp = _h()
+    saved = hwp.XHwpDocuments.Count
+    xml = text = ""
+    try:
+        hwp.XHwpDocuments.Add(1)
+        hwp.open(str(path))
+        try:
+            xml = hwp.GetTextFile("HWPML2X", "") or ""
+        except Exception as e:
+            applog.exc("HWPML2X 추출 실패 — 표 없이 텍스트로만 변환", e)
+        text = hwp.GetTextFile("TEXT", "") or ""
+    finally:
+        try:
+            if hwp.XHwpDocuments.Count > saved:
+                hwp.XHwpDocuments.Active_XHwpDocument.Close(isDirty=False)
+        except Exception as e:
+            applog.exc("구조 읽기용 임시 문서 닫기 실패 — 창이 남아 있을 수 있음", e)
+    return (xml or None), text
+
+
 def open_form(path):
     r"""양식 파일을 새 문서로 연다 (용지·여백·머리말까지 원본 그대로).
 
