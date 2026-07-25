@@ -78,8 +78,18 @@ def _pick_font():
 FONT = _pick_font()
 
 # Pretendard 는 같은 pt 에서 맑은 고딕보다 작게 보인다(자면 설계 차이).
-# 크기를 일괄 1pt 올려 보정한다 — 각 창의 _font() 가 이 값을 더한다.
+# 크기를 일괄 1pt 올려 보정한다.
 FONT_BOOST = 1 if FONT.startswith("Pretendard") else 0
+
+# 전체 글자 배율 (사용자 결정 2026-07-25: "지금보다 25% 확대").
+# 모든 창의 글자 크기가 이 함수를 거친다 — 개별 파일에 숫자를 곱해 두면
+# 다음에 또 키울 때 수십 군데를 고쳐야 한다.
+FONT_SCALE = 1.25
+
+
+def fs(size):
+    """UI 글자 크기 → 실제 pt (배율 + Pretendard 보정)."""
+    return max(7, int(round(size * FONT_SCALE)) + FONT_BOOST)
 
 # 블럭 종류별 배경 — 밝은 쪽은 옅은 파스텔, 어두운 쪽은 같은 색상의 어두운 판.
 # 색상(파랑=템플릿, 주황=서식조합, 초록=양식)은 두 모드에서 같아야 한다.

@@ -78,6 +78,26 @@ def rebase(widget, base):
         setter(base)
 
 
+def attach_all(container):
+    r"""창 안의 **모든 tk.Button** 을 훑어 호버 보간을 단다 (2026-07-25).
+
+    라이브러리·환경설정처럼 버튼이 수십 개인 창에 하나하나 attach 를 부르는
+    대신, 창을 다 만든 뒤(또는 목록을 다시 그린 뒤) 이걸 한 번 부른다.
+    기준색은 그 버튼의 **지금 배경색** — 파랑 버튼은 파랑답게, 회색은 회색답게.
+    이미 붙인 버튼(_fx_rebase 표식)은 건너뛰므로 여러 번 불러도 겹치지 않는다.
+    """
+    import tkinter as tk
+    stack = [container]
+    while stack:
+        w = stack.pop()
+        try:
+            stack.extend(w.winfo_children())
+            if isinstance(w, tk.Button) and not hasattr(w, "_fx_rebase"):
+                attach(w, w.cget("bg"))
+        except Exception:
+            continue        # 파괴 중인 위젯 — 건너뛴다
+
+
 def attach(widget, base, hover=None, press=None):
     r"""tk.Button/Label 에 호버 보간 + 누름 피드백을 단다.
 

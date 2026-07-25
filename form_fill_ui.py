@@ -21,6 +21,7 @@ import form_fill
 import hwp_engine
 
 import theme                       # 색은 theme.py 한 곳에서 (밝게/어둡게)
+import ui_fx                       # 호버 보간 (애플 A안)
 
 _C = theme.colors()
 BG = _C["bg"]
@@ -42,20 +43,20 @@ class FormFillWindow(tk.Toplevel):
         self.src = None          # 사용자가 고른 원본
         self.hwpx = None         # HWPX 로 바꾼 것 (채우기의 실제 대상)
 
-        tk.Label(self, text="양식 채우기", font=(FONT, 12, "bold"),
+        tk.Label(self, text="양식 채우기", font=(FONT, theme.fs(12), "bold"),
                  bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(12, 2))
         tk.Label(self,
                  text="양식을 고르면 채울 자리를 뽑아줍니다. AI에 붙여넣고 채워서 "
                       "오른쪽에 다시 붙여넣으세요.",
-                 font=(FONT, 8), bg=BG, fg=MUTED).pack(anchor="w", padx=16)
+                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(anchor="w", padx=16)
 
         # ── 파일 고르기 ──
         pick = tk.Frame(self, bg=BG, padx=16, pady=8)
         pick.pack(fill="x")
         tk.Button(pick, text="양식 파일 고르기", command=self._pick,
-                  font=(FONT, 9), fg=TEXT, bg=CARD, activebackground=BORDER,
+                  font=(FONT, theme.fs(9)), fg=TEXT, bg=CARD, activebackground=BORDER,
                   bd=1, padx=10, pady=5, cursor="hand2").pack(side="left")
-        self.file_lbl = tk.Label(pick, text="(선택 안 됨)", font=(FONT, 9),
+        self.file_lbl = tk.Label(pick, text="(선택 안 됨)", font=(FONT, theme.fs(9)),
                                  bg=BG, fg=MUTED)
         self.file_lbl.pack(side="left", padx=(10, 0))
 
@@ -66,16 +67,16 @@ class FormFillWindow(tk.Toplevel):
         body.columnconfigure(1, weight=1, uniform="c")
         body.rowconfigure(1, weight=1)
 
-        tk.Label(body, text="① 뽑은 것 — AI에 붙여넣으세요", font=(FONT, 9, "bold"),
+        tk.Label(body, text="① 뽑은 것 — AI에 붙여넣으세요", font=(FONT, theme.fs(9), "bold"),
                  bg=BG, fg=TEXT).grid(row=0, column=0, sticky="w", pady=(4, 2))
-        tk.Label(body, text="② 채운 것 — 여기 붙여넣으세요", font=(FONT, 9, "bold"),
+        tk.Label(body, text="② 채운 것 — 여기 붙여넣으세요", font=(FONT, theme.fs(9), "bold"),
                  bg=BG, fg=TEXT).grid(row=0, column=1, sticky="w",
                                       padx=(8, 0), pady=(4, 2))
 
-        self.out_box = tk.Text(body, width=46, height=20, font=(MONO, 9),
+        self.out_box = tk.Text(body, width=46, height=20, font=(MONO, theme.fs(9)),
                                relief="solid", bd=1, wrap="none")
         self.out_box.grid(row=1, column=0, sticky="nsew")
-        self.in_box = tk.Text(body, width=46, height=20, font=(MONO, 9),
+        self.in_box = tk.Text(body, width=46, height=20, font=(MONO, theme.fs(9)),
                               relief="solid", bd=1, wrap="none")
         self.in_box.grid(row=1, column=1, sticky="nsew", padx=(8, 0))
 
@@ -83,20 +84,21 @@ class FormFillWindow(tk.Toplevel):
         foot = tk.Frame(self, bg=BG, padx=16, pady=12)
         foot.pack(fill="x")
         tk.Button(foot, text="채울 자리 뽑기 + 복사", command=self._extract,
-                  font=(FONT, 9, "bold"), fg=TEXT, bg="#e8e8ed",
+                  font=(FONT, theme.fs(9), "bold"), fg=TEXT, bg="#e8e8ed",
                   activebackground=BORDER, bd=0, padx=12, pady=7,
                   cursor="hand2").pack(side="left")
         tk.Button(foot, text="채워서 한글로 열기", command=self._apply,
-                  font=(FONT, 10, "bold"), fg="white", bg=ACCENT,
+                  font=(FONT, theme.fs(10), "bold"), fg="white", bg=ACCENT,
                   activebackground="#0077ed", activeforeground="white",
                   bd=0, padx=16, pady=7, cursor="hand2").pack(side="right")
 
         self.status = tk.StringVar(value="양식 파일을 골라주세요.")
-        tk.Label(self, textvariable=self.status, font=(FONT, 8),
+        tk.Label(self, textvariable=self.status, font=(FONT, theme.fs(8)),
                  bg=BG, fg=MUTED, anchor="w").pack(fill="x", padx=16, pady=(0, 10))
 
         self.update_idletasks()
         self.geometry(f"+{master.winfo_rootx() - 620}+{master.winfo_rooty() + 40}")
+        ui_fx.attach_all(self)         # 창 안 모든 버튼에 호버 보간
 
     # ── 동작 ──
     def _pick(self):

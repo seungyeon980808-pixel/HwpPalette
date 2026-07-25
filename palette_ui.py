@@ -23,6 +23,7 @@ import hwp_engine
 import library_ui                  # commit_ime · capture_template_dialog 공용
 
 import theme                       # 색은 theme.py 한 곳에서 (밝게/어둡게)
+import ui_fx                       # 호버 보간 (애플 A안)
 
 _C = theme.colors()
 BG = _C["bg"]
@@ -76,16 +77,16 @@ class FunctionDialog(tk.Toplevel):
         existing = {a["func"]: a.get("value") for a in (block or {}).get("actions", [])}
         name0 = (block or {}).get("name", "")
 
-        tk.Label(self, text="서식 조합 블럭 만들기", font=(FONT, 11, "bold"),
+        tk.Label(self, text="서식 조합 블럭 만들기", font=(FONT, theme.fs(11), "bold"),
                  bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(12, 2))
         tk.Label(self, text="체크한 것들이 이 블럭 하나에 병렬로 담깁니다. 글자를 선택하고 누르세요.",
-                 font=(FONT, 8), bg=BG, fg=MUTED).pack(anchor="w", padx=16, pady=(0, 8))
+                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(anchor="w", padx=16, pady=(0, 8))
 
         namef = tk.Frame(self, bg=BG, padx=16)
         namef.pack(fill="x")
-        tk.Label(namef, text="블럭 이름", font=(FONT, 9), bg=BG, fg=TEXT).pack(side="left")
+        tk.Label(namef, text="블럭 이름", font=(FONT, theme.fs(9)), bg=BG, fg=TEXT).pack(side="left")
         self.name_var = tk.StringVar(value=name0)
-        tk.Entry(namef, textvariable=self.name_var, width=20, font=(FONT, 10),
+        tk.Entry(namef, textvariable=self.name_var, width=20, font=(FONT, theme.fs(10)),
                  relief="solid", bd=1).pack(side="left", padx=(8, 0))
 
         body = tk.Frame(self, bg=BG, padx=16, pady=8)
@@ -98,25 +99,26 @@ class FunctionDialog(tk.Toplevel):
             chk = tk.BooleanVar(value=key in existing)
             tk.Checkbutton(row, variable=chk, bg=BG, activebackground=BG,
                            selectcolor=CARD).pack(side="left")
-            tk.Label(row, text=key, font=(FONT, 10), bg=BG, fg=TEXT,
+            tk.Label(row, text=key, font=(FONT, theme.fs(10)), bg=BG, fg=TEXT,
                      width=8, anchor="w").pack(side="left")
             val_widget, val_var = self._value_widget(row, f, existing.get(key))
-            tk.Label(row, text=f.get("hint", ""), font=(FONT, 7), bg=BG,
+            tk.Label(row, text=f.get("hint", ""), font=(FONT, theme.fs(7)), bg=BG,
                      fg=MUTED).pack(side="left", padx=(6, 0))
             self.rows[key] = (chk, f, val_var, val_widget)
 
         foot = tk.Frame(self, bg=BG, padx=16, pady=12)
         foot.pack(fill="x")
-        tk.Button(foot, text="저장", command=self._ok, font=(FONT, 10, "bold"),
+        tk.Button(foot, text="저장", command=self._ok, font=(FONT, theme.fs(10), "bold"),
                   bg=ACCENT, fg="white", bd=0, padx=16, pady=6,
                   cursor="hand2").pack(side="right")
-        tk.Button(foot, text="취소", command=self.destroy, font=(FONT, 10),
+        tk.Button(foot, text="취소", command=self.destroy, font=(FONT, theme.fs(10)),
                   bg="#e8e8ed", fg=TEXT, bd=0, padx=16, pady=6,
                   cursor="hand2").pack(side="right", padx=(0, 6))
 
         self.update_idletasks()
         self.geometry(f"+{master.winfo_rootx()+40}+{master.winfo_rooty()+30}")
         self.grab_set()
+        ui_fx.attach_all(self)   # 창 안 모든 버튼에 호버 보간
 
     def _value_widget(self, parent, f, cur):
         kind = f["kind"]
@@ -125,15 +127,15 @@ class FunctionDialog(tk.Toplevel):
         if kind == "font":
             var = tk.StringVar(value=cur or func_catalog.COMMON_FONTS[0])
             w = ttk.Combobox(parent, textvariable=var, width=12,
-                             values=func_catalog.COMMON_FONTS, font=(FONT, 9))
+                             values=func_catalog.COMMON_FONTS, font=(FONT, theme.fs(9)))
             w.pack(side="left")
             return w, var
         if kind == "number":
             var = tk.StringVar(value="" if cur is None else str(cur))
-            w = tk.Entry(parent, textvariable=var, width=6, font=(FONT, 9),
+            w = tk.Entry(parent, textvariable=var, width=6, font=(FONT, theme.fs(9)),
                          relief="solid", bd=1)
             w.pack(side="left")
-            tk.Label(parent, text=f.get("unit", ""), font=(FONT, 8),
+            tk.Label(parent, text=f.get("unit", ""), font=(FONT, theme.fs(8)),
                      bg=BG, fg=MUTED).pack(side="left")
             return w, var
         if kind == "color":
@@ -156,7 +158,7 @@ class FunctionDialog(tk.Toplevel):
                     r, g, b = int(rgb[0]), int(rgb[1]), int(rgb[2])
                     var.set(str(_rgb_int(r, g, b)))
                     swatch.config(bg=_hex)
-            tk.Button(parent, text="색 선택", command=pick, font=(FONT, 8),
+            tk.Button(parent, text="색 선택", command=pick, font=(FONT, theme.fs(8)),
                       bg=CARD, bd=1, cursor="hand2").pack(side="left", padx=(4, 0))
             return swatch, var
         return None, None
@@ -220,10 +222,10 @@ class SettingsWindow(tk.Toplevel):
         self._new_to = None
         self._extra_rows = 0       # ＋줄 추가로 늘린 빈 줄 수
 
-        tk.Label(self, text="환경설정", font=(FONT, 12, "bold"),
+        tk.Label(self, text="환경설정", font=(FONT, theme.fs(12), "bold"),
                  bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(12, 2))
         tk.Label(self, text="탭을 만들고, 그 안에 문자·템플릿·서식 조합 블럭을 넣어 나만의 팔레트를 구성합니다.",
-                 font=(FONT, 8), bg=BG, fg=MUTED).pack(anchor="w", padx=16, pady=(0, 8))
+                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(anchor="w", padx=16, pady=(0, 8))
 
         main = tk.Frame(self, bg=BG, padx=16)
         main.pack(fill="both", expand=True)
@@ -231,10 +233,10 @@ class SettingsWindow(tk.Toplevel):
         # 왼쪽: 탭 목록
         left = tk.Frame(main, bg=BG)
         left.pack(side="left", fill="y", padx=(0, 12))
-        tk.Label(left, text="탭", font=(FONT, 9, "bold"), bg=BG, fg=TEXT).pack(anchor="w")
+        tk.Label(left, text="탭", font=(FONT, theme.fs(9), "bold"), bg=BG, fg=TEXT).pack(anchor="w")
         # height 는 줄 수. 크면 이쪽이 창 높이를 정해 버려서, 격자에 줄을 더해도
         # 창이 안 커진다(실측 2026-07-19: 왼쪽 272px > 오른쪽 180px). 작게 잡는다.
-        self.tab_list = tk.Listbox(left, width=16, height=6, font=(FONT, 10),
+        self.tab_list = tk.Listbox(left, width=16, height=6, font=(FONT, theme.fs(10)),
                                    relief="solid", bd=1, exportselection=False,
                                    selectbackground=ACCENT, selectforeground="white")
         self.tab_list.pack()
@@ -248,32 +250,32 @@ class SettingsWindow(tk.Toplevel):
         for txt, cmd in [("+", self._add_tab), ("이름", self._rename_tab),
                          ("삭제", self._del_tab), ("▲", lambda: self._move_tab(-1)),
                          ("▼", lambda: self._move_tab(1))]:
-            tk.Button(tb, text=txt, command=cmd, font=(FONT, 8), bg=CARD, fg=TEXT,
+            tk.Button(tb, text=txt, command=cmd, font=(FONT, theme.fs(8)), bg=CARD, fg=TEXT,
                       bd=1, padx=6, pady=2, cursor="hand2").pack(side="left", padx=1)
 
         # 오른쪽: 블럭 목록 + 추가
         right = tk.Frame(main, bg=BG)
         right.pack(side="left", fill="both", expand=True)
-        self.block_head = tk.Label(right, text="블럭", font=(FONT, 9, "bold"),
+        self.block_head = tk.Label(right, text="블럭", font=(FONT, theme.fs(9), "bold"),
                                    bg=BG, fg=TEXT)
         self.block_head.pack(anchor="w")
 
         addbar = tk.Frame(right, bg=BG)
         addbar.pack(fill="x", pady=(2, 6))
-        tk.Button(addbar, text="+ 문자", command=self._add_char, font=(FONT, 9),
+        tk.Button(addbar, text="+ 문자", command=self._add_char, font=(FONT, theme.fs(9)),
                   bg="#e8e8ed", fg=TEXT, bd=0, padx=10, pady=5,
                   cursor="hand2").pack(side="left", padx=(0, 4))
-        tk.Button(addbar, text="+ 템플릿", command=self._add_template, font=(FONT, 9),
+        tk.Button(addbar, text="+ 템플릿", command=self._add_template, font=(FONT, theme.fs(9)),
                   bg="#e8e8ed", fg=TEXT, bd=0, padx=10, pady=5,
                   cursor="hand2").pack(side="left", padx=(0, 4))
-        tk.Button(addbar, text="+ 서식 조합", command=self._add_function, font=(FONT, 9),
+        tk.Button(addbar, text="+ 서식 조합", command=self._add_function, font=(FONT, theme.fs(9)),
                   bg="#e8e8ed", fg=TEXT, bd=0, padx=10, pady=5,
                   cursor="hand2").pack(side="left", padx=(0, 4))
-        tk.Button(addbar, text="+ 양식", command=self._add_form, font=(FONT, 9),
+        tk.Button(addbar, text="+ 양식", command=self._add_form, font=(FONT, theme.fs(9)),
                   bg="#e8e8ed", fg=TEXT, bd=0, padx=10, pady=5,
                   cursor="hand2").pack(side="left", padx=(0, 4))
         # 프로그램 기능(사진·특수문자 등)도 블럭으로 — 예전엔 코드에 박혀 있었다
-        tk.Button(addbar, text="+ 도구", command=self._add_builtin, font=(FONT, 9),
+        tk.Button(addbar, text="+ 도구", command=self._add_builtin, font=(FONT, theme.fs(9)),
                   bg="#e8e8ed", fg=TEXT, bd=0, padx=10, pady=5,
                   cursor="hand2").pack(side="left")
 
@@ -290,16 +292,16 @@ class SettingsWindow(tk.Toplevel):
         self.bind_all("<Control-y>", lambda e: self._redo())
         self.bind_all("<Control-Y>", lambda e: self._redo())
         tk.Button(foot, text="되돌리기 (Ctrl+Z)", command=self._undo,
-                  font=(FONT, 9), bg=CARD, fg=TEXT, bd=1, padx=10, pady=5,
+                  font=(FONT, theme.fs(9)), bg=CARD, fg=TEXT, bd=1, padx=10, pady=5,
                   cursor="hand2").pack(side="left", padx=(0, 6))
         tk.Button(foot, text="기본 서식 설정", command=self._edit_default_format,
-                  font=(FONT, 9), bg=CARD, fg=TEXT, bd=1, padx=10, pady=5,
+                  font=(FONT, theme.fs(9)), bg=CARD, fg=TEXT, bd=1, padx=10, pady=5,
                   cursor="hand2").pack(side="left", padx=(0, 6))
         # 변환 버튼 크기 — 창 너비에 바로 영향을 주므로 사용자가 고칠 수 있어야 한다
         tk.Button(foot, text="변환 버튼 크기", command=self._edit_convert_size,
-                  font=(FONT, 9), bg=CARD, fg=TEXT, bd=1, padx=10, pady=5,
+                  font=(FONT, theme.fs(9)), bg=CARD, fg=TEXT, bd=1, padx=10, pady=5,
                   cursor="hand2").pack(side="left")
-        tk.Button(foot, text="닫기", command=self._close, font=(FONT, 10, "bold"),
+        tk.Button(foot, text="닫기", command=self._close, font=(FONT, theme.fs(10), "bold"),
                   bg=ACCENT, fg="white", bd=0, padx=16, pady=6,
                   cursor="hand2").pack(side="right")
 
@@ -413,7 +415,7 @@ class SettingsWindow(tk.Toplevel):
             # 빈 격자라도 그린다 — 거기를 끌어 첫 블럭을 만들어야 하므로
             tk.Label(self.block_area,
                      text="빈칸을 누르거나 끌어서 첫 블럭을 만들어보세요.",
-                     font=(FONT, 9), bg=BG, fg=MUTED,
+                     font=(FONT, theme.fs(9)), bg=BG, fg=MUTED,
                      justify="left").pack(anchor="w", pady=(0, 4))
 
         # 격자는 스크롤 없이 그대로 편다 — 줄이 늘면 창 자체가 커진다(_fit_window).
@@ -429,19 +431,19 @@ class SettingsWindow(tk.Toplevel):
         colbar = tk.Frame(outer, bg=BG)          # 오른쪽: 칸(가로 방향) 조절
         colbar.grid(row=0, column=1, sticky="n", padx=(4, 0))
         for txt, cmd in (("＋ 칸", self._add_col), ("－ 칸", self._remove_col)):
-            tk.Button(colbar, text=txt, command=cmd, font=(FONT, 8),
+            tk.Button(colbar, text=txt, command=cmd, font=(FONT, theme.fs(8)),
                       bg=CARD, fg=TEXT, bd=1, padx=6, pady=3,
                       cursor="hand2").pack(pady=(0, 3))
 
         rowbar = tk.Frame(outer, bg=BG)          # 아래: 줄(세로 방향) 조절
         rowbar.grid(row=1, column=0, sticky="w", pady=(4, 0))
         for txt, cmd in (("＋ 줄", self._add_row), ("－ 줄", self._remove_row)):
-            tk.Button(rowbar, text=txt, command=cmd, font=(FONT, 8),
+            tk.Button(rowbar, text=txt, command=cmd, font=(FONT, theme.fs(8)),
                       bg=CARD, fg=TEXT, bd=1, padx=8, pady=3,
                       cursor="hand2").pack(side="left", padx=(0, 3))
         tk.Label(rowbar,
                  text=f"가로 {cols}칸 · 칸 {self._cell_px(cols)}px",
-                 font=(FONT, 8), bg=BG, fg=MUTED).pack(side="left", padx=(8, 0))
+                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(side="left", padx=(8, 0))
 
         # 칸 크기는 칸 수에 맞춰 정한다 (메인 창과 같은 규칙 — 미리보기가 실물과 맞게)
         cell_px = self._cell_px(cols)
@@ -451,7 +453,7 @@ class SettingsWindow(tk.Toplevel):
 
         # 열 머리글 (UI 제안 12) — 15칸이 되니 "몇 번째 칸"을 셀 수 있어야 한다
         for cc in range(cols):
-            tk.Label(grid, text=str(cc + 1), font=(FONT, 7), bg=CARD,
+            tk.Label(grid, text=str(cc + 1), font=(FONT, theme.fs(7)), bg=CARD,
                      fg=MUTED).grid(row=0, column=cc, pady=(0, 1))
 
         self._used_cells = palette.occupied_cells(blocks)
@@ -681,7 +683,7 @@ class SettingsWindow(tk.Toplevel):
         # 글자색은 배경 밝기에 맞춰 정한다 — 어두운 색을 골라도 읽히게 (제안 18)
         lab = tk.Label(tile, text=self._tile_text(blk, span), bg=bg,
                        fg=theme.text_on(bg),
-                       font=(FONT, 10 if blk["type"] == "char" else 8))
+                       font=(FONT, theme.fs(10 if blk["type"] == "char" else 8)))
         lab.pack(expand=True)
         self._tiles[i] = tile
         for w in (tile, lab):
@@ -1174,33 +1176,34 @@ class _SourceDialog(tk.Toplevel):
         self.resizable(False, False)
         self.attributes("-topmost", True)
 
-        tk.Label(self, text="템플릿을 어디서 가져올까요?", font=(FONT, 11, "bold"),
+        tk.Label(self, text="템플릿을 어디서 가져올까요?", font=(FONT, theme.fs(11), "bold"),
                  bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(14, 8))
 
         body = tk.Frame(self, bg=BG, padx=16)
         body.pack(fill="x")
         tk.Button(body, text="📸  지금 한글에서 캡처해서 추가",
                   command=lambda: self._pick("capture"),
-                  font=(FONT, 10, "bold"), bg=ACCENT, fg="white", bd=0,
+                  font=(FONT, theme.fs(10), "bold"), bg=ACCENT, fg="white", bd=0,
                   pady=10, cursor="hand2").pack(fill="x")
         tk.Label(body, text="한글에서 표·영역을 선택해두고 누르세요. 등록과 배치가 한 번에.",
-                 font=(FONT, 8), bg=BG, fg=MUTED).pack(anchor="w", pady=(3, 10))
+                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(anchor="w", pady=(3, 10))
 
         state = "normal" if has_registered else "disabled"
         tk.Button(body, text="📚  이미 등록된 템플릿에서 고르기",
                   command=lambda: self._pick("registered"),
-                  font=(FONT, 10), bg=CARD, fg=TEXT, bd=1, pady=8,
+                  font=(FONT, theme.fs(10)), bg=CARD, fg=TEXT, bd=1, pady=8,
                   cursor="hand2", state=state).pack(fill="x")
         if not has_registered:
             tk.Label(body, text="(아직 등록된 템플릿이 없습니다)",
-                     font=(FONT, 8), bg=BG, fg=MUTED).pack(anchor="w", pady=(3, 0))
+                     font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(anchor="w", pady=(3, 0))
 
-        tk.Button(self, text="취소", command=self.destroy, font=(FONT, 9),
+        tk.Button(self, text="취소", command=self.destroy, font=(FONT, theme.fs(9)),
                   bg=BG, fg=MUTED, bd=0, cursor="hand2").pack(pady=10)
 
         self.update_idletasks()
         self.geometry(f"+{master.winfo_rootx()+50}+{master.winfo_rooty()+50}")
         self.grab_set()
+        ui_fx.attach_all(self)   # 창 안 모든 버튼에 호버 보간
 
     def _pick(self, what):
         self.result = what
@@ -1215,19 +1218,20 @@ class _ChoiceDialog(tk.Toplevel):
         self.configure(bg=BG)
         self.attributes("-topmost", True)
         self.resizable(False, False)
-        tk.Label(self, text=title, font=(FONT, 10, "bold"), bg=BG, fg=TEXT).pack(
+        tk.Label(self, text=title, font=(FONT, theme.fs(10), "bold"), bg=BG, fg=TEXT).pack(
             anchor="w", padx=16, pady=(12, 6))
         self.var = tk.StringVar(value=options[0])
         ttk.Combobox(self, textvariable=self.var, values=options, width=24,
-                     state="readonly", font=(FONT, 10)).pack(padx=16)
+                     state="readonly", font=(FONT, theme.fs(10))).pack(padx=16)
         foot = tk.Frame(self, bg=BG, padx=16, pady=12)
         foot.pack(fill="x")
-        tk.Button(foot, text="확인", command=self._ok, font=(FONT, 10, "bold"),
+        tk.Button(foot, text="확인", command=self._ok, font=(FONT, theme.fs(10), "bold"),
                   bg=ACCENT, fg="white", bd=0, padx=16, pady=6,
                   cursor="hand2").pack(side="right")
         self.update_idletasks()
         self.geometry(f"+{master.winfo_rootx()+60}+{master.winfo_rooty()+60}")
         self.grab_set()
+        ui_fx.attach_all(self)   # 창 안 모든 버튼에 호버 보간
 
     def _ok(self):
         self.result = self.var.get()
@@ -1246,7 +1250,7 @@ class _DefaultFormatDialog(tk.Toplevel):
         fmt = palette.get_default_format()
 
         tk.Label(self, text="기본 서식으로 변환 시 적용할 서식",
-                 font=(FONT, 10, "bold"), bg=BG, fg=TEXT).pack(
+                 font=(FONT, theme.fs(10), "bold"), bg=BG, fg=TEXT).pack(
                  anchor="w", padx=16, pady=(12, 8))
         body = tk.Frame(self, bg=BG, padx=16)
         body.pack(fill="x")
@@ -1257,29 +1261,30 @@ class _DefaultFormatDialog(tk.Toplevel):
         self.sp_var = tk.StringVar(value=str(fmt["spacing"]))
 
         rows = [("글꼴", ttk.Combobox(body, textvariable=self.font_var, width=16,
-                                     values=func_catalog.COMMON_FONTS, font=(FONT, 9))),
+                                     values=func_catalog.COMMON_FONTS, font=(FONT, theme.fs(9)))),
                 ("크기(pt)", tk.Entry(body, textvariable=self.size_var, width=8,
-                                     font=(FONT, 9), relief="solid", bd=1)),
+                                     font=(FONT, theme.fs(9)), relief="solid", bd=1)),
                 ("줄간격(%)", tk.Entry(body, textvariable=self.ls_var, width=8,
-                                     font=(FONT, 9), relief="solid", bd=1)),
+                                     font=(FONT, theme.fs(9)), relief="solid", bd=1)),
                 ("자간", tk.Entry(body, textvariable=self.sp_var, width=8,
-                                font=(FONT, 9), relief="solid", bd=1))]
+                                font=(FONT, theme.fs(9)), relief="solid", bd=1))]
         for i, (lbl, w) in enumerate(rows):
-            tk.Label(body, text=lbl, font=(FONT, 9), bg=BG, fg=TEXT).grid(
+            tk.Label(body, text=lbl, font=(FONT, theme.fs(9)), bg=BG, fg=TEXT).grid(
                 row=i, column=0, sticky="w", pady=3)
             w.grid(row=i, column=1, sticky="w", padx=(8, 0), pady=3)
 
         foot = tk.Frame(self, bg=BG, padx=16, pady=12)
         foot.pack(fill="x")
-        tk.Button(foot, text="저장", command=self._ok, font=(FONT, 10, "bold"),
+        tk.Button(foot, text="저장", command=self._ok, font=(FONT, theme.fs(10), "bold"),
                   bg=ACCENT, fg="white", bd=0, padx=16, pady=6,
                   cursor="hand2").pack(side="right")
-        tk.Button(foot, text="취소", command=self.destroy, font=(FONT, 10),
+        tk.Button(foot, text="취소", command=self.destroy, font=(FONT, theme.fs(10)),
                   bg="#e8e8ed", fg=TEXT, bd=0, padx=16, pady=6,
                   cursor="hand2").pack(side="right", padx=(0, 6))
         self.update_idletasks()
         self.geometry(f"+{master.winfo_rootx()+50}+{master.winfo_rooty()+50}")
         self.grab_set()
+        ui_fx.attach_all(self)   # 창 안 모든 버튼에 호버 보간
 
     def _ok(self):
         try:
@@ -1315,35 +1320,36 @@ class _ConvertSizeDialog(tk.Toplevel):
         self.span_var = tk.IntVar(value=span)
         self.rows_var = tk.IntVar(value=rows)
 
-        tk.Label(self, text="마크다운 변환 버튼", font=(FONT, 11, "bold"),
+        tk.Label(self, text="마크다운 변환 버튼", font=(FONT, theme.fs(11), "bold"),
                  bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(12, 2))
         tk.Label(self,
                  text="옆 블럭과 같은 칸 단위입니다. 가로를 늘리면 창도 넓어집니다.",
-                 font=(FONT, 8), bg=BG, fg=MUTED).pack(anchor="w", padx=16,
+                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(anchor="w", padx=16,
                                                        pady=(0, 10))
 
         body = tk.Frame(self, bg=BG, padx=16)
         body.pack(fill="x")
         for r, (text, var) in enumerate((("가로 (칸)", self.span_var),
                                          ("세로 (줄)", self.rows_var))):
-            tk.Label(body, text=text, font=(FONT, 9), bg=BG, fg=TEXT).grid(
+            tk.Label(body, text=text, font=(FONT, theme.fs(9)), bg=BG, fg=TEXT).grid(
                 row=r, column=0, sticky="w", pady=4)
             tk.Spinbox(body, from_=1, to=palette.CONVERT_SIZE_MAX, width=5,
-                       textvariable=var, font=(FONT, 10),
+                       textvariable=var, font=(FONT, theme.fs(10)),
                        justify="center").grid(row=r, column=1, padx=(10, 0))
 
         foot = tk.Frame(self, bg=BG, padx=16, pady=12)
         foot.pack(fill="x")
         tk.Button(foot, text="저장", command=self._ok,
-                  font=(FONT, 10, "bold"), bg=ACCENT, fg="white", bd=0,
+                  font=(FONT, theme.fs(10), "bold"), bg=ACCENT, fg="white", bd=0,
                   padx=16, pady=6, cursor="hand2").pack(side="right")
         tk.Button(foot, text="기본값 (3×2)", command=self._reset,
-                  font=(FONT, 9), bg="#e8e8ed", fg=TEXT, bd=0,
+                  font=(FONT, theme.fs(9)), bg="#e8e8ed", fg=TEXT, bd=0,
                   padx=12, pady=6, cursor="hand2").pack(side="left")
 
         self.update_idletasks()
         self.geometry(f"+{master.winfo_rootx()+60}+{master.winfo_rooty()+80}")
         self.grab_set()
+        ui_fx.attach_all(self)   # 창 안 모든 버튼에 호버 보간
 
     def _reset(self):
         self.span_var.set(palette.DEFAULT_CONVERT_SIZE["span"])
@@ -1373,36 +1379,37 @@ class _CaptionDialog(tk.Toplevel):
         self.resizable(False, False)
         self.attributes("-topmost", True)
 
-        tk.Label(self, text="버튼에 보일 이름", font=(FONT, 11, "bold"),
+        tk.Label(self, text="버튼에 보일 이름", font=(FONT, theme.fs(11), "bold"),
                  bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(12, 2))
         tk.Label(self,
                  text="Enter 로 줄을 나눌 수 있습니다 — 좁은 칸에 두 줄로 넣을 때 씁니다.\n"
                       "비우고 저장하면 원래 이름으로 돌아갑니다.",
-                 font=(FONT, 8), bg=BG, fg=MUTED, justify="left").pack(
+                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED, justify="left").pack(
             anchor="w", padx=16, pady=(0, 8))
 
-        self.box = tk.Text(self, width=24, height=3, font=(FONT, 11),
+        self.box = tk.Text(self, width=24, height=3, font=(FONT, theme.fs(11)),
                            relief="solid", bd=1, wrap="none")
         self.box.pack(padx=16)
         self.box.insert("1.0", caption or "")
         self.box.focus_set()
         self.box.bind("<Control-Return>", lambda e: self._ok())
 
-        tk.Label(self, text=f"지금 이름: {current!r}", font=(FONT, 8),
+        tk.Label(self, text=f"지금 이름: {current!r}", font=(FONT, theme.fs(8)),
                  bg=BG, fg=MUTED).pack(anchor="w", padx=16, pady=(6, 0))
 
         foot = tk.Frame(self, bg=BG, padx=16, pady=12)
         foot.pack(fill="x")
         tk.Button(foot, text="저장  (Ctrl+Enter)", command=self._ok,
-                  font=(FONT, 10, "bold"), bg=ACCENT, fg="white", bd=0,
+                  font=(FONT, theme.fs(10), "bold"), bg=ACCENT, fg="white", bd=0,
                   padx=14, pady=6, cursor="hand2").pack(side="right")
-        tk.Button(foot, text="취소", command=self.destroy, font=(FONT, 10),
+        tk.Button(foot, text="취소", command=self.destroy, font=(FONT, theme.fs(10)),
                   bg="#e8e8ed", fg=TEXT, bd=0, padx=14, pady=6,
                   cursor="hand2").pack(side="right", padx=(0, 6))
 
         self.update_idletasks()
         self.geometry(f"+{master.winfo_rootx()+60}+{master.winfo_rooty()+80}")
         self.grab_set()
+        ui_fx.attach_all(self)   # 창 안 모든 버튼에 호버 보간
 
     def _ok(self):
         library_ui.commit_ime(self)     # 한글 조합 중인 마지막 글자 확정
@@ -1431,10 +1438,10 @@ class _ToolPickDialog(tk.Toplevel):
 
         size = f"{span}칸" if rows <= 1 else f"{span}×{rows}칸"
         tk.Label(self, text=f"{size} 자리에 넣을 도구",
-                 font=(FONT, 11, "bold"), bg=BG, fg=TEXT).pack(
+                 font=(FONT, theme.fs(11), "bold"), bg=BG, fg=TEXT).pack(
             anchor="w", padx=16, pady=(12, 2))
         tk.Label(self, text="고르면 그 도구를 만드는 창이 이어서 열립니다.",
-                 font=(FONT, 8), bg=BG, fg=MUTED).pack(anchor="w", padx=16,
+                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(anchor="w", padx=16,
                                                        pady=(0, 8))
 
         body = tk.Frame(self, bg=BG, padx=16)
@@ -1442,7 +1449,7 @@ class _ToolPickDialog(tk.Toplevel):
         for key, name, desc in self._TOOLS:
             row = tk.Button(body, bg=CARD, bd=1, relief="solid", cursor="hand2",
                             anchor="w", justify="left", padx=10, pady=6,
-                            text=f"{name}\n{desc}", font=(FONT, 9),
+                            text=f"{name}\n{desc}", font=(FONT, theme.fs(9)),
                             fg=TEXT, activebackground=BORDER,
                             command=lambda k=key: self._pick(k))
             row.pack(fill="x", pady=2)
@@ -1451,9 +1458,9 @@ class _ToolPickDialog(tk.Toplevel):
         self.color = None
         crow = tk.Frame(self, bg=BG, padx=16)
         crow.pack(fill="x", pady=(6, 0))
-        tk.Label(crow, text="버튼 색", font=(FONT, 8), bg=BG,
+        tk.Label(crow, text="버튼 색", font=(FONT, theme.fs(8)), bg=BG,
                  fg=MUTED).pack(side="left", padx=(0, 6))
-        self._color_lbl = tk.Label(crow, text="기본", font=(FONT, 8),
+        self._color_lbl = tk.Label(crow, text="기본", font=(FONT, theme.fs(8)),
                                    bg=CARD, fg=TEXT, relief="solid", bd=1,
                                    padx=8, pady=2)
         self._color_lbl.pack(side="left")
@@ -1463,17 +1470,18 @@ class _ToolPickDialog(tk.Toplevel):
             sw.pack(side="left", padx=2)
             sw.bind("<Button-1>", lambda e, v=hexv: self._set_color(v))
             sw.config(cursor="hand2")
-        tk.Button(crow, text="직접", font=(FONT, 8), bg=CARD, bd=1,
+        tk.Button(crow, text="직접", font=(FONT, theme.fs(8)), bg=CARD, bd=1,
                   padx=6, pady=1, cursor="hand2",
                   command=self._custom_color).pack(side="left", padx=(4, 0))
 
-        tk.Button(self, text="취소", command=self.destroy, font=(FONT, 9),
+        tk.Button(self, text="취소", command=self.destroy, font=(FONT, theme.fs(9)),
                   bg="#e8e8ed", fg=TEXT, bd=0, padx=14, pady=5,
                   cursor="hand2").pack(anchor="e", padx=16, pady=12)
 
         self.update_idletasks()
         self.geometry(f"+{master.winfo_rootx()+60}+{master.winfo_rooty()+80}")
         self.grab_set()
+        ui_fx.attach_all(self)   # 창 안 모든 버튼에 호버 보간
 
     def _set_color(self, hexv):
         self.color = hexv
@@ -1491,4 +1499,6 @@ class _ToolPickDialog(tk.Toplevel):
 
 
 def open_settings(master, on_saved=None):
-    return SettingsWindow(master, on_saved=on_saved)
+    win = SettingsWindow(master, on_saved=on_saved)
+    ui_fx.attach_all(win)               # 창 안 모든 버튼에 호버 보간
+    return win

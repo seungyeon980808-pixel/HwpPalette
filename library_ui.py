@@ -22,6 +22,7 @@ import builtin_chars
 import settings
 
 import theme                       # 색은 theme.py 한 곳에서 (밝게/어둡게)
+import ui_fx                       # 호버 보간 (애플 A안)
 
 _C = theme.colors()
 BG = _C["bg"]
@@ -122,10 +123,10 @@ class StyleFieldDialog(tk.Toplevel):
         self.attributes("-topmost", True)
 
         tk.Label(self, text="선택 영역에서 어떤 항목을 저장할까요?",
-                 font=(FONT, 10, "bold"), bg=BG, fg=TEXT).pack(
+                 font=(FONT, theme.fs(10), "bold"), bg=BG, fg=TEXT).pack(
                  anchor="w", padx=16, pady=(14, 2))
         tk.Label(self, text="체크한 항목만 저장돼, 나중에 그 항목만 다른 글자에 입혀집니다.",
-                 font=(FONT, 8), bg=BG, fg=MUTED).pack(anchor="w", padx=16, pady=(0, 10))
+                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(anchor="w", padx=16, pady=(0, 10))
 
         self.vars = {}
         body = tk.Frame(self, bg=BG, padx=16)
@@ -133,22 +134,23 @@ class StyleFieldDialog(tk.Toplevel):
         for label in engine_library.CHARSHAPE_FIELD_LABELS:
             v = tk.BooleanVar(value=False)
             self.vars[label] = v
-            tk.Checkbutton(body, text=label, variable=v, font=(FONT, 10),
+            tk.Checkbutton(body, text=label, variable=v, font=(FONT, theme.fs(10)),
                            bg=BG, fg=TEXT, activebackground=BG,
                            selectcolor=CARD, cursor="hand2").pack(anchor="w", pady=2)
 
         foot = tk.Frame(self, bg=BG, padx=16, pady=14)
         foot.pack(fill="x")
         tk.Button(foot, text="다음", command=self._ok,
-                  font=(FONT, 10, "bold"), bg=ACCENT, fg="white", bd=0,
+                  font=(FONT, theme.fs(10), "bold"), bg=ACCENT, fg="white", bd=0,
                   padx=16, pady=6, cursor="hand2").pack(side="right")
         tk.Button(foot, text="취소", command=self.destroy,
-                  font=(FONT, 10), bg="#e8e8ed", fg=TEXT, bd=0,
+                  font=(FONT, theme.fs(10)), bg="#e8e8ed", fg=TEXT, bd=0,
                   padx=16, pady=6, cursor="hand2").pack(side="right", padx=(0, 6))
 
         self.update_idletasks()
         self.geometry(f"+{master.winfo_rootx()+40}+{master.winfo_rooty()+40}")
         self.grab_set()
+        ui_fx.attach_all(self)   # 창 안 모든 버튼에 호버 보간
 
     def _ok(self):
         checked = [k for k, v in self.vars.items() if v.get()]
@@ -176,11 +178,11 @@ class MetaDialog(tk.Toplevel):
         body.pack(fill="x")
 
         # ── 이름만 물어본다. 라벨·분류는 대부분 기본값이면 충분하므로 접어둠 ──
-        tk.Label(body, text="이름", font=(FONT, 9), bg=BG, fg=TEXT).grid(
+        tk.Label(body, text="이름", font=(FONT, theme.fs(9)), bg=BG, fg=TEXT).grid(
             row=0, column=0, sticky="w", pady=3)
         self.name_var = tk.StringVar(value=name)
         name_entry = tk.Entry(body, textvariable=self.name_var, width=26,
-                              font=(FONT, 10), relief="solid", bd=1)
+                              font=(FONT, theme.fs(10)), relief="solid", bd=1)
         name_entry.grid(row=0, column=1, pady=3, padx=(8, 0))
         name_entry.focus_set()
         name_entry.bind("<Return>", lambda e: self._ok())
@@ -193,36 +195,36 @@ class MetaDialog(tk.Toplevel):
 
         self.label_var = tk.StringVar(value=label)
         self.group_var = tk.StringVar(value=library.DEFAULT_GROUP)
-        self._preview = tk.Label(body, text="", font=(FONT, 8), bg=BG, fg=ACCENT)
+        self._preview = tk.Label(body, text="", font=(FONT, theme.fs(8)), bg=BG, fg=ACCENT)
         self._preview.grid(row=1, column=1, sticky="w", padx=(8, 0))
         self.name_var.trace_add("write", lambda *a: self._update_preview())
         self.label_var.trace_add("write", lambda *a: self._update_preview())
 
         if extra_note:
-            tk.Label(body, text=extra_note, font=(FONT, 8), bg=BG, fg=MUTED,
+            tk.Label(body, text=extra_note, font=(FONT, theme.fs(8)), bg=BG, fg=MUTED,
                      wraplength=320, justify="left").grid(
                 row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         # ── 자세히 (라벨·분류) — 필요할 때만 펼침 ──
         self._adv_open = False
         self._adv = tk.Frame(self, bg=BG, padx=16)
-        tk.Label(self._adv, text="마크다운 라벨", font=(FONT, 9), bg=BG,
+        tk.Label(self._adv, text="마크다운 라벨", font=(FONT, theme.fs(9)), bg=BG,
                  fg=TEXT).grid(row=0, column=0, sticky="w", pady=3)
         self.label_entry = tk.Entry(self._adv, textvariable=self.label_var,
-                                    width=24, font=(FONT, 10), relief="solid", bd=1)
+                                    width=24, font=(FONT, theme.fs(10)), relief="solid", bd=1)
         self.label_entry.grid(row=0, column=1, pady=3, padx=(8, 0))
         self.label_entry.bind("<KeyRelease>", lambda e: self._update_preview())
         tk.Label(self._adv, text="비우면 이름을 그대로 씁니다.",
-                 font=(FONT, 7), bg=BG, fg=MUTED).grid(
+                 font=(FONT, theme.fs(7)), bg=BG, fg=MUTED).grid(
             row=1, column=1, sticky="w", padx=(8, 0))
-        tk.Label(self._adv, text="분류", font=(FONT, 9), bg=BG, fg=TEXT).grid(
+        tk.Label(self._adv, text="분류", font=(FONT, theme.fs(9)), bg=BG, fg=TEXT).grid(
             row=2, column=0, sticky="w", pady=3)
         ttk.Combobox(self._adv, textvariable=self.group_var, width=21,
-                     values=library.list_groups(), font=(FONT, 10)).grid(
+                     values=library.list_groups(), font=(FONT, theme.fs(10))).grid(
             row=2, column=1, pady=3, padx=(8, 0))
 
         self._adv_btn = tk.Button(self, text="▸ 자세히 (라벨·분류)",
-                                  command=self._toggle_adv, font=(FONT, 8),
+                                  command=self._toggle_adv, font=(FONT, theme.fs(8)),
                                   fg=MUTED, bg=BG, activebackground=BG,
                                   bd=0, cursor="hand2", anchor="w")
         self._adv_btn.pack(fill="x", padx=16)
@@ -230,10 +232,10 @@ class MetaDialog(tk.Toplevel):
         foot = tk.Frame(self, bg=BG, padx=16, pady=12)
         foot.pack(fill="x")
         tk.Button(foot, text="저장", command=self._ok,
-                  font=(FONT, 10, "bold"), bg=ACCENT, fg="white", bd=0,
+                  font=(FONT, theme.fs(10), "bold"), bg=ACCENT, fg="white", bd=0,
                   padx=16, pady=6, cursor="hand2").pack(side="right")
         tk.Button(foot, text="취소", command=self.destroy,
-                  font=(FONT, 10), bg="#e8e8ed", fg=TEXT, bd=0,
+                  font=(FONT, theme.fs(10)), bg="#e8e8ed", fg=TEXT, bd=0,
                   padx=16, pady=6, cursor="hand2").pack(side="right", padx=(0, 6))
 
         self._update_preview()
@@ -241,6 +243,7 @@ class MetaDialog(tk.Toplevel):
         self.update_idletasks()
         self.geometry(f"+{master.winfo_rootx()+40}+{master.winfo_rooty()+60}")
         self.grab_set()
+        ui_fx.attach_all(self)   # 창 안 모든 버튼에 호버 보간
 
     def _toggle_adv(self):
         if self._adv_open:
@@ -383,10 +386,10 @@ class TextInputDialog(tk.Toplevel):
         self.attributes("-topmost", True)
 
         tk.Label(self, text="저장할 내용을 입력하세요 (한글에서 선택했다면 자동으로 채워집니다)",
-                 font=(FONT, 9), bg=BG, fg=MUTED, justify="left").pack(
+                 font=(FONT, theme.fs(9)), bg=BG, fg=MUTED, justify="left").pack(
                  anchor="w", padx=16, pady=(14, 6))
 
-        self.text = tk.Text(self, width=44, height=5, font=(FONT, 10),
+        self.text = tk.Text(self, width=44, height=5, font=(FONT, theme.fs(10)),
                              wrap="word", relief="solid", bd=1)
         self.text.pack(padx=16)
         self.text.insert("1.0", prefill)
@@ -394,15 +397,16 @@ class TextInputDialog(tk.Toplevel):
         foot = tk.Frame(self, bg=BG, padx=16, pady=14)
         foot.pack(fill="x")
         tk.Button(foot, text="다음", command=self._ok,
-                  font=(FONT, 10, "bold"), bg=ACCENT, fg="white", bd=0,
+                  font=(FONT, theme.fs(10), "bold"), bg=ACCENT, fg="white", bd=0,
                   padx=16, pady=6, cursor="hand2").pack(side="right")
         tk.Button(foot, text="취소", command=self.destroy,
-                  font=(FONT, 10), bg="#e8e8ed", fg=TEXT, bd=0,
+                  font=(FONT, theme.fs(10)), bg="#e8e8ed", fg=TEXT, bd=0,
                   padx=16, pady=6, cursor="hand2").pack(side="right", padx=(0, 6))
 
         self.update_idletasks()
         self.geometry(f"+{master.winfo_rootx()+40}+{master.winfo_rooty()+40}")
         self.grab_set()
+        ui_fx.attach_all(self)   # 창 안 모든 버튼에 호버 보간
 
     def _ok(self):
         commit_ime(self)                # 조합 중인 마지막 글자가 빠지지 않게
@@ -420,7 +424,7 @@ class LibraryManager(tk.Toplevel):
         self.attributes("-topmost", True)
         self.current_cat = "서식"
 
-        tk.Label(self, text="내 라이브러리", font=(FONT, 12, "bold"),
+        tk.Label(self, text="내 라이브러리", font=(FONT, theme.fs(12), "bold"),
                  bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(14, 2))
 
         # 탭 버튼
@@ -428,37 +432,37 @@ class LibraryManager(tk.Toplevel):
         tab_row.pack(fill="x", pady=(4, 0))
         self.tab_btns = {}
         for cat in TABS:
-            b = tk.Button(tab_row, text=cat, font=(FONT, 10, "bold"),
+            b = tk.Button(tab_row, text=cat, font=(FONT, theme.fs(10), "bold"),
                           bd=0, padx=14, pady=8, cursor="hand2",
                           command=lambda c=cat: self._switch_tab(c))
             b.pack(side="left", padx=(0, 4))
             self.tab_btns[cat] = b
 
-        self.desc_label = tk.Label(self, font=(FONT, 8), bg=BG, fg=MUTED,
+        self.desc_label = tk.Label(self, font=(FONT, theme.fs(8)), bg=BG, fg=MUTED,
                                     justify="left", wraplength=420)
         self.desc_label.pack(anchor="w", padx=16, pady=(6, 8))
 
         # 검색 + 분류 필터
         filter_row = tk.Frame(self, bg=BG, padx=16)
         filter_row.pack(fill="x")
-        tk.Label(filter_row, text="검색", font=(FONT, 8), fg=MUTED, bg=BG).pack(side="left")
+        tk.Label(filter_row, text="검색", font=(FONT, theme.fs(8)), fg=MUTED, bg=BG).pack(side="left")
         self.search_var = tk.StringVar(value="")
         se = tk.Entry(filter_row, textvariable=self.search_var, width=14,
-                      font=(FONT, 9), relief="solid", bd=1)
+                      font=(FONT, theme.fs(9)), relief="solid", bd=1)
         se.pack(side="left", padx=(6, 12))
         self.search_var.trace_add("write", lambda *a: self._refresh())
-        self.group_lbl = tk.Label(filter_row, text="분류", font=(FONT, 8),
+        self.group_lbl = tk.Label(filter_row, text="분류", font=(FONT, theme.fs(8)),
                                    fg=MUTED, bg=BG)
         self.group_lbl.pack(side="left")
         self.group_filter = tk.StringVar(value="전체")
         self.group_combo = ttk.Combobox(filter_row, textvariable=self.group_filter,
-                                        width=14, state="readonly", font=(FONT, 9))
+                                        width=14, state="readonly", font=(FONT, theme.fs(9)))
         self.group_combo.pack(side="left", padx=(6, 0))
         self.group_combo.bind("<<ComboboxSelected>>",
                               lambda e: self._refresh())
 
         # 추가 버튼(탭마다 동작이 다름)
-        self.add_btn = tk.Button(self, font=(FONT, 9, "bold"), bg="#e8e8ed",
+        self.add_btn = tk.Button(self, font=(FONT, theme.fs(9), "bold"), bg="#e8e8ed",
                                   fg=TEXT, bd=0, padx=10, pady=8, cursor="hand2")
         self.add_btn.pack(fill="x", padx=16)
 
@@ -466,19 +470,19 @@ class LibraryManager(tk.Toplevel):
         share_row = tk.Frame(self, bg=BG, padx=16)
         share_row.pack(fill="x", pady=(6, 0))
         tk.Button(share_row, text="이 탭 내보내기", command=self._export_tab,
-                  font=(FONT, 8), fg=TEXT, bg=CARD, activebackground=BORDER,
+                  font=(FONT, theme.fs(8)), fg=TEXT, bg=CARD, activebackground=BORDER,
                   bd=1, padx=8, pady=4, cursor="hand2").pack(side="left")
         tk.Button(share_row, text="가져오기", command=self._import_archive,
-                  font=(FONT, 8), fg=TEXT, bg=CARD, activebackground=BORDER,
+                  font=(FONT, theme.fs(8)), fg=TEXT, bg=CARD, activebackground=BORDER,
                   bd=1, padx=8, pady=4, cursor="hand2").pack(side="left", padx=(6, 0))
 
         # 사진 폴더 — \사진이름\ 으로 그림을 부르는 폴더 (등록 없이 파일 이름으로)
         photo_row = tk.Frame(self, bg=BG, padx=16)
         photo_row.pack(fill="x", pady=(6, 0))
         tk.Button(photo_row, text="사진 폴더", command=self._pick_photo_dir,
-                  font=(FONT, 8), fg=TEXT, bg=CARD, activebackground=BORDER,
+                  font=(FONT, theme.fs(8)), fg=TEXT, bg=CARD, activebackground=BORDER,
                   bd=1, padx=8, pady=4, cursor="hand2").pack(side="left")
-        self.photo_dir_lbl = tk.Label(photo_row, font=(FONT, 8), bg=BG, fg=MUTED,
+        self.photo_dir_lbl = tk.Label(photo_row, font=(FONT, theme.fs(8)), bg=BG, fg=MUTED,
                                       anchor="w")
         self.photo_dir_lbl.pack(side="left", padx=(8, 0), fill="x", expand=True)
         self._refresh_photo_dir_label()
@@ -537,14 +541,15 @@ class LibraryManager(tk.Toplevel):
             results = builtin_chars.search(query)
             if not results:
                 tk.Label(self.list_area, text="검색 결과가 없습니다.",
-                         font=(FONT, 9), bg=BG, fg=MUTED).pack(anchor="w", pady=8)
+                         font=(FONT, theme.fs(9)), bg=BG, fg=MUTED).pack(anchor="w", pady=8)
                 return
             for label, text, group in results[:200]:
                 self._render_builtin_row(label, text, group)
             if len(results) > 200:
                 tk.Label(self.list_area,
                          text=f"…외 {len(results)-200}개 (검색으로 좁혀주세요)",
-                         font=(FONT, 8), bg=BG, fg=MUTED).pack(anchor="w", pady=4)
+                         font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(anchor="w", pady=4)
+            ui_fx.attach_all(self.list_area)   # 새 행 버튼들에 호버 보간
             return
 
         # 분류 콤보 갱신 (선택 유지)
@@ -563,10 +568,12 @@ class LibraryManager(tk.Toplevel):
             items = [it for it in items if ql in self._search_blob(cat, it)]
         if not items:
             tk.Label(self.list_area, text="해당하는 항목이 없습니다.",
-                     font=(FONT, 9), bg=BG, fg=MUTED).pack(anchor="w", pady=8)
+                     font=(FONT, theme.fs(9)), bg=BG, fg=MUTED).pack(anchor="w", pady=8)
             return
         for item in items:
             self._render_row(cat, item)
+        # 새로 만든 행 버튼들에 호버 보간 — 이미 붙은 것은 건너뛴다
+        ui_fx.attach_all(self.list_area)
 
     def _search_blob(self, cat, item):
         parts = [item.get("name", ""), item.get("label", ""),
@@ -581,11 +588,11 @@ class LibraryManager(tk.Toplevel):
         row.pack(fill="x", pady=2)
         info = tk.Frame(row, bg=ROWBG, padx=10, pady=5)
         info.pack(side="left", fill="both", expand=True)
-        tk.Label(info, text=text, font=(FONT, 13), bg=ROWBG, fg=TEXT,
+        tk.Label(info, text=text, font=(FONT, theme.fs(13)), bg=ROWBG, fg=TEXT,
                  anchor="w").pack(side="left")
-        tk.Label(info, text=f"  \\{label}\\  · {group}", font=(FONT, 8),
+        tk.Label(info, text=f"  \\{label}\\  · {group}", font=(FONT, theme.fs(8)),
                  bg=ROWBG, fg=MUTED, anchor="w").pack(side="left")
-        tk.Button(row, text="삽입", font=(FONT, 9), bg=ACCENT, fg="white",
+        tk.Button(row, text="삽입", font=(FONT, theme.fs(9)), bg=ACCENT, fg="white",
                   bd=0, padx=10, pady=5, cursor="hand2",
                   command=lambda t=text: self._insert_builtin(t)).pack(
                   side="right", padx=8)
@@ -609,13 +616,13 @@ class LibraryManager(tk.Toplevel):
             t = item["text"].replace("\n", " ")
             title = (t if len(t) <= ROW_PREVIEW_MAX
                      else t[:ROW_PREVIEW_MAX] + "…")
-            title_font = (FONT, 12)
+            title_font = (FONT, theme.fs(12))
         else:
             title = item["name"]
-            title_font = (FONT, 10, "bold")
+            title_font = (FONT, theme.fs(10), "bold")
         tk.Label(info, text=title, font=title_font,
                  bg=ROWBG, fg=TEXT, anchor="w").pack(anchor="w")
-        tk.Label(info, text=self._summary(cat, item), font=(FONT, 8),
+        tk.Label(info, text=self._summary(cat, item), font=(FONT, theme.fs(8)),
                  bg=ROWBG, fg=MUTED, anchor="w", wraplength=260,
                  justify="left").pack(anchor="w")
 
@@ -626,13 +633,13 @@ class LibraryManager(tk.Toplevel):
         btns = tk.Frame(row, bg=ROWBG, padx=8)
         btns.pack(side="right")
         action_label = {"서식": "적용", "양식": "열기"}.get(cat, "삽입")
-        tk.Button(btns, text=action_label, font=(FONT, 9), bg=ACCENT, fg="white",
+        tk.Button(btns, text=action_label, font=(FONT, theme.fs(9)), bg=ACCENT, fg="white",
                   bd=0, padx=10, pady=5, cursor="hand2",
                   command=lambda: self._act(cat, item)).pack(side="left", padx=2)
-        tk.Button(btns, text="✎", font=(FONT, 9), bg=CARD, fg=TEXT,
+        tk.Button(btns, text="✎", font=(FONT, theme.fs(9)), bg=CARD, fg=TEXT,
                   bd=1, padx=8, pady=4, cursor="hand2",
                   command=lambda: self._edit(cat, item)).pack(side="left", padx=2)
-        tk.Button(btns, text="삭제", font=(FONT, 9), bg="#e8e8ed", fg=TEXT,
+        tk.Button(btns, text="삭제", font=(FONT, theme.fs(9)), bg="#e8e8ed", fg=TEXT,
                   bd=0, padx=10, pady=5, cursor="hand2",
                   command=lambda: self._delete(cat, item)).pack(side="left", padx=2)
 
@@ -897,6 +904,7 @@ class LibraryManager(tk.Toplevel):
 def open_manager(master, on_saved=None, cat=None):
     """라이브러리 창을 연다. cat 을 주면 그 탭으로 바로 연다 ('내장' 등)."""
     win = LibraryManager(master, on_saved=on_saved)
+    ui_fx.attach_all(win)              # 상단 탭·버튼에도 호버 보간
     if cat in TABS:
         try:
             win._refresh(cat)

@@ -90,14 +90,42 @@ hwp_engine.set_active_spec(settings.get_active_spec())
 library.cleanup_temp_fragments()
 
 
+# ── 창 하나만 (2026-07-25) ──────────────────────────────
+# 버튼을 두 번 누르면 같은 창이 두 개 떠서, 한쪽에서 고친 것이 다른 쪽에
+# 안 보이는 혼란이 있었다. 이미 떠 있으면 새로 만들지 않고 **그 창을 앞으로**.
+_open_windows = {}
+
+
+def _single(key, make):
+    win = _open_windows.get(key)
+    try:
+        if win is not None and win.winfo_exists():
+            win.deiconify()
+            win.lift()
+            win.focus_force()
+            return win
+    except Exception:
+        pass                        # 파괴된 참조 — 새로 만든다
+    win = make()
+    _open_windows[key] = win
+    return win
+
+
 def fn_open_library(cat=None):
     """라이브러리 창. cat 을 주면 그 탭으로 바로 연다 (특수문자 → '내장')."""
-    library_ui.open_manager(root, cat=cat)
+    win = _single("library", lambda: library_ui.open_manager(root, cat=cat))
+    # 이미 떠 있던 창이라도 요청한 탭('내장' 등)으로는 이동시킨다
+    if cat:
+        try:
+            win._refresh(cat)
+        except Exception as e:
+            applog.exc(f"라이브러리 '{cat}' 탭 이동 실패 (무해)", e)
+    return win
 
 
 def fn_open_form_fill():
     """양식 채우기 — 채울 자리를 뽑아 AI에 넘기고, 채운 걸 받아 넣는다."""
-    form_fill_ui.open_form_fill(root)
+    return _single("form_fill", lambda: form_fill_ui.open_form_fill(root))
 
 
 # ── 한컴 연결 ───────────────────────────────────────────
@@ -359,7 +387,8 @@ def fn_reset_format():
 
 
 def fn_open_palette_settings():
-    palette_ui.open_settings(root, on_saved=render_palette)
+    return _single("settings",
+                   lambda: palette_ui.open_settings(root, on_saved=render_palette))
 
 
 def fn_pick_photo():
@@ -463,7 +492,8 @@ SCALE = settings.get_ui_scale()
 
 
 def _font(size, weight=None):
-    n = max(7, int(round(size * SCALE)) + theme.FONT_BOOST)
+    # 배율(25% 확대)과 Pretendard 보정은 theme.fs 한 곳에서 — 다른 창들과 같은 규칙
+    n = theme.fs(int(round(size * SCALE)))
     return (FONT, n) if weight is None else (FONT, n, weight)
 
 
@@ -535,7 +565,8 @@ _misc_btn(misc_row, "사용법", lambda: _toggle_guide()).pack(
 # 알림은 **작업 중 눈이 가는 위쪽**에 있어야 보인다. 누르면 지난 알림이 펼쳐진다.
 # 초기값을 짧게 두는 이유: 이 줄의 일은 '방금 무슨 일이 있었는지'를 말하는 것이라
 # 늘 같은 안내가 박혀 있으면 정작 알림이 와도 눈에 안 들어온다.
-status_var = tk.StringVar(value="준비됨")
+# 초기 문구는 _poll_connection 이 연결 상태로 채운다 ('준비됨'은 뜻이 없었다)
+status_var = tk.StringVar(value="")
 status_lbl = tk.Label(misc_row, textvariable=status_var, font=_font(8),
                       fg=MUTED, bg=CARD, cursor="hand2", anchor="e")
 status_lbl.pack(side="right")
@@ -616,10 +647,46 @@ def _toggle_guide():
         # 창 맨 아래(저작권 밑)에 붙는다. 안내는 설정 줄 바로 밑이어야 한다.
         guide_body.pack(fill="x", padx=10, pady=(6, 0), before=common_zone)
         _guide_open[0] = True
-    # 접은 뒤 창을 내용 크기로 되돌린다. update_idletasks 로 배치를 먼저
-    # 확정시켜야 geometry("") 가 **줄어든 크기**를 보고 맞춘다.
+    # 창 높이를 **이징으로** 목표까지 옮긴다 (2026-07-25). 한 번에 튀면
+    # 화면이 순간 이동한 것처럼 보여 '버벅인다'고 느껴진다.
     root.update_idletasks()
-    root.geometry("")
+    _glide_to_height(root.winfo_reqheight())
+
+
+_glide_job = [None]
+
+
+def _glide_to_height(target):
+    """창 높이를 ease-out 으로 target 까지. 끝나면 자연 크기로 복귀."""
+    if _glide_job[0] is not None:
+        try:
+            root.after_cancel(_glide_job[0])
+        except Exception:
+            pass
+        _glide_job[0] = None
+    start = root.winfo_height()
+    width = root.winfo_width()
+    if abs(target - start) < 4:             # 티도 안 나는 거리 — 바로 맞춘다
+        root.geometry("")
+        return
+
+    def step(k):
+        _glide_job[0] = None
+        t = ui_fx.ease_out(k / ui_fx.STEPS)
+        h = int(start + (target - start) * t)
+        try:
+            if k < ui_fx.STEPS:
+                root.geometry(f"{width}x{h}")
+                _glide_job[0] = root.after(ui_fx.INTERVAL_MS,
+                                           lambda: step(k + 1))
+            else:
+                # 마지막엔 '내용에 맞춤'으로 되돌린다 — 고정 크기로 남겨두면
+                # 이후 탭 전환 때 창이 내용을 안 따라간다
+                root.geometry("")
+        except Exception:
+            root.geometry("")
+
+    step(1)
 
 # 문항 번호 — UI 는 없앴다(사용자 결정 2026-07-19). 시험문제 변환이 여전히
 # 번호를 쓰므로 변수만 남겨 자동 증가한다. 초기화는 프로그램 재시작.
@@ -711,27 +778,58 @@ def _select_pal_tab(i):
         except Exception:
             pass
     _render_current_tab()
+    root.after_idle(_fit_window)        # 탭마다 격자 크기가 달라 창도 맞춘다
+
+
+def _fit_window():
+    """창 크기를 내용에 맞춘다 — 이미 맞으면 건드리지 않는다.
+
+    geometry("") 는 매번 창을 다시 배치해, 탭만 바꿔도 창 전체가 한 번
+    번쩍였다 (2026-07-25). 크기가 실제로 달라질 때만 부른다.
+    """
+    try:
+        need = (root.winfo_reqwidth(), root.winfo_reqheight())
+        if need != (root.winfo_width(), root.winfo_height()):
+            root.geometry("")
+    except Exception:
+        root.geometry("")
 
 
 def _render_current_tab(tabs=None):
-    """지금 탭의 블럭만 다시 그린다 (탭 줄·공통도구는 건드리지 않는다).
+    r"""지금 탭의 격자를 보여준다 — **탭마다 한 번만 그리고 재사용한다**.
 
-    탭 전환에서 이것만 부르면 화면의 나머지가 그대로 있어 깜빡임이 없다.
+    부수고 다시 그리면 그 사이 빈 화면이 한 프레임 비쳐 전환마다 번쩍였다
+    (2026-07-25, '엄청나게 버벅거린다'의 원인). 격자를 탭별로 캐시에 들고
+    있다가 pack_forget/pack 만 하면 이미 그려진 픽셀이 그대로 나타난다.
+    캐시는 render_palette(설정 변경 시 전체 재빌드)가 비운다.
     """
     if tabs is None:
         tabs = [t for t in palette.load_tabs()
                 if t.get("name") != palette.MAIN_TAB]
-    for w in pal_area.winfo_children():
-        w.destroy()
     if not tabs:
         return
     cur = min(_pal_state["tab"], len(tabs) - 1)
-    tab = tabs[cur]
-    if not tab.get("blocks"):
-        tk.Label(pal_area, text="이 탭에 블럭이 없습니다. ‘설정’으로 추가하세요.",
-                 font=_font(8), fg=MUTED, bg=SUBBG).pack(anchor="w")
-    else:
-        _render_block_grid(pal_area, tab)
+
+    shown = _pal_state.get("shown_frame")
+    if shown is not None:
+        try:
+            shown.pack_forget()
+        except Exception:
+            pass
+
+    cache = _pal_state.setdefault("tab_frames", {})
+    frame = cache.get(cur)
+    if frame is None or not frame.winfo_exists():
+        frame = tk.Frame(pal_area, bg=SUBBG)
+        tab = tabs[cur]
+        if not tab.get("blocks"):
+            tk.Label(frame, text="이 탭에 블럭이 없습니다. ‘설정’으로 추가하세요.",
+                     font=_font(8), fg=MUTED, bg=SUBBG).pack(anchor="w")
+        else:
+            _render_block_grid(frame, tab)
+        cache[cur] = frame
+    frame.pack(anchor="w", fill="x")
+    _pal_state["shown_frame"] = frame
 
 
 def _render_block_grid(parent, tab):
@@ -770,6 +868,10 @@ def _render_block_grid(parent, tab):
 
 
 def render_palette():
+    # 전체 재빌드 (설정 저장·시작 시). 탭 격자 캐시도 여기서 비운다 —
+    # 블럭이 바뀌었을 수 있으므로 묵은 격자를 재사용하면 안 된다.
+    _pal_state["tab_frames"] = {}
+    _pal_state["shown_frame"] = None
     for w in pal_tabbar.winfo_children():
         w.destroy()
     for w in pal_area.winfo_children():
@@ -832,19 +934,7 @@ def render_palette():
     # 같은 창을 열어 두 곳에 있었다. 위쪽 하나로 모은다.
 
     _render_current_tab(tabs)
-
-    # 창 크기를 내용(격자 끝)에 맞춘다 — 칸 수를 바꾸면 창도 따라 변한다.
-    # 크기가 그대로면 건드리지 않는다 (2026-07-25): geometry("") 는 매번 창을
-    # 다시 배치해, 탭만 바꿔도 창 전체가 한 번 번쩍였다.
-    def _fit():
-        try:
-            need = (root.winfo_reqwidth(), root.winfo_reqheight())
-            if need != (root.winfo_width(), root.winfo_height()):
-                root.geometry("")
-        except Exception:
-            root.geometry("")
-
-    root.after_idle(_fit)
+    root.after_idle(_fit_window)
 
 
 # 블럭 종류별 배경색·기호 — 환경설정 미리보기(palette_ui._make_tile/_tile_text)와
@@ -855,8 +945,9 @@ _BLOCK_COLOR = theme.block_colors()
 
 # 팔레트 한 칸의 한 변(px). 칸은 정사각형이고, **칸 수에 맞춰 크기가 변한다** —
 # 고정 크기로 두면 칸 수가 적을 때 오른쪽에 빈 공간이 크게 남는다.
-_BLOCK_CELL_MAX_PX = 34   # SCALE 적용 전 기준값     # 칸 수가 적어도 이보다 크게는 안 키운다
-_BLOCK_CELL_MIN_PX = 16     # 칸 수가 많아도 이보다 작아지면 못 누른다
+# 글자를 25% 키우면서 칸도 같이 키웠다 (34→42) — 안 키우면 두 줄 이름이 넘친다
+_BLOCK_CELL_MAX_PX = 42   # SCALE 적용 전 기준값     # 칸 수가 적어도 이보다 크게는 안 키운다
+_BLOCK_CELL_MIN_PX = 20     # 칸 수가 많아도 이보다 작아지면 못 누른다
 _BLOCK_GAP_PX = 2
 # 창 폭을 재서 칸을 맞추던 값들은 필요 없어졌다 (2026-07-25) — 이제 칸 크기가
 # 먼저이고 창이 따라간다. 격자가 창 폭을 결정하므로 여백 상수도 쓰지 않는다.
@@ -1184,6 +1275,12 @@ def _poll_connection():
         conn_dot.config(fg="#34c759" if ok else "#c7c7cc")
         _tip(conn_dot, "한글에 연결됨" if ok else
              "한글에 연결 안 됨 — 버튼을 누르면 연결을 시도합니다")
+        # 알림이 아직 없을 때는 이 줄이 **연결 상태**를 말로 풀어 준다 (2026-07-25).
+        # 예전 초기값 '준비됨'은 무엇이 준비됐다는 건지 알 수 없었다. 표시등(●)의
+        # 뜻을 글로 쓰면 초록 점을 모르는 사람도 읽고, 알림이 오면 그때부터는
+        # notify 가 이 줄을 가져간다.
+        if not _notices:
+            status_var.set("한글 연결됨" if ok else "한글을 켜면 연결됩니다")
     except Exception:
         pass
     root.after(2000, _poll_connection)

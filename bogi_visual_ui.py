@@ -68,7 +68,7 @@ class BogiVisualEditor(tk.Toplevel):
         right = tk.Frame(wrap, bg=BG)
         right.grid(row=0, column=1, sticky="n")
         tk.Label(right, text=f"양식: {settings.get_active_name()}",
-                 font=(FONT, 9, "bold"), fg=ACCENT, bg=BG).pack(anchor="w", pady=(0, 8))
+                 font=(FONT, theme.fs(9), "bold"), fg=ACCENT, bg=BG).pack(anchor="w", pady=(0, 8))
 
         for key, label, lo, hi, step, unit in CONTROLS:
             self._add_slider(right, key, label, lo, hi, step, unit)
@@ -77,20 +77,20 @@ class BogiVisualEditor(tk.Toplevel):
                  text="슬라이더를 만지면 도식이 바로 바뀌고,\n"
                       "지금 값이 파란 화살표로 강조됩니다.\n"
                       "높이는 '최소값'이라 내용이 크면 늘어납니다.",
-                 font=(FONT, 8), fg=MUTED, bg=BG, justify="left").pack(
+                 font=(FONT, theme.fs(8)), fg=MUTED, bg=BG, justify="left").pack(
                  anchor="w", pady=(10, 0))
 
         # 하단 버튼
         foot = tk.Frame(self, bg=BG, padx=14, pady=8)
         foot.pack(fill="x", pady=(0, 8))
         tk.Button(foot, text="🖼 실제 한글에 미리 삽입", command=self._preview_hwp,
-                  font=(FONT, 9), bg="#e8e8ed", fg=TEXT, bd=0, padx=12, pady=7,
+                  font=(FONT, theme.fs(9)), bg="#e8e8ed", fg=TEXT, bd=0, padx=12, pady=7,
                   cursor="hand2").pack(side="left")
         tk.Button(foot, text="💾 저장", command=self._save,
-                  font=(FONT, 10, "bold"), bg=ACCENT, fg="white", bd=0,
+                  font=(FONT, theme.fs(10), "bold"), bg=ACCENT, fg="white", bd=0,
                   padx=18, pady=7, cursor="hand2").pack(side="right")
         tk.Button(foot, text="닫기", command=self.destroy,
-                  font=(FONT, 10), bg="#e8e8ed", fg=TEXT, bd=0,
+                  font=(FONT, theme.fs(10)), bg="#e8e8ed", fg=TEXT, bd=0,
                   padx=16, pady=7, cursor="hand2").pack(side="right", padx=(0, 6))
 
         self.update_idletasks()
@@ -102,11 +102,11 @@ class BogiVisualEditor(tk.Toplevel):
         row.pack(fill="x", pady=3)
         head = tk.Frame(row, bg=BG)
         head.pack(fill="x")
-        tk.Label(head, text=label, font=(FONT, 9), fg=TEXT, bg=BG).pack(side="left")
+        tk.Label(head, text=label, font=(FONT, theme.fs(9)), fg=TEXT, bg=BG).pack(side="left")
         val = tk.DoubleVar(value=float(self.box.get(key, lo)))
         self.vars[key] = (val, unit)
         out = tk.Label(head, text=self._fmt(val.get(), unit),
-                       font=(FONT, 9, "bold"), fg=TEXT, bg=BG)
+                       font=(FONT, theme.fs(9), "bold"), fg=TEXT, bg=BG)
         out.pack(side="right")
 
         def on_change(v, k=key, o=out, u=unit):
@@ -163,7 +163,7 @@ class BogiVisualEditor(tk.Toplevel):
 
         def dlabel(x, y, t, k, anchor="w"):
             col = color(k)
-            font = (FONT, 8, "bold") if self.active == k else (FONT, 8)
+            font = (FONT, theme.fs(8), "bold") if self.active == k else (FONT, theme.fs(8))
             c.create_text(x, y, text=t, fill=col, font=font, anchor=anchor)
 
         # 내용 박스 테두리
@@ -173,11 +173,11 @@ class BogiVisualEditor(tk.Toplevel):
         tcx = boxL + boxW / 2
         c.create_rectangle(tcx - 26, title_y - 8, tcx + 26, title_y + 8,
                            outline="", fill=CARD)
-        c.create_text(tcx, title_y, text="〈보 기〉", fill=TEXT, font=(FONT, 10))
+        c.create_text(tcx, title_y, text="〈보 기〉", fill=TEXT, font=(FONT, theme.fs(10)))
         # ㄱㄴㄷ
         for i, lab in enumerate(["ㄱ.", "ㄴ.", "ㄷ."]):
             c.create_text(lx, ly0 + i * line_gap, text=lab, fill=TEXT,
-                          font=(FONT, 10), anchor="w")
+                          font=(FONT, theme.fs(10)), anchor="w")
 
         # 치수 화살표
         arrow(boxL + boxW + 16, c_top, boxL + boxW + 16, c_bot, "content_height_mm")
