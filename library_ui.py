@@ -1,13 +1,19 @@
 # -*- coding: utf-8 -*-
-"""개인 라이브러리 관리 창 (Toplevel) — 서식 / 문자 / 템플릿 3탭.
+r"""개인 라이브러리(물감 설정) 창 — 2026-07-25 재구축.
 
-각 탭은 독립적으로 "+추가"가 가능하다.
-- 서식: 한글에서 원하는 모양으로 글자를 선택해두고 [+ 캡처해서 추가] →
-  체크한 항목만 델타로 저장. 이후 [적용]은 선택 영역에 그 항목만 입힌다.
-- 문자: 문구를 직접 입력(또는 한글 선택 영역에서 자동 채움)해 이름 붙여 저장.
-  [삽입]으로 커서 위치에 그대로 삽입.
-- 템플릿: 한글에서 표·결재란 등 영역을 선택해두고 [+ 선택 영역을 템플릿으로
-  저장] → 통째로 조각 .hwp 파일로 보관. [삽입]으로 커서 위치에 그대로 삽입.
+화면 구조:
+    탭(서식·특수기호·템플릿·양식·사진·내장) → 검색·분류 필터 → 추가 버튼
+    → **스크롤 목록** (분류별로 접었다 펼 수 있는 표) → 하단 동작바
+
+예전 구조에서 바꾼 것 (사용자 결정):
+  · 행마다 붙어 있던 버튼 3개(적용·✎·삭제)를 **하단 동작바 하나**로 —
+    같은 버튼이 수십 번 반복돼 목록이 소음이 됐다.
+  · 스크롤이 없어 항목 20개면 창이 화면 밖으로 나가던 것 → Canvas 스크롤.
+  · 분류(그룹)별로 묶어 접기 — 자산이 늘어도 목록이 안 길어진다.
+  · 사진 폴더 지정이 메인에 상시 노출되던 것 → '사진' 탭 안으로.
+  · 내보내기/가져오기 → 메인 창 설정(⚙) 메뉴의 공유 대화상자로 (open_share).
+  · 탭의 저장 키(key)와 표시 이름(label)을 분리 — '문자'는 화면에서만
+    '특수기호'로 보인다. 저장 데이터(library.json)의 키는 영원히 그대로다.
 """
 
 import pathlib
@@ -24,6 +30,8 @@ import settings
 import appinfo
 import theme                       # 색은 theme.py 한 곳에서 (밝게/어둡게)
 import ui_fx                       # 호버 보간 (애플 A안)
+from roundbtn import RoundButton   # 둥근 모서리 버튼 (애플 A안)
+from popover import Popover        # 앱과 같은 얼굴의 팝업 메뉴
 
 _C = theme.colors()
 BG = _C["bg"]
@@ -33,24 +41,51 @@ TEXT = _C["text"]
 MUTED = _C["muted"]
 BORDER = _C["border"]
 ROWBG = _C["subbg"]
+SOFT = _C["yellow"]            # 옅은 회색 버튼 바탕 (예전 #e8e8ed 하드코딩)
+ACCENT_SOFT = _C["accent_soft"]    # 선택 행·켜진 칩의 옅은 파랑
 FONT = theme.FONT
+
+# 탭 정의 — key 는 저장 데이터(library.json)의 키라 **절대 불변**,
+# label 만 화면에 보인다. '문자'→'특수기호' 개명이 표시만 바뀌는 이유다.
+CATS = (
+    {"key": "서식",   "label": "서식"},
+    {"key": "문자",   "label": "특수기호"},
+    {"key": "템플릿", "label": "템플릿"},
+    {"key": "양식",   "label": "양식"},
+    {"key": "사진",   "label": "사진"},
+    {"key": "내장",   "label": "내장"},
+)
+CAT_LABEL = {c["key"]: c["label"] for c in CATS}
+TABS = tuple(c["key"] for c in CATS)    # open_manager(cat=...) 검사용
 
 TAB_DESC = {
     "서식": "문서에서 캡처한 글자 모양(굵기·색상·자간 등) 일부만 저장해 "
             "아무 글자에나 입히는 기능 "
             "— 팔레트의 '서식 조합'은 캡처 대신 목록에서 직접 고르는 쪽",
-    "문자": "특수문자나 자주 쓰는 문구를 저장해 바로 삽입하는 기능",
+    "문자": "특수기호나 자주 쓰는 문구를 저장해 바로 삽입하는 기능",
     "템플릿": "표·결재란처럼 문서 '일부'를 저장해 커서 자리에 꽂아 넣는 기능",
     "양식": "hwp 파일 '전체'를 저장해 새 문서로 여는 기능 "
             "(용지·여백·머리말까지 그대로 — 표지·통신문용)",
+    "사진": "연결한 폴더의 그림을 \\파일이름\\ 으로 부르거나 여기서 바로 삽입 "
+            "(하위 폴더는 읽지 않습니다)",
     "내장": "등록 없이 바로 쓰는 기본 기호. 문서에 \\원1\\ \\로마3\\ \\홑낫표\\ 로 호출",
 }
-
-TABS = ("서식", "문자", "템플릿", "양식", "내장")
 
 # 글자 수 상한 (개선안 23 — 흩어져 있던 매직넘버에 이름을 붙임)
 ROW_PREVIEW_MAX = 16     # 목록 행에 보여줄 내용 미리보기 길이
 AUTO_NAME_MAX = 10       # 문자 등록 시 내용에서 이름을 자동으로 뽑는 길이
+SUMMARY_MAX = 34         # 행 요약(한 줄)의 글자 수 상한
+LIST_H_PX = 360          # 스크롤 목록의 고정 높이
+
+
+def _dialog_btn(parent, text, command, primary=False, zone_bg=None):
+    """대화상자 공용 버튼 — 저장/확인은 파랑, 취소는 옅은 회색 (애플 A안)."""
+    font = (FONT, theme.fs(9), "bold") if primary else (FONT, theme.fs(9))
+    b = RoundButton(parent, text=text, command=command,
+                    bg=ACCENT if primary else SOFT,
+                    fg="white" if primary else TEXT, radius=7, font=font,
+                    outline="", zone_bg=zone_bg or parent.cget("bg"))
+    return b.fit(pad_x=16, pad_y=6)
 
 
 def ime_composing_text(widget):
@@ -141,12 +176,8 @@ class StyleFieldDialog(tk.Toplevel):
 
         foot = tk.Frame(self, bg=BG, padx=16, pady=14)
         foot.pack(fill="x")
-        tk.Button(foot, text="다음", command=self._ok,
-                  font=(FONT, theme.fs(10), "bold"), bg=ACCENT, fg="white", bd=0,
-                  padx=16, pady=6, cursor="hand2").pack(side="right")
-        tk.Button(foot, text="취소", command=self.destroy,
-                  font=(FONT, theme.fs(10)), bg="#e8e8ed", fg=TEXT, bd=0,
-                  padx=16, pady=6, cursor="hand2").pack(side="right", padx=(0, 6))
+        _dialog_btn(foot, "다음", self._ok, primary=True).pack(side="right")
+        _dialog_btn(foot, "취소", self.destroy).pack(side="right", padx=(0, 6))
 
         self.update_idletasks()
         self.geometry(f"+{master.winfo_rootx()+40}+{master.winfo_rooty()+40}")
@@ -232,12 +263,8 @@ class MetaDialog(tk.Toplevel):
 
         foot = tk.Frame(self, bg=BG, padx=16, pady=12)
         foot.pack(fill="x")
-        tk.Button(foot, text="저장", command=self._ok,
-                  font=(FONT, theme.fs(10), "bold"), bg=ACCENT, fg="white", bd=0,
-                  padx=16, pady=6, cursor="hand2").pack(side="right")
-        tk.Button(foot, text="취소", command=self.destroy,
-                  font=(FONT, theme.fs(10)), bg="#e8e8ed", fg=TEXT, bd=0,
-                  padx=16, pady=6, cursor="hand2").pack(side="right", padx=(0, 6))
+        _dialog_btn(foot, "저장", self._ok, primary=True).pack(side="right")
+        _dialog_btn(foot, "취소", self.destroy).pack(side="right", padx=(0, 6))
 
         self._update_preview()
         self._poll_preview()        # IME 조합 중 글자까지 실시간 반영
@@ -397,12 +424,8 @@ class TextInputDialog(tk.Toplevel):
 
         foot = tk.Frame(self, bg=BG, padx=16, pady=14)
         foot.pack(fill="x")
-        tk.Button(foot, text="다음", command=self._ok,
-                  font=(FONT, theme.fs(10), "bold"), bg=ACCENT, fg="white", bd=0,
-                  padx=16, pady=6, cursor="hand2").pack(side="right")
-        tk.Button(foot, text="취소", command=self.destroy,
-                  font=(FONT, theme.fs(10)), bg="#e8e8ed", fg=TEXT, bd=0,
-                  padx=16, pady=6, cursor="hand2").pack(side="right", padx=(0, 6))
+        _dialog_btn(foot, "다음", self._ok, primary=True).pack(side="right")
+        _dialog_btn(foot, "취소", self.destroy).pack(side="right", padx=(0, 6))
 
         self.update_idletasks()
         self.geometry(f"+{master.winfo_rootx()+40}+{master.winfo_rooty()+40}")
@@ -424,26 +447,32 @@ class LibraryManager(tk.Toplevel):
         self.resizable(False, False)
         self.attributes("-topmost", True)
         self.current_cat = "서식"
+        self._sel = None                # 지금 선택된 행 {"cat","item","row"}
+        self._collapsed = set()         # 접힌 분류 {(cat, group), ...}
+        self._builtin_group = "전체"     # 내장 탭의 그룹 칩 선택
 
         tk.Label(self, text="물감 설정", font=(FONT, theme.fs(12), "bold"),
                  bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(14, 2))
 
-        # 탭 버튼
+        # 탭 버튼 — 표시는 label, 내부는 key (저장 데이터 키와 한 몸)
         tab_row = tk.Frame(self, bg=BG, padx=16)
         tab_row.pack(fill="x", pady=(4, 0))
         self.tab_btns = {}
-        for cat in TABS:
-            b = tk.Button(tab_row, text=cat, font=(FONT, theme.fs(10), "bold"),
-                          bd=0, padx=14, pady=8, cursor="hand2",
-                          command=lambda c=cat: self._switch_tab(c))
+        for c in CATS:
+            b = RoundButton(tab_row, text=c["label"],
+                            command=lambda k=c["key"]: self._switch_tab(k),
+                            bg=CARD, fg=TEXT, radius=7,
+                            font=(FONT, theme.fs(9), "bold"), outline="",
+                            zone_bg=BG)
+            b.fit(pad_x=12, pad_y=6)
             b.pack(side="left", padx=(0, 4))
-            self.tab_btns[cat] = b
+            self.tab_btns[c["key"]] = b
 
         self.desc_label = tk.Label(self, font=(FONT, theme.fs(8)), bg=BG, fg=MUTED,
-                                    justify="left", wraplength=420)
+                                    justify="left", wraplength=440)
         self.desc_label.pack(anchor="w", padx=16, pady=(6, 8))
 
-        # 검색 + 분류 필터
+        # 검색 + 분류 필터 (+ 분류 관리)
         filter_row = tk.Frame(self, bg=BG, padx=16)
         filter_row.pack(fill="x")
         tk.Label(filter_row, text="검색", font=(FONT, theme.fs(8)), fg=MUTED, bg=BG).pack(side="left")
@@ -457,101 +486,227 @@ class LibraryManager(tk.Toplevel):
         self.group_lbl.pack(side="left")
         self.group_filter = tk.StringVar(value="전체")
         self.group_combo = ttk.Combobox(filter_row, textvariable=self.group_filter,
-                                        width=14, state="readonly", font=(FONT, theme.fs(9)))
+                                        width=12, state="readonly", font=(FONT, theme.fs(9)))
         self.group_combo.pack(side="left", padx=(6, 0))
         self.group_combo.bind("<<ComboboxSelected>>",
                               lambda e: self._refresh())
+        # 분류 관리 (이름 바꾸기·삭제) — 분류는 사용자가 만들고 지울 수 있어야 한다
+        self.group_manage = RoundButton(filter_row, text="⋯",
+                                        command=self._group_menu, bg=CARD,
+                                        fg=MUTED, radius=6,
+                                        font=(FONT, theme.fs(9)),
+                                        outline=BORDER, zone_bg=BG)
+        self.group_manage.fit(pad_x=7, pad_y=3)
+        self.group_manage.pack(side="left", padx=(4, 0))
 
-        # 추가 버튼(탭마다 동작이 다름)
-        self.add_btn = tk.Button(self, font=(FONT, theme.fs(9), "bold"), bg="#e8e8ed",
+        # 내장 탭 전용: 그룹 칩 (원문자·숫자 / 로마숫자 / 낫표 …)
+        self.chip_row = tk.Frame(self, bg=BG, padx=16)
+        self._chip_btns = {}
+
+        # 추가 버튼(탭마다 동작이 다름) — 자리는 항상 구분선 앞 (앵커 = _sep)
+        self.add_btn = tk.Button(self, font=(FONT, theme.fs(9), "bold"), bg=SOFT,
                                   fg=TEXT, bd=0, padx=10, pady=8, cursor="hand2")
-        self.add_btn.pack(fill="x", padx=16)
+        self.add_btn.pack(fill="x", padx=16, pady=(8, 0))
 
-        # 공유 — 항목 단위로 동료와 주고받기 (개선안 30)
-        # self. 로 보관하는 이유: 추가 버튼이 탭 전환 때 이 줄 앞(before=)에
-        # 다시 붙어야 해서 앵커로 쓴다.
-        self.share_row = tk.Frame(self, bg=BG, padx=16)
-        self.share_row.pack(fill="x", pady=(6, 0))
-        tk.Button(self.share_row, text="이 탭 내보내기", command=self._export_tab,
-                  font=(FONT, theme.fs(8)), fg=TEXT, bg=CARD, activebackground=BORDER,
-                  bd=1, padx=8, pady=4, cursor="hand2").pack(side="left")
-        tk.Button(self.share_row, text="가져오기", command=self._import_archive,
-                  font=(FONT, theme.fs(8)), fg=TEXT, bg=CARD, activebackground=BORDER,
-                  bd=1, padx=8, pady=4, cursor="hand2").pack(side="left", padx=(6, 0))
+        self._sep = tk.Frame(self, bg=BORDER, height=1)
+        self._sep.pack(fill="x", padx=16, pady=(10, 6))
 
-        # 사진 폴더 — \사진이름\ 으로 그림을 부르는 폴더 (등록 없이 파일 이름으로)
-        photo_row = tk.Frame(self, bg=BG, padx=16)
-        photo_row.pack(fill="x", pady=(6, 0))
-        tk.Button(photo_row, text="사진 폴더", command=self._pick_photo_dir,
-                  font=(FONT, theme.fs(8)), fg=TEXT, bg=CARD, activebackground=BORDER,
-                  bd=1, padx=8, pady=4, cursor="hand2").pack(side="left")
-        self.photo_dir_lbl = tk.Label(photo_row, font=(FONT, theme.fs(8)), bg=BG, fg=MUTED,
-                                      anchor="w")
-        self.photo_dir_lbl.pack(side="left", padx=(8, 0), fill="x", expand=True)
-        self._refresh_photo_dir_label()
+        # ── 스크롤 목록 (2026-07-25 재구축의 핵심) ──
+        # 예전에는 스크롤이 없어 항목 20개면 창이 화면 밖으로 나갔다.
+        wrap = tk.Frame(self, bg=BG)
+        wrap.pack(fill="both", expand=True, padx=16)
+        self._canvas = tk.Canvas(wrap, bg=BG, highlightthickness=0,
+                                 height=LIST_H_PX, width=460)
+        sb = tk.Scrollbar(wrap, orient="vertical", command=self._canvas.yview)
+        self.list_area = tk.Frame(self._canvas, bg=BG)
+        self._canvas_win = self._canvas.create_window(
+            (0, 0), window=self.list_area, anchor="nw")
+        self.list_area.bind(
+            "<Configure>",
+            lambda e: self._canvas.configure(
+                scrollregion=self._canvas.bbox("all")))
+        # 행이 캔버스 폭을 꽉 채우게 — 안 하면 행 폭이 내용에 따라 들쭉날쭉
+        self._canvas.bind(
+            "<Configure>",
+            lambda e: self._canvas.itemconfigure(self._canvas_win, width=e.width))
+        self._canvas.configure(yscrollcommand=sb.set)
+        self._canvas.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+        # 휠 스크롤 — 이 창 위에 있을 때만 (bind_all 을 창 진입/이탈로 켜고 끈다)
+        self._canvas.bind("<Enter>", lambda e: self._canvas.bind_all(
+            "<MouseWheel>", self._on_wheel))
+        self._canvas.bind("<Leave>", lambda e: self._canvas.unbind_all(
+            "<MouseWheel>"))
 
-        tk.Frame(self, bg=BORDER, height=1).pack(fill="x", padx=16, pady=(10, 6))
-
-        self.list_area = tk.Frame(self, bg=BG, padx=16)
-        self.list_area.pack(fill="both", expand=True, pady=(0, 14))
+        # ── 하단 동작바 — 행마다 버튼을 반복하지 않고 여기 한 벌만 ──
+        bar = tk.Frame(self, bg=BG, padx=16, pady=10)
+        bar.pack(fill="x")
+        self.sel_hint = tk.Label(bar, text="", font=(FONT, theme.fs(8)),
+                                 bg=BG, fg=MUTED, anchor="w")
+        self.sel_hint.pack(side="left", fill="x", expand=True)
+        # 주 동작(삽입/적용/열기)이 맨 오른쪽 — 먼저 pack 할수록 오른쪽에 붙는다
+        self.act_main = _dialog_btn(bar, "삽입", self._act_selected, primary=True)
+        self.act_edit = _dialog_btn(bar, "수정", self._edit_selected)
+        self.act_del = _dialog_btn(bar, "삭제", self._del_selected)
+        self.act_main.pack(side="right", padx=(6, 0))
+        self.act_edit.pack(side="right", padx=(6, 0))
+        self.act_del.pack(side="right", padx=(6, 0))
 
         self._switch_tab("서식")
         self.update_idletasks()
         self.geometry(f"+{master.winfo_rootx()-320}+{master.winfo_rooty()}")
 
+    def _on_wheel(self, e):
+        try:
+            self._canvas.yview_scroll(-1 * (e.delta // 120), "units")
+        except Exception:
+            pass
+
     # ── 탭 전환 ──────────────────────────────────────
     def _switch_tab(self, cat):
         self.current_cat = cat
-        for c, b in self.tab_btns.items():
-            active = c == cat
-            base = ACCENT if active else CARD
-            b.config(bg=base, fg="white" if active else TEXT)
-            # 호버 애니메이션의 기준색도 함께 갱신 — 안 하면 마우스를 뗄 때
-            # 창이 열리던 순간의 색(대부분 흰색)으로 되돌아가, 활성 탭이
-            # 흰 배경 + 흰 글자가 되어 통째로 사라져 보였다 (2026-07-25 버그).
-            ui_fx.rebase(b, base)
+        self._select(None)              # 탭이 바뀌면 선택도 초기화
+        for k, b in self.tab_btns.items():
+            active = k == cat
+            b.retint(bg=ACCENT if active else CARD,
+                     fg="white" if active else TEXT)
         self.desc_label.config(text=TAB_DESC[cat])
-        # 추가 버튼 자리는 **항상 공유 줄 앞** — 내장 탭에서 pack_forget 했다가
-        # 앵커 없이 다시 pack 하면 맨 아래로 떨어졌다 (2026-07-25 버그).
-        if cat == "서식":
-            self.add_btn.config(text="+ 지금 선택한 글자에서 캡처해서 추가",
-                                 command=self._add_style)
-            self.add_btn.pack(fill="x", padx=16, before=self.share_row)
-        elif cat == "문자":
-            self.add_btn.config(text="+ 새 문자/문구 추가",
-                                 command=self._add_char)
-            self.add_btn.pack(fill="x", padx=16, before=self.share_row)
-        elif cat == "템플릿":
-            self.add_btn.config(text="+ 지금 선택 영역을 템플릿으로 저장",
-                                 command=self._add_template)
-            self.add_btn.pack(fill="x", padx=16, before=self.share_row)
-        elif cat == "양식":
-            self.add_btn.config(text="+ hwp 파일을 양식으로 등록",
-                                 command=self._add_form)
-            self.add_btn.pack(fill="x", padx=16, before=self.share_row)
-        else:  # 내장 — 추가 불가(읽기 전용)
+
+        # 추가 버튼 — 자리는 항상 구분선 앞 (앵커 없이 다시 pack 하면
+        # 맨 아래로 떨어진다, 2026-07-25 버그)
+        add_spec = {
+            "서식":   ("+ 지금 선택한 글자에서 캡처해서 추가", self._add_style),
+            "문자":   ("+ 새 특수기호/문구 추가", self._add_char),
+            "템플릿": ("+ 지금 선택 영역을 템플릿으로 저장", self._add_template),
+            "양식":   ("+ hwp 파일을 양식으로 등록", self._add_form),
+            "사진":   ("사진 폴더 연결/변경…", self._pick_photo_dir),
+        }.get(cat)
+        if add_spec:
+            self.add_btn.config(text=add_spec[0], command=add_spec[1])
+            self.add_btn.pack(fill="x", padx=16, pady=(8, 0), before=self._sep)
+        else:                           # 내장 — 추가 불가(읽기 전용)
             self.add_btn.pack_forget()
-        # 내장 탭은 분류 필터 대신 검색만 사용
-        show_group = cat != "내장"
+
+        # 분류 필터 — 서식·특수기호·템플릿·양식에서만. 내장은 그룹 칩, 사진은 없음
+        show_group = cat not in ("내장", "사진")
         if show_group:
             self.group_lbl.pack(side="left")
             self.group_combo.pack(side="left", padx=(6, 0))
+            self.group_manage.pack(side="left", padx=(4, 0))
         else:
             self.group_lbl.pack_forget()
             self.group_combo.pack_forget()
+            self.group_manage.pack_forget()
+        if cat == "내장":
+            self._build_chips()
+            self.chip_row.pack(fill="x", pady=(6, 0), before=self.add_btn
+                               if add_spec else self._sep)
+        else:
+            self.chip_row.pack_forget()
+
+        # 동작바 — 탭마다 쓸 수 있는 동작이 다르다. 순서가 흐트러지지 않게
+        # 전부 뗐다가 정해진 차례로 다시 붙인다 (주 동작이 맨 오른쪽).
+        main_label = {"서식": "적용", "양식": "열기"}.get(cat, "삽입")
+        self.act_main.set_text(main_label, pad_x=16, pad_y=6)
+        for b in (self.act_main, self.act_edit, self.act_del):
+            b.pack_forget()
+        self.act_main.pack(side="right", padx=(6, 0))
+        if cat not in ("내장", "사진"):     # 읽기 전용 — 수정·삭제 없음
+            self.act_edit.pack(side="right", padx=(6, 0))
+            self.act_del.pack(side="right", padx=(6, 0))
         self._refresh(cat)
+
+    def _build_chips(self):
+        """내장 탭의 그룹 칩 — 무엇이 들었는지 종류별로 보인다 (사용자 요청)."""
+        for w in self.chip_row.winfo_children():
+            w.destroy()
+        self._chip_btns = {}
+        groups = ["전체"]
+        for _, _, g in builtin_chars.BUILTINS:
+            if g not in groups:
+                groups.append(g)
+        if self._builtin_group not in groups:
+            self._builtin_group = "전체"
+        for g in groups:
+            on = g == self._builtin_group
+            b = RoundButton(self.chip_row, text=g,
+                            command=lambda gg=g: self._pick_chip(gg),
+                            bg=ACCENT_SOFT if on else CARD,
+                            fg=ACCENT if on else MUTED, radius=10,
+                            font=(FONT, theme.fs(8)),
+                            outline="" if on else BORDER, zone_bg=BG)
+            b.fit(pad_x=9, pad_y=3)
+            b.pack(side="left", padx=(0, 4))
+            self._chip_btns[g] = b
+
+    def _pick_chip(self, group):
+        self._builtin_group = group
+        for g, b in self._chip_btns.items():
+            on = g == group
+            b.retint(bg=ACCENT_SOFT if on else CARD,
+                     fg=ACCENT if on else MUTED)
+        self._refresh()
+
+    # ── 분류 관리 (이름 바꾸기 / 삭제) ────────────────
+    def _group_menu(self):
+        cur = self.group_filter.get()
+        pop = Popover(self, self.group_manage)
+        if cur in ("전체", library.DEFAULT_GROUP):
+            pop.add("분류를 먼저 골라주세요 (위 목록에서)", lambda: None)
+            pop.add(f"'{library.DEFAULT_GROUP}' 분류는 바꿀 수 없습니다",
+                    lambda: None)
+        else:
+            pop.add(f"'{cur}' 이름 바꾸기…", lambda: self._rename_group(cur))
+            pop.add(f"'{cur}' 삭제 (항목은 '{library.DEFAULT_GROUP}'으로)",
+                    lambda: self._delete_group(cur))
+        pop.separator()
+        pop.add("새 분류는 항목을 등록·수정할 때 '자세히'에서 만듭니다",
+                lambda: None)
+        pop.show()
+
+    def _rename_group(self, old):
+        dlg = _AskTextDialog(self, title="분류 이름 바꾸기",
+                             prompt=f"'{old}' 의 새 이름", value=old)
+        self.wait_window(dlg)
+        new = (dlg.result or "").strip()
+        if not new or new == old:
+            return
+        n = library.rename_group(old, new)
+        self.group_filter.set(new)
+        self._refresh()
+        self._notify()
+        messagebox.showinfo("분류 이름 바꾸기",
+                            f"{n}개 항목의 분류를 '{new}' 로 바꿨습니다.",
+                            parent=self)
+
+    def _delete_group(self, name):
+        if not messagebox.askyesno(
+                "분류 삭제",
+                f"'{name}' 분류를 삭제할까요?\n\n항목은 지워지지 않고 "
+                f"'{library.DEFAULT_GROUP}' 분류로 옮겨집니다.", parent=self):
+            return
+        n = library.delete_group(name)
+        self.group_filter.set("전체")
+        self._refresh()
+        self._notify()
+        messagebox.showinfo("분류 삭제",
+                            f"{n}개 항목을 '{library.DEFAULT_GROUP}' 으로 옮겼습니다.",
+                            parent=self)
 
     def _refresh(self, cat=None):
         cat = cat or self.current_cat
+        self._select(None)
         for w in self.list_area.winfo_children():
             w.destroy()
+        self._canvas.yview_moveto(0)
         query = self.search_var.get().strip()
 
         if cat == "내장":
             results = builtin_chars.search(query)
+            if self._builtin_group != "전체":
+                results = [r for r in results if r[2] == self._builtin_group]
             if not results:
-                tk.Label(self.list_area, text="검색 결과가 없습니다.",
-                         font=(FONT, theme.fs(9)), bg=BG, fg=MUTED).pack(anchor="w", pady=8)
+                self._empty_note("검색 결과가 없습니다.")
                 return
             for label, text, group in results[:200]:
                 self._render_builtin_row(label, text, group)
@@ -559,7 +714,10 @@ class LibraryManager(tk.Toplevel):
                 tk.Label(self.list_area,
                          text=f"…외 {len(results)-200}개 (검색으로 좁혀주세요)",
                          font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(anchor="w", pady=4)
-            ui_fx.attach_all(self.list_area)   # 새 행 버튼들에 호버 보간
+            return
+
+        if cat == "사진":
+            self._render_photo_list(query)
             return
 
         # 분류 콤보 갱신 (선택 유지)
@@ -577,13 +735,27 @@ class LibraryManager(tk.Toplevel):
             ql = query.lower()
             items = [it for it in items if ql in self._search_blob(cat, it)]
         if not items:
-            tk.Label(self.list_area, text="해당하는 항목이 없습니다.",
-                     font=(FONT, theme.fs(9)), bg=BG, fg=MUTED).pack(anchor="w", pady=8)
+            self._empty_note("해당하는 항목이 없습니다.")
             return
-        for item in items:
-            self._render_row(cat, item)
-        # 새로 만든 행 버튼들에 호버 보간 — 이미 붙은 것은 건너뛴다
-        ui_fx.attach_all(self.list_area)
+
+        # ── 분류별로 묶어서, 접을 수 있는 머리글 아래에 그린다 ──
+        by_group = {}
+        for it in items:
+            by_group.setdefault(it.get("group") or library.DEFAULT_GROUP,
+                                []).append(it)
+        one_group = len(by_group) == 1
+        for group, group_items in by_group.items():
+            # 분류가 하나뿐이면 머리글이 정보를 안 보태므로 생략
+            if not one_group:
+                self._render_group_header(cat, group, len(group_items))
+                if (cat, group) in self._collapsed:
+                    continue
+            for item in group_items:
+                self._render_row(cat, item)
+
+    def _empty_note(self, text):
+        tk.Label(self.list_area, text=text, font=(FONT, theme.fs(9)),
+                 bg=BG, fg=MUTED).pack(anchor="w", pady=8)
 
     def _search_blob(self, cat, item):
         parts = [item.get("name", ""), item.get("label", ""),
@@ -592,80 +764,220 @@ class LibraryManager(tk.Toplevel):
             parts.append(item.get("text", ""))
         return " ".join(parts).lower()
 
-    def _render_builtin_row(self, label, text, group):
-        row = tk.Frame(self.list_area, bg=ROWBG, highlightbackground=BORDER,
-                        highlightthickness=1)
-        row.pack(fill="x", pady=2)
-        info = tk.Frame(row, bg=ROWBG, padx=10, pady=5)
-        info.pack(side="left", fill="both", expand=True)
-        tk.Label(info, text=text, font=(FONT, theme.fs(13)), bg=ROWBG, fg=TEXT,
-                 anchor="w").pack(side="left")
-        tk.Label(info, text=f"  \\{label}\\  · {group}", font=(FONT, theme.fs(8)),
-                 bg=ROWBG, fg=MUTED, anchor="w").pack(side="left")
-        tk.Button(row, text="삽입", font=(FONT, theme.fs(9)), bg=ACCENT, fg="white",
-                  bd=0, padx=10, pady=5, cursor="hand2",
-                  command=lambda t=text: self._insert_builtin(t)).pack(
-                  side="right", padx=8)
+    # ── 행 그리기 ────────────────────────────────────
+    def _render_group_header(self, cat, group, count):
+        """분류 머리글 — 누르면 접었다 편다. ▾/▸ 로 상태를 보여준다."""
+        closed = (cat, group) in self._collapsed
+        head = tk.Label(self.list_area,
+                        text=f"{'▸' if closed else '▾'} {group} ({count})",
+                        font=(FONT, theme.fs(8), "bold"), bg=BG, fg=MUTED,
+                        anchor="w", cursor="hand2", pady=3)
+        head.pack(fill="x", pady=(6, 1))
+        head.bind("<Button-1>",
+                  lambda e, key=(cat, group): self._toggle_group(key))
 
-    def _insert_builtin(self, text):
-        if not _ensure_hwp(self):
-            return
-        try:
-            hwp_engine.insert_plain(text)
-        except Exception as e:
-            messagebox.showerror("오류", f"{type(e).__name__}: {e}", parent=self)
+    def _toggle_group(self, key):
+        if key in self._collapsed:
+            self._collapsed.discard(key)
+        else:
+            self._collapsed.add(key)
+        self._refresh()
+
+    def _make_row(self, cat, item, kind="item"):
+        """행 한 줄의 껍데기 — 클릭=선택, 더블클릭=주 동작/수정."""
+        row = tk.Frame(self.list_area, bg=ROWBG, highlightbackground=BORDER,
+                       highlightthickness=1)
+        row.pack(fill="x", pady=1)
+        return row
+
+    def _wire_row(self, row, cat, item, kind):
+        """행(과 그 자식들)에 선택·더블클릭을 건다."""
+        def all_widgets(w):
+            yield w
+            for c in w.winfo_children():
+                yield from all_widgets(c)
+        for w in all_widgets(row):
+            w.bind("<Button-1>",
+                   lambda e, r=row, c=cat, it=item, k=kind:
+                   self._select({"cat": c, "item": it, "row": r, "kind": k}))
+            if kind == "item":
+                w.bind("<Double-Button-1>",
+                       lambda e, c=cat, it=item: self._edit(c, it))
+            else:                       # 내장·사진 — 더블클릭 = 바로 삽입
+                w.bind("<Double-Button-1>",
+                       lambda e: self._act_selected())
+            w.config(cursor="hand2")
 
     def _render_row(self, cat, item):
-        row = tk.Frame(self.list_area, bg=ROWBG, highlightbackground=BORDER,
-                        highlightthickness=1)
-        row.pack(fill="x", pady=3)
-        info = tk.Frame(row, bg=ROWBG, padx=10, pady=6)
+        row = self._make_row(cat, item)
+        info = tk.Frame(row, bg=ROWBG, padx=10, pady=5)
         info.pack(side="left", fill="both", expand=True)
         if cat == "문자":
-            # 문자는 내용 자체를 제목으로 (그 문자 그대로 보이게)
+            # 특수기호는 내용 자체가 제목 (그 문자 그대로 보이게)
             t = item["text"].replace("\n", " ")
             title = (t if len(t) <= ROW_PREVIEW_MAX
                      else t[:ROW_PREVIEW_MAX] + "…")
-            title_font = (FONT, theme.fs(12))
+            title_font = (FONT, theme.fs(11))
         else:
             title = item["name"]
-            title_font = (FONT, theme.fs(10), "bold")
+            title_font = (FONT, theme.fs(9), "bold")
         tk.Label(info, text=title, font=title_font,
-                 bg=ROWBG, fg=TEXT, anchor="w").pack(anchor="w")
-        tk.Label(info, text=self._summary(cat, item), font=(FONT, theme.fs(8)),
-                 bg=ROWBG, fg=MUTED, anchor="w", wraplength=260,
-                 justify="left").pack(anchor="w")
+                 bg=ROWBG, fg=TEXT, anchor="w").pack(side="left")
+        summary = self._summary(cat, item)
+        if summary:
+            tk.Label(info, text=summary, font=(FONT, theme.fs(8)),
+                     bg=ROWBG, fg=MUTED, anchor="w").pack(side="left",
+                                                          padx=(8, 0))
+        # 라벨은 오른쪽 끝에 — 반복되는 '\라벨\ · 분류' 꼬리표를 없앤 대신
+        # 호출 이름만 조용히 보여준다 (분류는 위 머리글이 말한다)
+        lab = item.get("label") or item.get("name", "")
+        tk.Label(row, text=f"\\{lab}\\", font=(FONT, theme.fs(8)), bg=ROWBG,
+                 fg=MUTED, padx=10).pack(side="right")
+        self._wire_row(row, cat, item, "item")
 
-        # 더블클릭으로도 수정 (팔레트 블럭과 동일한 조작)
-        for w in (row, info):
-            w.bind("<Double-Button-1>", lambda e, c=cat, it=item: self._edit(c, it))
+    def _render_builtin_row(self, label, text, group):
+        item = {"name": label, "label": label, "text": text, "group": group}
+        row = self._make_row("내장", item, "builtin")
+        info = tk.Frame(row, bg=ROWBG, padx=10, pady=4)
+        info.pack(side="left", fill="both", expand=True)
+        tk.Label(info, text=text, font=(FONT, theme.fs(12)), bg=ROWBG,
+                 fg=TEXT, anchor="w").pack(side="left")
+        tk.Label(row, text=f"\\{label}\\", font=(FONT, theme.fs(8)), bg=ROWBG,
+                 fg=MUTED, padx=10).pack(side="right")
+        self._wire_row(row, "내장", item, "builtin")
 
-        btns = tk.Frame(row, bg=ROWBG, padx=8)
-        btns.pack(side="right")
-        action_label = {"서식": "적용", "양식": "열기"}.get(cat, "삽입")
-        tk.Button(btns, text=action_label, font=(FONT, theme.fs(9)), bg=ACCENT, fg="white",
-                  bd=0, padx=10, pady=5, cursor="hand2",
-                  command=lambda: self._act(cat, item)).pack(side="left", padx=2)
-        tk.Button(btns, text="✎", font=(FONT, theme.fs(9)), bg=CARD, fg=TEXT,
-                  bd=1, padx=8, pady=4, cursor="hand2",
-                  command=lambda: self._edit(cat, item)).pack(side="left", padx=2)
-        tk.Button(btns, text="삭제", font=(FONT, theme.fs(9)), bg="#e8e8ed", fg=TEXT,
-                  bd=0, padx=10, pady=5, cursor="hand2",
-                  command=lambda: self._delete(cat, item)).pack(side="left", padx=2)
+    def _render_photo_list(self, query):
+        """사진 탭 — 연결된 폴더의 그림 목록. 폴더가 없으면 안내만."""
+        d = settings.get_photo_dir()
+        if not d:
+            self._empty_note("사진 폴더가 연결돼 있지 않습니다.\n"
+                             "위 버튼으로 폴더를 연결하면 파일 이름이 여기 나오고,\n"
+                             "문서에 \\파일이름\\ 으로 그림을 넣을 수 있습니다.")
+            return
+        tk.Label(self.list_area, text=d, font=(FONT, theme.fs(8)), bg=BG,
+                 fg=MUTED, anchor="w").pack(fill="x", pady=(2, 4))
+        photos = library._photo_lookup()
+        entries = [entry for _, entry in sorted(photos.items())]
+        if query:
+            ql = query.lower()
+            entries = [e for e in entries if ql in e[1]["name"].lower()]
+        if not entries:
+            self._empty_note("폴더에 그림 파일이 없습니다."
+                             if not query else "검색 결과가 없습니다.")
+            return
+        for _cat, it in entries:
+            row = self._make_row("사진", it, "photo")
+            info = tk.Frame(row, bg=ROWBG, padx=10, pady=5)
+            info.pack(side="left", fill="both", expand=True)
+            tk.Label(info, text=it["name"], font=(FONT, theme.fs(9), "bold"),
+                     bg=ROWBG, fg=TEXT, anchor="w").pack(side="left")
+            ext = pathlib.Path(it["path"]).suffix.lower().lstrip(".")
+            tk.Label(info, text=ext, font=(FONT, theme.fs(8)), bg=ROWBG,
+                     fg=MUTED).pack(side="left", padx=(8, 0))
+            tk.Label(row, text=f"\\{it['label']}\\", font=(FONT, theme.fs(8)),
+                     bg=ROWBG, fg=MUTED, padx=10).pack(side="right")
+            self._wire_row(row, "사진", it, "photo")
 
     def _summary(self, cat, item):
-        meta = f"\\{item.get('label', item['name'])}\\ · {item.get('group', library.DEFAULT_GROUP)}"
+        """행 요약 한 줄 — 라벨·분류는 다른 곳에서 보이므로 **내용만** 말한다."""
         if cat == "서식":
-            fields = ", ".join(f"{k}:{v}" for k, v in item["fields"].items())
-            return f"{fields}  |  {meta}"
-        if cat == "문자":
-            return f"{item['name']}  |  {meta}"
-        slots = int(item.get("slot_count") or 0)
-        slot_txt = f"빈칸 {slots}개" if slots else "빈칸 없음"
-        # 저장할 때 뽑아둔 본문 첫 줄 (UI 제안 7) — 이름이 비슷한 조각을 구별하게
-        head = library.get_preview(item).splitlines()
-        head = f"  |  {head[0]}" if head else ""
-        return f"{slot_txt}{head}  |  {meta}"
+            text = ", ".join(f"{k}:{v}" for k, v in item["fields"].items())
+        elif cat == "문자":
+            # 제목이 내용이므로, 이름이 내용과 다를 때만 보탠다
+            text = item["name"] if item["name"] not in item["text"] else ""
+        else:
+            slots = int(item.get("slot_count") or 0)
+            head = library.get_preview(item).splitlines()
+            parts = [f"빈칸 {slots}" if slots else ""]
+            if head:
+                parts.append(head[0])
+            text = " · ".join(p for p in parts if p)
+        if len(text) > SUMMARY_MAX:
+            text = text[:SUMMARY_MAX] + "…"
+        return text
+
+    # ── 선택과 동작바 ────────────────────────────────
+    def _select(self, sel):
+        """행 선택 — 이전 행의 색을 되돌리고 새 행을 옅은 파랑으로."""
+        old = self._sel
+        if old and old.get("row"):
+            try:
+                self._tint_row(old["row"], ROWBG)
+            except Exception:
+                pass
+        self._sel = sel
+        if sel and sel.get("row"):
+            self._tint_row(sel["row"], ACCENT_SOFT)
+        if not hasattr(self, "sel_hint"):
+            return
+        if sel is None:
+            self.sel_hint.config(text="항목을 누르면 아래 버튼으로 실행합니다")
+        else:
+            it = sel["item"]
+            self.sel_hint.config(
+                text=it.get("name") or it.get("label") or "")
+
+    @staticmethod
+    def _tint_row(row, bg):
+        row.config(bg=bg)
+        for w in row.winfo_children():
+            w.config(bg=bg)
+            for c in w.winfo_children():
+                c.config(bg=bg)
+
+    def _need_sel(self):
+        if self._sel is None:
+            messagebox.showinfo("선택 없음", "목록에서 항목을 먼저 눌러주세요.",
+                                parent=self)
+            return False
+        return True
+
+    def _act_selected(self):
+        if not self._need_sel():
+            return
+        cat, item = self._sel["cat"], self._sel["item"]
+        kind = self._sel["kind"]
+        if not _ensure_hwp(self):
+            return
+        try:
+            if kind == "builtin":
+                hwp_engine.insert_plain(item["text"])
+            elif kind == "photo":
+                engine_library.insert_photo(item["path"])
+            elif cat == "서식":
+                if not hwp_engine.has_selection():
+                    messagebox.showwarning("선택 없음",
+                        "서식을 입힐 글자를 한글에서 먼저 선택해주세요.", parent=self)
+                    return
+                engine_library.apply_charshape_delta(item["fields"])
+            elif cat == "문자":
+                hwp_engine.insert_plain(item["text"])
+            elif cat == "양식":
+                engine_library.open_form(library.template_path(item))
+            else:
+                engine_library.insert_fragment(library.template_path(item))
+        except Exception as e:
+            messagebox.showerror("오류", f"{type(e).__name__}: {e}", parent=self)
+
+    def _edit_selected(self):
+        if not self._need_sel():
+            return
+        if self._sel["kind"] != "item":
+            messagebox.showinfo("수정 불가",
+                                "내장·사진 항목은 여기서 수정할 수 없습니다.",
+                                parent=self)
+            return
+        self._edit(self._sel["cat"], self._sel["item"])
+
+    def _del_selected(self):
+        if not self._need_sel():
+            return
+        if self._sel["kind"] != "item":
+            messagebox.showinfo("삭제 불가",
+                                "내장·사진 항목은 여기서 삭제할 수 없습니다.",
+                                parent=self)
+            return
+        self._delete(self._sel["cat"], self._sel["item"])
 
     # ── 서식 ─────────────────────────────────────────
     def _add_style(self):
@@ -771,26 +1083,7 @@ class LibraryManager(tk.Toplevel):
         self._refresh("양식")
         self._notify()
 
-    # ── 공통: 적용/삽입 · 삭제 ───────────────────────
-    def _act(self, cat, item):
-        if not _ensure_hwp(self):
-            return
-        try:
-            if cat == "서식":
-                if not hwp_engine.has_selection():
-                    messagebox.showwarning("선택 없음",
-                        "서식을 입힐 글자를 한글에서 먼저 선택해주세요.", parent=self)
-                    return
-                engine_library.apply_charshape_delta(item["fields"])
-            elif cat == "문자":
-                hwp_engine.insert_plain(item["text"])
-            elif cat == "양식":
-                engine_library.open_form(library.template_path(item))
-            else:
-                engine_library.insert_fragment(library.template_path(item))
-        except Exception as e:
-            messagebox.showerror("오류", f"{type(e).__name__}: {e}", parent=self)
-
+    # ── 공통: 삭제 (적용/삽입은 하단 동작바 _act_selected 가 맡는다) ──
     def _delete(self, cat, item):
         name = item["name"]
         used = library.count_palette_refs(cat, item["id"])
@@ -803,16 +1096,7 @@ class LibraryManager(tk.Toplevel):
             self._refresh(cat)
             self._notify()
 
-    # ── 사진 폴더 (\사진이름\ 변환) ─────────────────────
-    def _refresh_photo_dir_label(self):
-        d = settings.get_photo_dir()
-        if d:
-            self.photo_dir_lbl.config(
-                text=f"{d} — 문서에 \\파일이름\\ 으로 부르면 그림이 들어갑니다")
-        else:
-            self.photo_dir_lbl.config(
-                text="(연결 안 됨) 폴더를 연결하면 \\파일이름\\ 으로 그림을 넣을 수 있습니다")
-
+    # ── 사진 폴더 (\사진이름\ 변환) — '사진' 탭에서만 보인다 ──
     def _pick_photo_dir(self):
         cur = settings.get_photo_dir()
         path = filedialog.askdirectory(
@@ -824,71 +1108,12 @@ class LibraryManager(tk.Toplevel):
                 "연결 해제", "사진 폴더 연결을 해제할까요?\n"
                 f"(현재: {cur})", parent=self):
             settings.set_photo_dir("")
-        self._refresh_photo_dir_label()
-
-    # ── 내보내기 / 가져오기 (개선안 30) ────────────────
-    def _export_tab(self):
-        """지금 보고 있는 탭의 항목을 통째로 zip 으로 내보낸다."""
-        cat = self.current_cat
-        if cat == "내장":
-            messagebox.showinfo(
-                "내보낼 수 없음",
-                "내장 문자는 프로그램에 들어 있어 따로 주고받을 필요가 없습니다.",
-                parent=self)
-            return
-        items = library.list_items(cat)
-        if not items:
-            messagebox.showinfo("항목 없음", f"'{cat}' 탭에 내보낼 항목이 없습니다.",
-                                parent=self)
-            return
-        path = filedialog.asksaveasfilename(
-            parent=self, title=f"'{cat}' 내보내기",
-            defaultextension=".zip", initialfile=f"hwp_palette_{cat}.zip",
-            filetypes=[("hwp_palette 라이브러리", "*.zip")])
-        if not path:
-            return
-        try:
-            n = library.export_items([(cat, it) for it in items], path)
-        except Exception as e:
-            applog.exc(f"라이브러리 내보내기 실패 ({cat})", e)
-            messagebox.showerror("내보내기 실패", f"{type(e).__name__}: {e}",
-                                 parent=self)
-            return
-        skipped = len(items) - n
-        msg = f"'{cat}' {n}개를 내보냈습니다.\n{pathlib.Path(path).name}"
-        if skipped:
-            msg += f"\n\n(조각 파일이 없어 {skipped}개는 빠졌습니다 — app.log 참고)"
-        messagebox.showinfo("내보내기 완료", msg, parent=self)
-
-    def _import_archive(self):
-        """받은 zip 을 라이브러리에 추가한다. 덮어쓰기는 하지 않는다."""
-        path = filedialog.askopenfilename(
-            parent=self, title="라이브러리 가져오기",
-            filetypes=[("hwp_palette 라이브러리", "*.zip"), ("모든 파일", "*.*")])
-        if not path:
-            return
-        try:
-            r = library.import_archive(path)
-        except Exception as e:
-            applog.exc(f"라이브러리 가져오기 실패 ({path})", e)
-            messagebox.showerror("가져오기 실패", f"{type(e).__name__}: {e}",
-                                 parent=self)
-            return
-        lines = [f"{r['added']}개를 가져왔습니다. (기존 항목은 그대로 둡니다)"]
-        if r["renamed"]:
-            lines.append("\n이름이 겹쳐 바꾼 항목:")
-            lines += [f"  {a} → {b}" for a, b in r["renamed"][:8]]
-        if r["relabeled"]:
-            lines.append("\n라벨이 겹쳐 바꾼 항목:")
-            lines += [f"  \\{a}\\ → \\{b}\\" for a, b in r["relabeled"][:8]]
-            lines.append("(라벨을 그대로 두면 마크다운 변환에서 호출되지 않습니다)")
-        messagebox.showinfo("가져오기 완료", "\n".join(lines), parent=self)
         self._refresh()
-        self._notify()
 
     def _edit(self, cat, item):
         """등록된 항목의 이름·라벨·분류 수정 (id 유지 → 팔레트 연결 안 깨짐)."""
-        meta = MetaDialog(self, title=f"{cat} 수정", name=item["name"],
+        meta = MetaDialog(self, title=f"{CAT_LABEL.get(cat, cat)} 수정",
+                          name=item["name"],
                           label=item.get("label", ""), exclude_id=item["id"])
         try:
             meta.group_var.set(item.get("group", library.DEFAULT_GROUP))
@@ -911,13 +1136,165 @@ class LibraryManager(tk.Toplevel):
             self.on_saved()
 
 
+class _AskTextDialog(tk.Toplevel):
+    """짧은 문자열 하나를 묻는 작은 창 (분류 이름 바꾸기 등)."""
+
+    def __init__(self, master, title="입력", prompt="", value=""):
+        super().__init__(master)
+        self.result = None
+        self.title(title)
+        self.configure(bg=BG)
+        self.resizable(False, False)
+        self.attributes("-topmost", True)
+        tk.Label(self, text=prompt, font=(FONT, theme.fs(9)), bg=BG,
+                 fg=TEXT).pack(anchor="w", padx=16, pady=(14, 4))
+        self.var = tk.StringVar(value=value)
+        ent = tk.Entry(self, textvariable=self.var, width=24,
+                       font=(FONT, theme.fs(10)), relief="solid", bd=1)
+        ent.pack(padx=16)
+        ent.focus_set()
+        ent.select_range(0, "end")
+        ent.bind("<Return>", lambda e: self._ok())
+        foot = tk.Frame(self, bg=BG, padx=16, pady=12)
+        foot.pack(fill="x")
+        _dialog_btn(foot, "확인", self._ok, primary=True).pack(side="right")
+        _dialog_btn(foot, "취소", self.destroy).pack(side="right", padx=(0, 6))
+        self.update_idletasks()
+        self.geometry(f"+{master.winfo_rootx()+60}+{master.winfo_rooty()+60}")
+        self.grab_set()
+
+    def _ok(self):
+        commit_ime(self)
+        self.result = self.var.get()
+        self.destroy()
+
+
+class ShareDialog(tk.Toplevel):
+    r"""물감 내보내기/가져오기 — 메인 창 설정(⚙) 메뉴에서 연다 (사용자 결정
+    2026-07-25: "내가 만든 탭을 남에게 주는 일"이라 물감 설정 화면이 아니라
+    설정의 하위 기능으로 뺐다).
+
+    내보내기 = 고른 분류(탭) 전체를 조각 파일까지 zip 하나로.
+    가져오기 = zip 을 추가만 한다 (덮어쓰기 없음 — 이름·라벨 충돌은 자동 개명).
+    """
+
+    def __init__(self, master, on_saved=None):
+        super().__init__(master)
+        self.on_saved = on_saved
+        self.title(appinfo.WINDOW_TITLE)
+        self.configure(bg=BG)
+        self.resizable(False, False)
+        self.attributes("-topmost", True)
+
+        tk.Label(self, text="물감 내보내기 / 가져오기",
+                 font=(FONT, theme.fs(12), "bold"), bg=BG, fg=TEXT).pack(
+                 anchor="w", padx=16, pady=(14, 2))
+        tk.Label(self, text="내가 만든 물감을 zip 한 개로 묶어 동료와 주고받습니다.",
+                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(
+                 anchor="w", padx=16, pady=(0, 10))
+
+        row = tk.Frame(self, bg=BG, padx=16)
+        row.pack(fill="x")
+        tk.Label(row, text="내보낼 물감", font=(FONT, theme.fs(9)), bg=BG,
+                 fg=TEXT).pack(side="left")
+        # 내장·사진은 파일/프로그램에 딸린 것이라 내보낼 게 없다
+        self._exportable = [c for c in CATS
+                            if c["key"] not in ("내장", "사진")]
+        self.cat_var = tk.StringVar(value=self._exportable[0]["label"])
+        ttk.Combobox(row, textvariable=self.cat_var, state="readonly",
+                     width=10, font=(FONT, theme.fs(9)),
+                     values=[c["label"] for c in self._exportable]).pack(
+                     side="left", padx=(8, 8))
+        _dialog_btn(row, "내보내기…", self._export, primary=True).pack(side="left")
+
+        tk.Frame(self, bg=BORDER, height=1).pack(fill="x", padx=16, pady=10)
+
+        row2 = tk.Frame(self, bg=BG, padx=16)
+        row2.pack(fill="x", pady=(0, 14))
+        tk.Label(row2, text="받은 zip 을", font=(FONT, theme.fs(9)), bg=BG,
+                 fg=TEXT).pack(side="left")
+        _dialog_btn(row2, "가져오기…", self._import).pack(side="left", padx=(8, 0))
+        tk.Label(row2, text="(기존 물감은 그대로, 추가만 합니다)",
+                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(
+                 side="left", padx=(8, 0))
+
+        self.update_idletasks()
+        self.geometry(f"+{master.winfo_rootx()+30}+{master.winfo_rooty()+50}")
+
+    def _cat_key(self):
+        label = self.cat_var.get()
+        for c in self._exportable:
+            if c["label"] == label:
+                return c["key"]
+        return self._exportable[0]["key"]
+
+    def _export(self):
+        cat = self._cat_key()
+        label = CAT_LABEL.get(cat, cat)
+        items = library.list_items(cat)
+        if not items:
+            messagebox.showinfo("항목 없음",
+                                f"'{label}' 에 내보낼 항목이 없습니다.",
+                                parent=self)
+            return
+        path = filedialog.asksaveasfilename(
+            parent=self, title=f"'{label}' 내보내기",
+            defaultextension=".zip", initialfile=f"hwp_palette_{label}.zip",
+            filetypes=[("hwp_palette 라이브러리", "*.zip")])
+        if not path:
+            return
+        try:
+            n = library.export_items([(cat, it) for it in items], path)
+        except Exception as e:
+            applog.exc(f"라이브러리 내보내기 실패 ({cat})", e)
+            messagebox.showerror("내보내기 실패", f"{type(e).__name__}: {e}",
+                                 parent=self)
+            return
+        skipped = len(items) - n
+        msg = f"'{label}' {n}개를 내보냈습니다.\n{pathlib.Path(path).name}"
+        if skipped:
+            msg += f"\n\n(조각 파일이 없어 {skipped}개는 빠졌습니다 — app.log 참고)"
+        messagebox.showinfo("내보내기 완료", msg, parent=self)
+
+    def _import(self):
+        path = filedialog.askopenfilename(
+            parent=self, title="라이브러리 가져오기",
+            filetypes=[("hwp_palette 라이브러리", "*.zip"), ("모든 파일", "*.*")])
+        if not path:
+            return
+        try:
+            r = library.import_archive(path)
+        except Exception as e:
+            applog.exc(f"라이브러리 가져오기 실패 ({path})", e)
+            messagebox.showerror("가져오기 실패", f"{type(e).__name__}: {e}",
+                                 parent=self)
+            return
+        lines = [f"{r['added']}개를 가져왔습니다. (기존 항목은 그대로 둡니다)"]
+        if r["renamed"]:
+            lines.append("\n이름이 겹쳐 바꾼 항목:")
+            lines += [f"  {a} → {b}" for a, b in r["renamed"][:8]]
+        if r["relabeled"]:
+            lines.append("\n라벨이 겹쳐 바꾼 항목:")
+            lines += [f"  \\{a}\\ → \\{b}\\" for a, b in r["relabeled"][:8]]
+            lines.append("(라벨을 그대로 두면 마크다운 변환에서 호출되지 않습니다)")
+        messagebox.showinfo("가져오기 완료", "\n".join(lines), parent=self)
+        if self.on_saved:
+            self.on_saved()
+
+
+def open_share(master, on_saved=None):
+    """내보내기/가져오기 창 — 메인 창 설정(⚙) 메뉴가 부른다."""
+    return ShareDialog(master, on_saved=on_saved)
+
+
 def open_manager(master, on_saved=None, cat=None):
     """라이브러리 창을 연다. cat 을 주면 그 탭으로 바로 연다 ('내장' 등)."""
     win = LibraryManager(master, on_saved=on_saved)
-    ui_fx.attach_all(win)              # 상단 탭·버튼에도 호버 보간
-    if cat in TABS:
+    ui_fx.attach_all(win)              # 추가 버튼 등 tk.Button 에 호버 보간
+    if cat in TABS and cat != win.current_cat:
         try:
-            win._refresh(cat)
+            # _refresh 가 아니라 _switch_tab — 탭 버튼 색·설명·동작바까지 함께
+            win._switch_tab(cat)
         except Exception as e:
             applog.exc(f"라이브러리 '{cat}' 탭으로 열기 실패 — 기본 탭으로 엽니다", e)
     return win

@@ -37,7 +37,7 @@ BORDER = _C["border"]
 ROWBG = _C["subbg"]
 FONT = theme.FONT
 
-TYPE_LABEL = {"char": "문자", "template": "템플릿", "function": "서식 조합",
+TYPE_LABEL = {"char": "특수기호", "template": "템플릿", "function": "서식 조합",
               "form": "양식"}
 
 # 글자 수 상한 (개선안 23 — 흩어져 있던 매직넘버에 이름을 붙임)
@@ -63,6 +63,16 @@ RANGE_BG = "#d8e9ff"     # 끌어서 지정 중인 범위
 
 def _rgb_int(r, g, b):
     return r + (g << 8) + (b << 16)
+
+
+def _dialog_btn(parent, text, command, primary=False, zone_bg=None):
+    """대화상자 공용 버튼 — 저장/확인은 파랑, 취소는 흰 바탕 (애플 A안)."""
+    bg = ACCENT if primary else CARD
+    b = RoundButton(parent, text=text, command=command, bg=bg,
+                    fg="white" if primary else TEXT, radius=7,
+                    font=(FONT, theme.fs(9)), outline="" if primary else BORDER,
+                    zone_bg=zone_bg or parent.cget("bg"))
+    return b.fit(pad_x=14, pad_y=5)
 
 
 # ───────────────────────── 기능 블럭 편집 대화상자 ─────────────────────────
@@ -115,12 +125,8 @@ class FunctionDialog(tk.Toplevel):
 
         foot = tk.Frame(self, bg=BG, padx=16, pady=12)
         foot.pack(fill="x")
-        tk.Button(foot, text="저장", command=self._ok, font=(FONT, theme.fs(10), "bold"),
-                  bg=ACCENT, fg="white", bd=0, padx=16, pady=6,
-                  cursor="hand2").pack(side="right")
-        tk.Button(foot, text="취소", command=self.destroy, font=(FONT, theme.fs(10)),
-                  bg="#e8e8ed", fg=TEXT, bd=0, padx=16, pady=6,
-                  cursor="hand2").pack(side="right", padx=(0, 6))
+        _dialog_btn(foot, "저장", self._ok, primary=True).pack(side="right")
+        _dialog_btn(foot, "취소", self.destroy).pack(side="right", padx=(0, 6))
 
         self.update_idletasks()
         self.geometry(f"+{master.winfo_rootx()+40}+{master.winfo_rooty()+30}")
@@ -165,8 +171,11 @@ class FunctionDialog(tk.Toplevel):
                     r, g, b = int(rgb[0]), int(rgb[1]), int(rgb[2])
                     var.set(str(_rgb_int(r, g, b)))
                     swatch.config(bg=_hex)
-            tk.Button(parent, text="색 선택", command=pick, font=(FONT, theme.fs(8)),
-                      bg=CARD, bd=1, cursor="hand2").pack(side="left", padx=(4, 0))
+            # 줄 높이에 맞춘 납작한 둥근 버튼 — 공용 helper 는 여기엔 크다
+            RoundButton(parent, text="색 선택", command=pick, bg=CARD, fg=TEXT,
+                        radius=7, font=(FONT, theme.fs(8)), outline=BORDER,
+                        zone_bg=BG).fit(pad_x=8, pad_y=2).pack(side="left",
+                                                               padx=(4, 0))
             return swatch, var
         return None, None
 
@@ -210,22 +219,11 @@ class FunctionDialog(tk.Toplevel):
 
 
 # ───────────────────────── 환경설정 메인 창 ─────────────────────────
-def _tiny_btn(parent, text, cmd):
-    """번호 줄 옆에 놓는 아주 작은 ＋／－.
+def _mini_btn(parent, text, cmd):
+    """작은 정사각 둥근 버튼 (＋／－ 같은 기호 하나짜리).
 
-    번호(1·2·3…)와 같은 크기·같은 흐린 색이라 자기주장을 하지 않는다.
     무엇을 늘리는지는 **놓인 자리**가 말해 준다(칸 번호 옆 = 칸, 줄 번호 밑 = 줄).
     """
-    lab = tk.Label(parent, text=text, font=(FONT, theme.fs(7)), bg=CARD,
-                   fg=MUTED, cursor="hand2", padx=1)
-    lab.bind("<Button-1>", lambda e: cmd())
-    lab.bind("<Enter>", lambda e: lab.config(fg=ACCENT))
-    lab.bind("<Leave>", lambda e: lab.config(fg=MUTED))
-    return lab
-
-
-def _mini_btn(parent, text, cmd):
-    """작은 정사각 둥근 버튼 (＋／－ 같은 기호 하나짜리)."""
     b = RoundButton(parent, text=text, command=cmd, bg=CARD, fg=TEXT,
                     radius=7, font=(FONT, theme.fs(9)), outline=BORDER,
                     zone_bg=parent.cget("bg"))
@@ -612,7 +610,7 @@ class SettingsWindow(tk.Toplevel):
                     rowspan=2, sticky="n", padx=(4, 0))
         for txt, cmd, tip in (("＋", self._add_col, "칸(가로) 늘리기"),
                               ("－", self._remove_col, "칸(가로) 줄이기")):
-            b = _tiny_btn(colbar, txt, cmd)
+            b = _mini_btn(colbar, txt, cmd)
             b.pack()
             _tip(b, tip)
 
@@ -620,7 +618,7 @@ class SettingsWindow(tk.Toplevel):
         rowbar.grid(row=total_rows + HEADER_ROWS, column=0, pady=(3, 0))
         for txt, cmd, tip in (("＋", self._add_row, "줄(세로) 늘리기"),
                               ("－", self._remove_row, "줄(세로) 줄이기")):
-            b = _tiny_btn(rowbar, txt, cmd)
+            b = _mini_btn(rowbar, txt, cmd)
             b.pack(side="left")
             _tip(b, tip)
 
@@ -1302,7 +1300,7 @@ class SettingsWindow(tk.Toplevel):
             return
         blk = dict(blocks[idx])
         if blk["type"] == "char":
-            val = simpledialog.askstring("문자/문구 편집", "내용:",
+            val = simpledialog.askstring("특수기호/문구 편집", "내용:",
                                          initialvalue=blk.get("value", ""), parent=self)
             if val is not None and val != "":
                 blk["value"] = val
@@ -1348,7 +1346,7 @@ class SettingsWindow(tk.Toplevel):
         except Exception:
             pass
         val = simpledialog.askstring(
-            "문자/문구 블럭", "삽입할 문자나 문구 (한글에서 선택했다면 자동으로 채워집니다):",
+            "특수기호/문구 블럭", "삽입할 기호나 문구 (한글에서 선택했다면 자동으로 채워집니다):",
             initialvalue=prefill, parent=self)
         if val:
             self._place({"type": "char", "value": val,
@@ -1485,13 +1483,16 @@ class _SourceDialog(tk.Toplevel):
 
         body = tk.Frame(self, bg=BG, padx=16)
         body.pack(fill="x")
-        tk.Button(body, text="📸  지금 한글에서 캡처해서 추가",
-                  command=lambda: self._pick("capture"),
-                  font=(FONT, theme.fs(10), "bold"), bg=ACCENT, fg="white", bd=0,
-                  pady=10, cursor="hand2").pack(fill="x")
+        # min_w 로 폭 하한을 두고 fill="x" 로 늘린다 — 아래 버튼과 폭이 맞는다
+        RoundButton(body, text="📸  지금 한글에서 캡처해서 추가",
+                    command=lambda: self._pick("capture"), bg=ACCENT,
+                    fg="white", radius=7, font=(FONT, theme.fs(10), "bold"),
+                    zone_bg=BG).fit(pad_x=14, pad_y=10,
+                                    min_w=260).pack(fill="x")
         tk.Label(body, text="한글에서 표·영역을 선택해두고 누르세요. 등록과 배치가 한 번에.",
                  font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(anchor="w", pady=(3, 10))
 
+        # RoundButton 은 state=disabled 가 없어 이 버튼만 tk.Button 을 유지한다
         state = "normal" if has_registered else "disabled"
         tk.Button(body, text="📚  이미 등록된 템플릿에서 고르기",
                   command=lambda: self._pick("registered"),
@@ -1501,8 +1502,7 @@ class _SourceDialog(tk.Toplevel):
             tk.Label(body, text="(아직 등록된 템플릿이 없습니다)",
                      font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(anchor="w", pady=(3, 0))
 
-        tk.Button(self, text="취소", command=self.destroy, font=(FONT, theme.fs(9)),
-                  bg=BG, fg=MUTED, bd=0, cursor="hand2").pack(pady=10)
+        _dialog_btn(self, "취소", self.destroy).pack(pady=10)
 
         self.update_idletasks()
         self.geometry(f"+{master.winfo_rootx()+50}+{master.winfo_rooty()+50}")
@@ -1529,9 +1529,7 @@ class _ChoiceDialog(tk.Toplevel):
                      state="readonly", font=(FONT, theme.fs(10))).pack(padx=16)
         foot = tk.Frame(self, bg=BG, padx=16, pady=12)
         foot.pack(fill="x")
-        tk.Button(foot, text="확인", command=self._ok, font=(FONT, theme.fs(10), "bold"),
-                  bg=ACCENT, fg="white", bd=0, padx=16, pady=6,
-                  cursor="hand2").pack(side="right")
+        _dialog_btn(foot, "확인", self._ok, primary=True).pack(side="right")
         self.update_idletasks()
         self.geometry(f"+{master.winfo_rootx()+60}+{master.winfo_rooty()+60}")
         self.grab_set()
@@ -1579,12 +1577,8 @@ class _DefaultFormatDialog(tk.Toplevel):
 
         foot = tk.Frame(self, bg=BG, padx=16, pady=12)
         foot.pack(fill="x")
-        tk.Button(foot, text="저장", command=self._ok, font=(FONT, theme.fs(10), "bold"),
-                  bg=ACCENT, fg="white", bd=0, padx=16, pady=6,
-                  cursor="hand2").pack(side="right")
-        tk.Button(foot, text="취소", command=self.destroy, font=(FONT, theme.fs(10)),
-                  bg="#e8e8ed", fg=TEXT, bd=0, padx=16, pady=6,
-                  cursor="hand2").pack(side="right", padx=(0, 6))
+        _dialog_btn(foot, "저장", self._ok, primary=True).pack(side="right")
+        _dialog_btn(foot, "취소", self.destroy).pack(side="right", padx=(0, 6))
         self.update_idletasks()
         self.geometry(f"+{master.winfo_rootx()+50}+{master.winfo_rooty()+50}")
         self.grab_set()
@@ -1641,12 +1635,9 @@ class _CaptionDialog(tk.Toplevel):
 
         foot = tk.Frame(self, bg=BG, padx=16, pady=12)
         foot.pack(fill="x")
-        tk.Button(foot, text="저장  (Ctrl+Enter)", command=self._ok,
-                  font=(FONT, theme.fs(10), "bold"), bg=ACCENT, fg="white", bd=0,
-                  padx=14, pady=6, cursor="hand2").pack(side="right")
-        tk.Button(foot, text="취소", command=self.destroy, font=(FONT, theme.fs(10)),
-                  bg="#e8e8ed", fg=TEXT, bd=0, padx=14, pady=6,
-                  cursor="hand2").pack(side="right", padx=(0, 6))
+        _dialog_btn(foot, "저장  (Ctrl+Enter)", self._ok,
+                    primary=True).pack(side="right")
+        _dialog_btn(foot, "취소", self.destroy).pack(side="right", padx=(0, 6))
 
         self.update_idletasks()
         self.geometry(f"+{master.winfo_rootx()+60}+{master.winfo_rooty()+80}")
@@ -1663,11 +1654,11 @@ class _ToolPickDialog(tk.Toplevel):
     """빈칸을 끌어 칸 수를 정한 뒤 '무엇을 넣을지' 고르는 창."""
 
     _TOOLS = [
-        ("char", "문자", "특수문자·자주 쓰는 문구를 커서 자리에 삽입"),
+        ("char", "특수기호", "특수기호·자주 쓰는 문구를 커서 자리에 삽입"),
         ("template", "템플릿", "표·결재란 등 문서 일부를 커서 자리에 꽂기"),
         ("function", "서식 조합", "선택한 글자에 굵게·크기·자간 등을 한 번에"),
         ("form", "양식", "hwp 파일 전체를 새 문서로 열기"),
-        ("builtin", "도구", "이 프로그램의 기능 (사진·특수문자·양식 채우기 …)"),
+        ("builtin", "도구", "이 프로그램의 기능 (사진·특수기호·양식 채우기 …)"),
     ]
 
     def __init__(self, master, span, rows=1):
@@ -1689,12 +1680,13 @@ class _ToolPickDialog(tk.Toplevel):
         body = tk.Frame(self, bg=BG, padx=16)
         body.pack(fill="x")
         for key, name, desc in self._TOOLS:
-            row = tk.Button(body, bg=CARD, bd=1, relief="solid", cursor="hand2",
-                            anchor="w", justify="left", padx=10, pady=6,
-                            text=f"{name}\n{desc}", font=(FONT, theme.fs(9)),
-                            fg=TEXT, activebackground=BORDER,
-                            command=lambda k=key: self._pick(k))
-            row.pack(fill="x", pady=2)
+            # min_w 를 같이 주어 다섯 줄의 폭을 통일한다
+            row = RoundButton(body, text=f"{name}\n{desc}",
+                              command=lambda k=key: self._pick(k),
+                              bg=CARD, fg=TEXT, radius=7,
+                              font=(FONT, theme.fs(9)), outline=BORDER,
+                              zone_bg=BG, justify="left")
+            row.fit(pad_x=12, min_w=340).pack(fill="x", pady=2)
 
         # 버튼 색 — 기본(종류별 색) 또는 직접 지정
         self.color = None
@@ -1712,13 +1704,14 @@ class _ToolPickDialog(tk.Toplevel):
             sw.pack(side="left", padx=2)
             sw.bind("<Button-1>", lambda e, v=hexv: self._set_color(v))
             sw.config(cursor="hand2")
-        tk.Button(crow, text="직접", font=(FONT, theme.fs(8)), bg=CARD, bd=1,
-                  padx=6, pady=1, cursor="hand2",
-                  command=self._custom_color).pack(side="left", padx=(4, 0))
+        # 색 견본 줄 높이에 맞춘 납작한 둥근 버튼
+        RoundButton(crow, text="직접", command=self._custom_color, bg=CARD,
+                    fg=TEXT, radius=7, font=(FONT, theme.fs(8)),
+                    outline=BORDER, zone_bg=BG).fit(pad_x=8, pad_y=2).pack(
+            side="left", padx=(4, 0))
 
-        tk.Button(self, text="취소", command=self.destroy, font=(FONT, theme.fs(9)),
-                  bg="#e8e8ed", fg=TEXT, bd=0, padx=14, pady=5,
-                  cursor="hand2").pack(anchor="e", padx=16, pady=12)
+        _dialog_btn(self, "취소", self.destroy).pack(anchor="e",
+                                                   padx=16, pady=12)
 
         self.update_idletasks()
         self.geometry(f"+{master.winfo_rootx()+60}+{master.winfo_rooty()+80}")

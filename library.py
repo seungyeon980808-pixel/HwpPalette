@@ -420,6 +420,36 @@ def list_groups():
     return seen
 
 
+def rename_group(old, new):
+    """분류 이름 바꾸기 — 모든 카테고리에서. 바뀐 항목 수를 반환.
+
+    분류는 항목마다 붙은 문자열일 뿐이라(별도 목록 없음), 이름을 바꾸려면
+    그 이름을 단 항목을 전부 고쳐야 한다 (2026-07-25, 분류 관리 UI).
+    """
+    old = (old or "").strip()
+    new = (new or "").strip()
+    if not old or not new or old == new:
+        return 0
+    data = load()
+    n = 0
+    for cat in CATEGORIES:
+        for it in data[cat]:
+            if (it.get("group") or DEFAULT_GROUP) == old:
+                it["group"] = new
+                n += 1
+    if n:
+        save(data)
+    return n
+
+
+def delete_group(name):
+    """분류 삭제 = 그 분류의 항목을 '기본'으로 옮긴다 (항목은 지우지 않는다).
+
+    분류를 지운다고 안의 자산까지 지우면 실수 한 번이 재앙이 된다 — 이동만 한다.
+    """
+    return rename_group(name, DEFAULT_GROUP)
+
+
 def template_path(item):
     return FRAGMENTS_DIR / item["file"]
 

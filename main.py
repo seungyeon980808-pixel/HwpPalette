@@ -566,6 +566,11 @@ def _settings_menu(anchor_widget):
              on_close=lambda: _bar_active(anchor_widget, False))
      .add("팔레트 설정", fn_open_palette_settings)
      .add("물감 설정", lambda: fn_open_library())
+     .separator()
+     # 내 물감을 남에게 주고받는 일 — 물감 설정 화면이 아니라 여기 하위 기능으로
+     # (사용자 결정 2026-07-25)
+     .add("내보내기 · 가져오기…",
+          lambda: library_ui.open_share(root, on_saved=render_palette))
      .show())
 
 
@@ -1278,7 +1283,8 @@ def _search_targets():
                             lambda b=blk: run_palette_block(b)))
     for label, (cat, item) in library.label_lookup().items():
         if cat == "문자":
-            out.append(("문자", f"{label}  →  {item.get('text', '')}",
+            # 저장 키는 '문자' 그대로, 화면에는 '특수기호'로 (개명 규칙)
+            out.append(("특수기호", f"{label}  →  {item.get('text', '')}",
                         lambda t=item.get("text", ""): _insert_text(t)))
         elif cat == "사진":
             out.append(("사진", label, None))

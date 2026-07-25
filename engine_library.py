@@ -182,6 +182,22 @@ def capture_fragment(dest_path):
     return preview
 
 
+def insert_photo(path):
+    r"""사진 파일을 커서 자리에 글자처럼 삽입 (물감 설정 '사진' 탭의 삽입).
+
+    옵션은 마크다운 변환의 \사진이름\ 삽입(insert_rich_line)과 같다 —
+    embedded=True 로 문서에 포함, sizeoption=3 으로 셀 안이면 셀에 맞춤.
+    삽입 직후 한글이 그림 개체를 선택한 채로 두므로 선택을 풀어 준다.
+    """
+    hwp = _h()
+    hwp.insert_picture(str(path), treat_as_char=True, embedded=True,
+                       sizeoption=3)
+    try:
+        hwp.HAction.Run("Cancel")
+    except Exception as e:
+        applog.exc("사진 삽입 후 개체 선택 해제 실패 (무해)", e)
+
+
 def insert_fragment(path):
     r"""조각 .hwp 파일을 커서 위치에 그대로 삽입한다.
 
