@@ -44,14 +44,51 @@ DARK = {
     "yellow": "#3a3a3c",
 }
 
-FONT = "맑은 고딕"
+# ── 글꼴 (애플 디자인 A안, 2026-07-25) ─────────────────
+# Pretendard: SF Pro 와 굵기·자간 체계가 호환되게 설계된 무료 한글 글꼴.
+# 설치돼 있으면 쓰고, 없으면 맑은 고딕 그대로 — 어느 PC 에서든 동작해야 한다.
+#
+# 감지를 Tk(tkfont.families)가 아니라 **폰트 폴더**로 하는 이유: 이 모듈은
+# Tk 창이 만들어지기 전에 임포트되고, 각 UI 파일이 로드 시점에 FONT 를 복사해
+# 가므로(FONT = theme.FONT) 그 전에 값이 정해져 있어야 한다.
+def _pick_font():
+    import os
+    import pathlib
+    folders = [pathlib.Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"]
+    local = os.environ.get("LOCALAPPDATA")
+    if local:   # 요즘 윈도우는 '사용자용 설치'가 기본이라 여기로 들어간다
+        folders.append(pathlib.Path(local) / "Microsoft" / "Windows" / "Fonts")
+    names = set()
+    for folder in folders:
+        try:
+            for f in folder.iterdir():
+                if f.name.lower().startswith("pretendard"):
+                    names.add(f.stem.lower())
+        except OSError:
+            continue
+    # Regular 는 맑은 고딕보다 획이 가늘어 작은 UI 글자에서 흐릿하다(실측
+    # 2026-07-25). Medium 이 있으면 그쪽 — 애플도 작은 UI 글자엔 중간 굵기를 쓴다.
+    if "pretendard-medium" in names:
+        return "Pretendard Medium"
+    if names:
+        return "Pretendard"
+    return "맑은 고딕"
+
+
+FONT = _pick_font()
+
+# Pretendard 는 같은 pt 에서 맑은 고딕보다 작게 보인다(자면 설계 차이).
+# 크기를 일괄 1pt 올려 보정한다 — 각 창의 _font() 가 이 값을 더한다.
+FONT_BOOST = 1 if FONT.startswith("Pretendard") else 0
 
 # 블럭 종류별 배경 — 밝은 쪽은 옅은 파스텔, 어두운 쪽은 같은 색상의 어두운 판.
 # 색상(파랑=템플릿, 주황=서식조합, 초록=양식)은 두 모드에서 같아야 한다.
 BLOCK_LIGHT = {"char": "#ffffff", "template": "#eef4ff",
-               "function": "#fff4e6", "form": "#eafaf1"}
+               "function": "#fff4e6", "form": "#eafaf1",
+               "builtin": "#f0eefc"}      # 프로그램 기능 (사진·특수문자 등)
 BLOCK_DARK = {"char": "#2c2c2e", "template": "#1e2b3f",
-              "function": "#3a2f1c", "form": "#18321f"}
+              "function": "#3a2f1c", "form": "#18321f",
+              "builtin": "#2b2740"}
 
 # 알림 색 (종류 → 글자색, 배경색)
 NOTICE_LIGHT = {

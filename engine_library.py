@@ -16,6 +16,7 @@ import time
 
 import applog
 import hwp_engine
+import parser as md_parser          # MultiLine(한 칸에 여러 줄) 판별용
 from hwp_engine import (
     delete_selection, find_text, has_selection, insert_plain,
 )
@@ -30,6 +31,18 @@ def _h():
 # 친화적 이름 : CharShape 딕셔너리 키. 값 단위는 저장소(library.py)에도 그대로
 # 노출되므로, 여기 바뀌면 저장된 항목의 의미도 바뀐다는 점 주의.
 CHARSHAPE_FIELD_LABELS = ["굵게", "기울임", "밑줄", "글자색", "자간", "글꼴", "크기"]
+
+# 양식 안에 적어 두는 '본문 시작 자리' 표시 (2026-07-24).
+#
+# 양식은 문서 전체를 여는 것이라, 뒤따라오는 내용(문제 등)을 어디에 넣을지
+# 정해 줘야 한다. 문서 끝에 붙이면 머리말·2단 구성·페이지번호가 있는 양식에서
+# 엉뚱한 자리로 간다. 그래서 양식 파일 안에 이 표시를 한 번 적어 두면, 변환이
+# 그 자리를 찾아 거기서부터 이어 쓴다. 표시가 없으면 문서 끝에서 이어 쓴다.
+#
+# 주의: 이 표시는 역슬래시를 2개 포함한다. fill_slots 는 빈칸(\)을 찾아 채우므로
+# **빈칸 채우기 전에 반드시 다른 마커로 치환**해야 한다 — 안 그러면 본문 표시가
+# 빈칸으로 잡아먹힌다. execute_library_plan 이 그 순서를 지킨다.
+BODY_ANCHOR = "\\본문\\"
 
 
 def _charshape_get(cs, label):
@@ -191,6 +204,33 @@ def insert_fragment(path):
     hwp_engine._diag("insert_fragment: insert_file 직후  <<< 여기서 바뀌면 insert_file 범인")
 
 
+def insert_table(rows, cols, grid):
+    r"""커서 자리에 rows×cols 표를 만들고 셀을 채운다 (\표3x3\ 변환용, 2026-07-25).
+
+    셀 이동은 TableRightCell 하나로 한다 — 행 끝에서 **다음 행 첫 칸**으로
+    넘어간다(exam_engine 이 2행2열 표를 같은 방식으로 채운다).
+
+    grid 가 모자라도 된다. 없는 자리는 건너뛰어 빈 칸으로 남긴다 — 표는 이미
+    만들어졌으니 사용자가 한글에서 마저 채우면 된다. 변환을 통째로 실패시키는
+    것보다 낫다.
+    """
+    hwp_engine.create_table_autofit(rows, cols)
+    act = _h().HAction
+    for r in range(rows):
+        row = grid[r] if r < len(grid) else []
+        for c in range(cols):
+            if r or c:                      # 첫 칸은 이미 커서가 있다
+                act.Run("TableRightCell")
+            value = row[c] if c < len(row) else None
+            if value is None:
+                continue                    # '-' 이거나 값이 없는 칸
+            if isinstance(value, list):
+                insert_rich_line(value)     # 사진·서식이 섞인 칸
+            else:
+                insert_plain(value)
+    hwp_engine.exit_table()
+
+
 # ── 빈칸(\) 처리 ──────────────────────────────────────
 # 한 번의 청소에서 훑을 빈칸 개수 상한 — 무한 루프 방지용 안전장치
 _MAX_SLOT_SCAN = 200
@@ -297,6 +337,10 @@ def fill_slots(anchor, fills, end_para=None, slot_count=None):
 
     반환: 실제로 채운 개수.
 
+    반환: (채운 개수, 채우려던 개수). 두 값이 다르면 중간에 멈춘 것이다 —
+    호출부가 그 사실을 사용자에게 알려야 한다. 조용히 넘기면 인쇄물을 보고서야
+    빈칸이 남은 걸 알게 된다.
+
     end_para 는 삽입 직후 기준의 범위다. 채워 넣는 값이 문단을 늘리지는 않지만
     (한 줄짜리 텍스트만 들어온다), 혹시 어긋나더라도 실패 방향은 '빈칸이 남는다'
     쪽이지 '남의 글자를 지운다' 쪽이 아니다.
@@ -305,23 +349,53 @@ def fill_slots(anchor, fills, end_para=None, slot_count=None):
     act = hwp.HAction
     filled = 0
     used = 0
+    want = sum(1 for v in fills if v is not None)
     hwp.SetPos(*anchor)
     for value in fills:
         if not find_text("\\"):
+            # 빈칸을 못 찾으면 남은 값은 갈 곳이 없다. 예전에는 조용히 멈춰서
+            # 사용자가 인쇄물을 보고서야 알았다 → 기록을 남긴다.
+            applog.warn(f"빈칸을 더 찾지 못해 채우기를 멈춥니다 "
+                        f"({filled}/{want}개 채움)")
             break
         if _before_anchor(anchor) or _beyond(end_para):
+            applog.warn(f"빈칸이 삽입 범위를 벗어나 채우기를 멈춥니다 "
+                        f"({filled}/{want}개 채움)")
             break
         used += 1
         if value is None:
             act.Run("Delete")               # '-' → 그 빈칸은 비움
+        elif isinstance(value, md_parser.MultiLine):
+            # { … } 로 묶은 덩어리 — 이 빈칸 하나에 여러 줄을 넣는다.
+            # 표 셀 안이면 BreakPara 가 셀 안에서 문단을 나눈다(칸이 세로로 늘어남).
+            delete_selection()              # 빈칸 표시(\)를 먼저 지운다
+            for n, line_value in enumerate(value.lines):
+                if n:
+                    act.Run("BreakPara")
+                if isinstance(line_value, md_parser.Table):
+                    # 덩어리 안의 \표3*3\ — 글과 표가 한 빈칸에 같이 들어간다
+                    insert_table(line_value.rows, line_value.cols,
+                                 line_value.grid)
+                elif isinstance(line_value, list):
+                    insert_rich_line(line_value)
+                else:
+                    insert_plain(line_value)
+            filled += 1
+        elif isinstance(value, list):
+            # 사진·서식이 섞인 빈칸 (parser._slot_value 가 조각 목록으로 준다).
+            # insert_picture 는 선택을 대신 지워 주지 않으므로 빈칸 표시를 먼저 지운다
+            # — 안 그러면 사진 옆에 \ 가 그대로 남는다.
+            delete_selection()
+            insert_rich_line(value)
+            filled += 1
         else:
-            insert_plain(value)
+            insert_plain(value)             # 글자만 — InsertText 가 선택을 대체한다
             filled += 1
     # 남은 빈칸만 청소한다. slot_count 를 알면 "이 템플릿에 남은 개수"가 정확한
     # 상한이 된다 — 그만큼만 지우므로 아래쪽 사용자 문서는 절대 안 건드린다.
     remaining = None if slot_count is None else max(int(slot_count) - used, 0)
     strip_slot_markers(anchor, end_para, max_delete=remaining)
-    return filled
+    return filled, want
 
 
 def count_slots_in_file(path):
@@ -335,7 +409,9 @@ def count_slots_in_file(path):
         hwp.XHwpDocuments.Add(1)          # 1 = 새 탭으로 열기
         hwp.open(str(path))
         text = hwp.GetTextFile("TEXT", "") or ""
-        return text.count("\\")
+        # 본문 시작 표시(\본문\)는 채울 빈칸이 아니다 — 세기 전에 걷어낸다.
+        # 안 그러면 역슬래시 2개가 빈칸으로 계산돼 개수가 부풀려진다.
+        return text.replace(BODY_ANCHOR, "").count("\\")
     finally:
         try:
             if hwp.XHwpDocuments.Count > saved:
@@ -634,11 +710,30 @@ def insert_rich_line(segments):
         if image:
             # \사진이름\ — 사진 폴더의 그림을 글자처럼 삽입.
             # embedded=True 라 문서에 포함된다(원본 폴더를 지워도 그림은 남음).
+            # sizeoption=3 = 셀 안이면 셀 크기에 맞춰 비율 유지(셀 밖이면 원본 크기).
+            pos = None
             try:
-                hwp.insert_picture(str(image), treat_as_char=True, embedded=True)
+                pos = hwp.GetPos()
+            except Exception as e:
+                applog.exc("사진 삽입 전 위치 기록 실패 — 삽입 후 커서를 못 되돌린다", e)
+            try:
+                hwp.insert_picture(str(image), treat_as_char=True, embedded=True,
+                                   sizeoption=3)
             except Exception as e:
                 applog.exc(f"사진 삽입 실패 ({image}) — 자리 표시 텍스트로 대체", e)
                 insert_plain(f"[사진 실패: {image}]")
+                continue
+            # ⚠ 그림을 넣으면 한글이 그 '그림 개체'를 선택한 채로 둔다.
+            # 개체가 선택돼 있으면 뒤이은 찾기(RepeatFind)가 글자를 못 찾는다 →
+            # fill_slots 가 다음 빈칸을 못 찾고 통째로 멈췄다
+            # ("사진 전까지는 잘 들어가는데 그 뒤로 안 들어간다"의 원인).
+            # 개체 선택을 풀고, 글자처럼취급된 그림(= 글자 한 칸) 바로 뒤로 커서를 옮긴다.
+            try:
+                hwp.HAction.Run("Cancel")
+                if pos:
+                    hwp.SetPos(pos[0], pos[1], pos[2] + 1)
+            except Exception as e:
+                applog.exc("사진 삽입 후 커서 복귀 실패 — 뒤따르는 내용이 밀릴 수 있음", e)
             continue
         text = seg.get("text") or ""
         if not text:
@@ -661,6 +756,75 @@ def insert_rich_line(segments):
             hwp.SetPos(*end)                # 다음 구간은 이 줄 끝에서 이어 쓴다
 
 
+def _unit_changes(unit, ops):
+    """이 조각이 변환으로 실제로 달라지는가.
+
+    안 달라지면 문서를 아예 건드리지 않는다 — 라벨이 없는 셀까지 지웠다 다시
+    넣으면 서식이 흔들리고, 찾기가 어긋났을 때 멀쩡한 글을 망칠 위험만 커진다.
+    """
+    if len(ops) != 1:
+        return True
+    if ops[0][0] == "rich_line":
+        return True                 # 서식·사진이 섞였다 = 반드시 다시 그려야 한다
+    return ops[0][1] != unit
+
+
+def convert_units_in_place(units, plan_fn, anchor=None):
+    r"""조각들을 **있던 자리에서** 변환한다 (표의 셀 경계를 지키려고).
+
+    왜 따로 있나:
+      execute_library_plan 은 '선택을 통째로 지우고 커서 한 곳에 다시 쓰는' 방식이다.
+      본문에서는 맞지만 표에서는 셀 경계가 사라진다 — 여러 셀을 선택해 변환하면
+      모든 셀의 내용이 커서가 남은 한 셀에 줄바꿈으로 쌓였다(사진이 한 칸에
+      몰리던 버그). 셀 안 내용은 옮길 필요가 없으므로, 옮기지 않고 제자리에서
+      찾아 바꾼다. 그러면 find_text 가 알아서 해당 셀로 들어가므로 셀 이동을
+      직접 다룰 필요도 없다.
+
+    앞뒤로 찾는 이유:
+      선택을 풀면(Cancel) 커서가 선택의 **끝**에 남을 수 있다(드래그 방향에 달렸다).
+      그러면 조각들이 전부 커서 뒤쪽에 있어 앞으로 찾기만 해서는 하나도 못 찾는다.
+      그래서 앞으로 찾아 실패하면 뒤로 한 번 더 찾는다. 첫 조각을 뒤에서 찾고
+      나면 커서가 그 자리로 오므로, 나머지는 자연히 앞으로 찾기로 이어진다.
+
+    안전 원칙 — 실패 방향은 '원문이 그대로 남는다' 쪽이다:
+      · 바뀔 게 없는 조각은 건드리지 않는다 (라벨 없는 셀은 그대로 둔다)
+      · 찾지 못한 조각은 경고만 남기고 건너뛴다 (지우지 않는다)
+      · 바꾸는 대상은 사용자가 **선택한 글자와 완전히 같은 줄**뿐이다. 문서
+        다른 곳의 같은 라벨이 함께 바뀔 수는 있어도, 그것도 사용자가 변환하려던
+        라벨이므로 훼손이 아니다.
+
+    plan_fn: 조각 한 개(=한 줄) → (ops, warnings). 경고는 여기서 쓰지 않는다.
+      호출부가 이미 선택 전체에 대해 같은 경고를 사용자에게 보여줬기 때문이다.
+    반환: 실제로 바꾼 조각 수.
+    """
+    hwp = _h()
+    act = hwp.HAction
+    if anchor is not None:
+        try:
+            hwp.SetPos(*anchor)
+        except Exception as e:
+            applog.exc("변환 시작 위치 복원 실패 — 커서가 있는 곳부터 찾습니다", e)
+    changed = 0
+    for unit in units:
+        ops, _ = plan_fn(unit)
+        if not _unit_changes(unit, ops):
+            continue
+        if not (find_text(unit) or find_text(unit, direction="Backward")):
+            applog.warn(f"바꿀 자리를 찾지 못해 건너뜀: {unit[:30]!r}")
+            continue
+        delete_selection()
+        for idx, op in enumerate(ops):
+            if idx:
+                act.Run("BreakPara")
+            if op[0] == "line":
+                if op[1]:
+                    insert_plain(op[1])
+            elif op[0] == "rich_line":
+                insert_rich_line(op[1])
+        changed += 1
+    return changed
+
+
 # ── 라이브러리: 마크다운(\라벨\) 변환 실행 ───────────────
 def execute_library_plan(ops, template_path_fn, form_path_fn=None):
     r"""parser.build_library_plan()의 실행 계획을 문서에 반영한다.
@@ -672,13 +836,22 @@ def execute_library_plan(ops, template_path_fn, form_path_fn=None):
     한 번에 삽입하지 않는 이유: insert_file 직후 커서가 조각 뒤로 이동하지
     않아(실측) 순차 삽입 순서가 꼬이기 때문 — 마커 방식이 순서를 보장한다.
 
-    양식('form')은 성격이 달라 따로 처리한다 — 새 문서를 여는 것이라 마커를
-    심어둔 문서 자체가 사라진다. 그래서 계획에 양식이 있으면 그것만 처리한다.
+    양식('form')은 성격이 달라 **먼저** 처리한다 — 문서 전체를 여는 것이라
+    마커를 심어둔 문서가 사라지기 때문이다. 양식을 연 뒤 본문 자리(BODY_ANCHOR)로
+    커서를 옮기고, 나머지 계획을 그 문서에서 이어서 실행한다 (2026-07-24).
+    예전에는 양식이 있으면 그것만 처리하고 나머지를 버렸다 — 시험지처럼
+    "양식 + 문제들"을 한 번에 변환할 수가 없었다.
     """
     hwp = _h()
     act = hwp.HAction
 
-    # ── 양식이 있으면: 새 문서로 열고 빈칸만 채운다 (마커 방식 안 씀) ──
+    marker_base = "◈LIB%d_" % (int(time.time() * 1000) % 10**9)
+
+    forms_done = 0
+    form_filled = 0
+    form_wanted = 0
+
+    # ── 양식이 있으면: 그 문서를 열고 커서를 본문 자리에 놓는다 ──
     form_op = next((o for o in ops if o[0] == "form"), None)
     if form_op is not None:
         _, item, fills = form_op
@@ -687,14 +860,42 @@ def execute_library_plan(ops, template_path_fn, form_path_fn=None):
             return {"templates": 0, "slots_filled": 0, "forms": 0,
                     "error": f"양식 파일을 찾을 수 없습니다: {item.get('name', '?')}"}
         open_form(path)
-        hwp.MoveDocBegin()
-        # 새로 연 양식 문서 전체가 대상이므로 여기서는 범위 제한을 두지 않는다
-        # (사용자가 쓴 다른 내용이 섞여 있을 수 없는, 유일하게 안전한 경우)
-        filled = fill_slots(hwp.GetPos(), fills, end_para=None,
-                            slot_count=item.get("slot_count"))
-        return {"templates": 0, "slots_filled": filled, "forms": 1}
 
-    marker_base = "◈LIB%d_" % (int(time.time() * 1000) % 10**9)
+        # ① 본문 표시를 고유 마커로 먼저 치환한다.
+        #    \본문\ 은 역슬래시 2개라, 그냥 두면 ②의 fill_slots 가 이걸
+        #    빈칸으로 보고 내용을 채워 넣어 버린다.
+        body_marker = marker_base + "BODY◈"
+        hwp.MoveDocBegin()
+        has_anchor = find_text(BODY_ANCHOR)
+        if has_anchor:
+            delete_selection()
+            insert_plain(body_marker)
+
+        # ② 양식이 가진 빈칸(\)을 양식 라벨 아랫줄들로 채운다.
+        #    새로 연 양식 문서 전체가 대상이므로 범위 제한을 두지 않는다
+        #    (사용자가 쓴 다른 내용이 섞여 있을 수 없는, 유일하게 안전한 경우)
+        hwp.MoveDocBegin()
+        form_filled, form_wanted = fill_slots(
+            hwp.GetPos(), fills, end_para=None,
+            slot_count=item.get("slot_count"))
+        forms_done = 1
+
+        # ③ 본문 자리로 커서 이동. 표시가 없는 양식이면 문서 끝에서 이어 쓴다.
+        hwp.MoveDocBegin()
+        if has_anchor and find_text(body_marker):
+            delete_selection()
+        else:
+            hwp.MoveDocEnd()
+            if not has_anchor:
+                applog.warn(
+                    f"양식 '{item.get('name', '?')}' 에 본문 표시({BODY_ANCHOR})가 "
+                    f"없어 문서 끝에 이어 씁니다")
+
+        # ④ 나머지 계획을 이 문서에서 이어서 실행한다.
+        ops = [o for o in ops if o[0] != "form"]
+        if not ops:
+            return {"templates": 0, "slots_filled": form_filled,
+                    "slots_wanted": form_wanted, "forms": 1}
 
     # ① 텍스트/마커 순차 삽입
     templates = []
@@ -708,12 +909,15 @@ def execute_library_plan(ops, template_path_fn, form_path_fn=None):
                 insert_plain(op[1])
         elif op[0] == "rich_line":
             insert_rich_line(op[1])
+        elif op[0] == "table":
+            insert_table(op[1], op[2], op[3])
         else:                               # ('template', item, fills)
             insert_plain(marker_base + str(len(templates)) + "◈")
             templates.append(op)
 
     # ② 마커 → 조각 치환 + 빈칸(\) 순서대로 채움
     filled = 0
+    wanted = 0
     for idx, (_, item, fills) in enumerate(templates):
         marker = marker_base + str(idx) + "◈"
         hwp.MoveDocBegin()
@@ -724,6 +928,11 @@ def execute_library_plan(ops, template_path_fn, form_path_fn=None):
         anchor = hwp.GetPos()
         path = template_path_fn(item)
         end_para = measure_insert_span(anchor, lambda p=path: insert_fragment(p))
-        filled += fill_slots(anchor, fills, end_para,
-                             slot_count=item.get("slot_count"))
-    return {"templates": len(templates), "slots_filled": filled, "forms": 0}
+        got, want = fill_slots(anchor, fills, end_para,
+                               slot_count=item.get("slot_count"))
+        filled += got
+        wanted += want
+    # 양식을 먼저 처리했다면 그 빈칸 개수도 합쳐서 보고한다 — 사용자에겐
+    # "이번 변환에서 빈칸 몇 개를 채웠나"가 하나의 숫자여야 한다.
+    return {"templates": len(templates), "slots_filled": filled + form_filled,
+            "slots_wanted": wanted + form_wanted, "forms": forms_done}

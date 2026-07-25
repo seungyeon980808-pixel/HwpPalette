@@ -14,12 +14,13 @@
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk, colorchooser
 
+import applog
 import palette
 import library
 import func_catalog
+import builtin_actions              # 프로그램 기능 블럭('도구') 카탈로그
 import hwp_engine
-import engine_library
-import library_ui                  # commit_ime (IME 조합 확정) 공용
+import library_ui                  # commit_ime · capture_template_dialog 공용
 
 import theme                       # 색은 theme.py 한 곳에서 (밝게/어둡게)
 
@@ -270,6 +271,10 @@ class SettingsWindow(tk.Toplevel):
                   cursor="hand2").pack(side="left", padx=(0, 4))
         tk.Button(addbar, text="+ 양식", command=self._add_form, font=(FONT, 9),
                   bg="#e8e8ed", fg=TEXT, bd=0, padx=10, pady=5,
+                  cursor="hand2").pack(side="left", padx=(0, 4))
+        # 프로그램 기능(사진·특수문자 등)도 블럭으로 — 예전엔 코드에 박혀 있었다
+        tk.Button(addbar, text="+ 도구", command=self._add_builtin, font=(FONT, 9),
+                  bg="#e8e8ed", fg=TEXT, bd=0, padx=10, pady=5,
                   cursor="hand2").pack(side="left")
 
         self.block_area = tk.Frame(right, bg=BG)
@@ -288,6 +293,10 @@ class SettingsWindow(tk.Toplevel):
                   font=(FONT, 9), bg=CARD, fg=TEXT, bd=1, padx=10, pady=5,
                   cursor="hand2").pack(side="left", padx=(0, 6))
         tk.Button(foot, text="기본 서식 설정", command=self._edit_default_format,
+                  font=(FONT, 9), bg=CARD, fg=TEXT, bd=1, padx=10, pady=5,
+                  cursor="hand2").pack(side="left", padx=(0, 6))
+        # 변환 버튼 크기 — 창 너비에 바로 영향을 주므로 사용자가 고칠 수 있어야 한다
+        tk.Button(foot, text="변환 버튼 크기", command=self._edit_convert_size,
                   font=(FONT, 9), bg=CARD, fg=TEXT, bd=1, padx=10, pady=5,
                   cursor="hand2").pack(side="left")
         tk.Button(foot, text="닫기", command=self._close, font=(FONT, 10, "bold"),
@@ -641,6 +650,8 @@ class SettingsWindow(tk.Toplevel):
             self._add_function(span, rows)
         elif dlg.result == "form":
             self._add_form(span, rows)
+        elif dlg.result == "builtin":
+            self._add_builtin(span, rows)
         self._pending_area = None
         self._pending_color = None
 
@@ -742,6 +753,8 @@ class SettingsWindow(tk.Toplevel):
         self._set_selection(idx)
         m = tk.Menu(self, tearoff=0)
         m.add_command(label="편집  (더블클릭)", command=lambda: self._edit_block(idx))
+        m.add_command(label="이름 바꾸기 (줄바꿈 가능)",
+                      command=lambda: self._rename_block(idx))
         m.add_command(label="복제", command=lambda: self._duplicate(idx))
         m.add_command(label="색 바꾸기", command=lambda: self._recolor(idx))
         m.add_command(label="기본색으로", command=lambda: self._recolor(idx, reset=True))
@@ -753,6 +766,32 @@ class SettingsWindow(tk.Toplevel):
         m.add_separator()
         m.add_command(label="삭제", command=self._del_selected)
         m.tk_popup(e.x_root, e.y_root)
+
+    def _rename_block(self, idx):
+        r"""블럭에 보일 이름을 정한다. **줄바꿈(Enter)이 그대로 들어간다.**
+
+        왜 필요한가 (2026-07-25): 긴 이름을 넣으려면 칸을 옆으로 늘리는 수밖에
+        없었고, 칸이 넓어지면 창이 그만큼 좌우로 길어졌다. '양식 채우기' 를
+        '양식 / 채우기' 두 줄로 쓰면 **좁은 칸(2×2)에 그대로** 들어간다.
+
+        비우면 원래 이름으로 돌아간다(도구는 카탈로그 이름, 템플릿은 라이브러리 이름).
+        """
+        blocks = palette.load_tabs()[self.sel_tab]["blocks"]
+        if not (0 <= idx < len(blocks)):
+            return
+        blk = dict(blocks[idx])
+        dlg = _CaptionDialog(self, self._block_label(blk),
+                             blk.get("caption", ""))
+        self.wait_window(dlg)
+        if dlg.result is None:
+            return
+        if dlg.result.strip():
+            blk["caption"] = dlg.result
+        else:
+            blk.pop("caption", None)        # 비웠다 = 원래 이름으로
+        palette.update_block(self.sel_tab, idx, blk)
+        self._render_blocks()
+        self._notify()
 
     def _duplicate(self, idx):
         """블럭 복제 (UI 제안 13) — 비슷한 서식 조합을 처음부터 다시 안 만들게."""
@@ -781,15 +820,24 @@ class SettingsWindow(tk.Toplevel):
         self._notify()
 
     def _tile_text(self, blk, span=1):
-        """칸 수에 맞춰 자른다 — 메인 창(main._make_block_button)과 같은 규칙.
+        r"""칸 수에 맞춰 자른다 — 메인 창(main._fit_label)과 **같은 규칙**.
 
         자동 아이콘(▦ ƒ 📄)은 넣지 않는다 — 사용자가 정한 이름 그대로 (2026-07-19).
+        줄바꿈은 살려서 줄마다 따로 자른다 — '양식\n채우기' 처럼 좁은 칸에
+        두 줄로 넣을 수 있게 (2026-07-25).
         """
-        s = self._block_label(blk)
         limit = max(2, span * 2)
-        return s if len(s) <= limit else s[:limit] + "…"
+        lines = (self._block_label(blk) or "").split("\n")
+        return "\n".join(ln if len(ln) <= limit else ln[:limit] + "…"
+                         for ln in lines)
 
     def _block_label(self, blk):
+        # 사용자가 지은 표시 이름이 있으면 그것이 우선 (줄바꿈 포함 가능)
+        if blk.get("caption"):
+            return blk["caption"]
+        if blk["type"] == "builtin":
+            # 이름은 카탈로그에서 읽는다 — 표기를 고쳐도 기존 블럭이 따라온다
+            return builtin_actions.name_of(blk.get("key"))
         if blk["type"] == "char":
             v = blk.get("value", "")
             return v if len(v) <= 20 else v[:20] + "…"
@@ -1011,47 +1059,15 @@ class SettingsWindow(tk.Toplevel):
                 self._add_template_block(it, span, rows)
 
     def _capture_template_here(self, span=2, rows=1):
-        """한글의 현재 선택(또는 커서가 든 표)을 그 자리에서 템플릿으로 등록 + 배치."""
-        try:
-            hwp_engine.connect()
-        except Exception as e:
-            messagebox.showerror("연결 실패", f"한글을 먼저 실행해주세요.\n{e}", parent=self)
-            return
-        if not hwp_engine.has_selection():
-            if not engine_library.auto_select_table_if_inside():
-                messagebox.showwarning("선택 없음",
-                    "한글에서 템플릿으로 저장할 영역을 드래그로 선택하거나,\n"
-                    "표를 저장하려면 표 안을 클릭만 해둬도 됩니다.", parent=self)
-                return
-        captured = hwp_engine.read_selection_text(retries=6)
-        slot_count = captured.count("\\")
-        if slot_count:
-            note = (f"빈칸(\\) {slot_count}개 발견 — 변환 시 아랫줄 {slot_count}줄이"
-                    " 순서대로 채워집니다. (비울 칸엔 '-')")
-        elif "/" in captured:
-            note = ("⚠ 빈칸이 없습니다. 혹시 슬래시(/)를 쓰셨나요?\n"
-                    "   빈칸은 역슬래시(\\) — 한글에서 ₩ 로 보이는 그 키입니다.")
-        else:
-            note = "빈칸(\\)이 없습니다. 글자 들어갈 자리에 \\ 를 넣어두면 채울 수 있습니다."
+        """한글의 현재 선택(또는 커서가 든 표)을 그 자리에서 템플릿으로 등록 + 배치.
 
-        meta = MetaDialog(self, title="템플릿 등록", extra_note=note)
-        self.wait_window(meta)
-        if not meta.result:
-            return
-        name, label, group = meta.result
-        # add_template_from_capture 의 두 번째 인자는 **함수**다 (목적지를 받아
-        # 거기 저장하는 함수). 여기서만 임시 파일 경로를 넘기고 있어서 안에서
-        # save_to(dest) 가 'Path 는 호출할 수 없다'로 터졌다 — 환경설정에서
-        # 템플릿 블럭을 새로 만들 때마다 실패. 라이브러리 창(library_ui)은
-        # 처음부터 함수를 넘기고 있었다. 그 방식으로 맞춘다.
-        # (조각을 최종 이름으로 바로 저장하므로 임시 파일도 필요 없다 —
-        #  이름 바꾸기에서 나던 WinError 32 를 피하려던 그 설계 그대로다)
-        try:
-            item_id = library.add_template_from_capture(
-                name, engine_library.capture_fragment,
-                label=label, group=group, slot_count=slot_count)
-        except Exception as e:
-            messagebox.showerror("캡처 실패", str(e), parent=self)
+        등록 절차 자체는 **라이브러리 창과 같은 코드**를 쓴다 (2026-07-25).
+        예전에는 여기에 복사본이 있었고, 그 복사본이 MetaDialog 를 임포트하지
+        않아 NameError 로 죽었다 — 환경설정에서는 템플릿 추가가 안 되고
+        라이브러리 창에서만 되던 원인. 한 벌로 합쳐 그 어긋남을 없앴다.
+        """
+        item_id = library_ui.capture_template_dialog(self)
+        if item_id is None:
             return
         self._add_template_block(library.find_by_id("템플릿", item_id), span, rows)
 
@@ -1069,6 +1085,25 @@ class SettingsWindow(tk.Toplevel):
         if dlg.result:
             dlg.result["span"], dlg.result["rows"] = span, rows
             self._place(dlg.result)
+
+    def _add_builtin(self, span=2, rows=1):
+        """프로그램 기능 블럭 추가 (사진·특수문자·양식 채우기 …).
+
+        고를 수 있는 목록은 builtin_actions 가 정한다 — 사용자가 만드는 것이
+        아니라 프로그램이 가진 기능이라, 라이브러리 등록 없이 바로 놓는다.
+        """
+        if not self._need_tab():
+            return
+        names = [f"{a['name']} — {a['hint']}"
+                 for a in builtin_actions.BUILTIN_ACTIONS]
+        pick = _ChoiceDialog(self, "도구 선택", names)
+        self.wait_window(pick)
+        if not pick.result:
+            return
+        idx = names.index(pick.result)
+        action = builtin_actions.BUILTIN_ACTIONS[idx]
+        self._place({"type": "builtin", "key": action["key"],
+                     "name": action["name"], "span": span, "rows": rows})
 
     def _add_form(self, span=2, rows=1):
         """양식 블럭 추가 — 라이브러리에 등록된 양식에서 고른다."""
@@ -1110,6 +1145,12 @@ class SettingsWindow(tk.Toplevel):
 
     def _edit_default_format(self):
         dlg = _DefaultFormatDialog(self)
+        self.wait_window(dlg)
+        self._notify()
+
+    def _edit_convert_size(self):
+        """마크다운 변환 버튼의 크기 (블럭 격자와 같은 칸 단위)."""
+        dlg = _ConvertSizeDialog(self)
         self.wait_window(dlg)
         self._notify()
 
@@ -1256,6 +1297,119 @@ class _DefaultFormatDialog(tk.Toplevel):
         self.destroy()
 
 
+class _ConvertSizeDialog(tk.Toplevel):
+    """마크다운 변환 버튼 크기 — 블럭 격자와 **같은 칸 단위**로 정한다.
+
+    칸 단위인 이유: 옆 블럭들과 윗줄·아랫줄이 맞아야 보기 좋고, 픽셀로 두면
+    화면 배율(크게/작게)이 바뀔 때 어긋난다.
+    """
+
+    def __init__(self, master):
+        super().__init__(master)
+        self.title("변환 버튼 크기")
+        self.configure(bg=BG)
+        self.resizable(False, False)
+        self.attributes("-topmost", True)
+
+        span, rows = palette.get_convert_size()
+        self.span_var = tk.IntVar(value=span)
+        self.rows_var = tk.IntVar(value=rows)
+
+        tk.Label(self, text="마크다운 변환 버튼", font=(FONT, 11, "bold"),
+                 bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(12, 2))
+        tk.Label(self,
+                 text="옆 블럭과 같은 칸 단위입니다. 가로를 늘리면 창도 넓어집니다.",
+                 font=(FONT, 8), bg=BG, fg=MUTED).pack(anchor="w", padx=16,
+                                                       pady=(0, 10))
+
+        body = tk.Frame(self, bg=BG, padx=16)
+        body.pack(fill="x")
+        for r, (text, var) in enumerate((("가로 (칸)", self.span_var),
+                                         ("세로 (줄)", self.rows_var))):
+            tk.Label(body, text=text, font=(FONT, 9), bg=BG, fg=TEXT).grid(
+                row=r, column=0, sticky="w", pady=4)
+            tk.Spinbox(body, from_=1, to=palette.CONVERT_SIZE_MAX, width=5,
+                       textvariable=var, font=(FONT, 10),
+                       justify="center").grid(row=r, column=1, padx=(10, 0))
+
+        foot = tk.Frame(self, bg=BG, padx=16, pady=12)
+        foot.pack(fill="x")
+        tk.Button(foot, text="저장", command=self._ok,
+                  font=(FONT, 10, "bold"), bg=ACCENT, fg="white", bd=0,
+                  padx=16, pady=6, cursor="hand2").pack(side="right")
+        tk.Button(foot, text="기본값 (3×2)", command=self._reset,
+                  font=(FONT, 9), bg="#e8e8ed", fg=TEXT, bd=0,
+                  padx=12, pady=6, cursor="hand2").pack(side="left")
+
+        self.update_idletasks()
+        self.geometry(f"+{master.winfo_rootx()+60}+{master.winfo_rooty()+80}")
+        self.grab_set()
+
+    def _reset(self):
+        self.span_var.set(palette.DEFAULT_CONVERT_SIZE["span"])
+        self.rows_var.set(palette.DEFAULT_CONVERT_SIZE["rows"])
+
+    def _ok(self):
+        try:
+            palette.save_convert_size(self.span_var.get(), self.rows_var.get())
+        except (tk.TclError, ValueError):
+            # 칸에 숫자가 아닌 것이 들어간 경우 — 저장하지 않고 그냥 닫는다
+            applog.warn("변환 버튼 크기: 숫자가 아니어서 저장하지 않았습니다")
+        self.destroy()
+
+
+class _CaptionDialog(tk.Toplevel):
+    r"""블럭에 보일 이름 — **Enter 로 줄을 나눌 수 있다**.
+
+    Entry 가 아니라 Text 를 쓰는 이유: Entry 는 Enter 를 '확인'으로 삼켜 줄바꿈을
+    넣을 수가 없다. 저장은 아래 버튼(또는 Ctrl+Enter)으로 한다.
+    """
+
+    def __init__(self, master, current, caption=""):
+        super().__init__(master)
+        self.result = None
+        self.title("블럭 이름")
+        self.configure(bg=BG)
+        self.resizable(False, False)
+        self.attributes("-topmost", True)
+
+        tk.Label(self, text="버튼에 보일 이름", font=(FONT, 11, "bold"),
+                 bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(12, 2))
+        tk.Label(self,
+                 text="Enter 로 줄을 나눌 수 있습니다 — 좁은 칸에 두 줄로 넣을 때 씁니다.\n"
+                      "비우고 저장하면 원래 이름으로 돌아갑니다.",
+                 font=(FONT, 8), bg=BG, fg=MUTED, justify="left").pack(
+            anchor="w", padx=16, pady=(0, 8))
+
+        self.box = tk.Text(self, width=24, height=3, font=(FONT, 11),
+                           relief="solid", bd=1, wrap="none")
+        self.box.pack(padx=16)
+        self.box.insert("1.0", caption or "")
+        self.box.focus_set()
+        self.box.bind("<Control-Return>", lambda e: self._ok())
+
+        tk.Label(self, text=f"지금 이름: {current!r}", font=(FONT, 8),
+                 bg=BG, fg=MUTED).pack(anchor="w", padx=16, pady=(6, 0))
+
+        foot = tk.Frame(self, bg=BG, padx=16, pady=12)
+        foot.pack(fill="x")
+        tk.Button(foot, text="저장  (Ctrl+Enter)", command=self._ok,
+                  font=(FONT, 10, "bold"), bg=ACCENT, fg="white", bd=0,
+                  padx=14, pady=6, cursor="hand2").pack(side="right")
+        tk.Button(foot, text="취소", command=self.destroy, font=(FONT, 10),
+                  bg="#e8e8ed", fg=TEXT, bd=0, padx=14, pady=6,
+                  cursor="hand2").pack(side="right", padx=(0, 6))
+
+        self.update_idletasks()
+        self.geometry(f"+{master.winfo_rootx()+60}+{master.winfo_rooty()+80}")
+        self.grab_set()
+
+    def _ok(self):
+        library_ui.commit_ime(self)     # 한글 조합 중인 마지막 글자 확정
+        self.result = self.box.get("1.0", "end").rstrip("\n")
+        self.destroy()
+
+
 class _ToolPickDialog(tk.Toplevel):
     """빈칸을 끌어 칸 수를 정한 뒤 '무엇을 넣을지' 고르는 창."""
 
@@ -1264,6 +1418,7 @@ class _ToolPickDialog(tk.Toplevel):
         ("template", "템플릿", "표·결재란 등 문서 일부를 커서 자리에 꽂기"),
         ("function", "서식 조합", "선택한 글자에 굵게·크기·자간 등을 한 번에"),
         ("form", "양식", "hwp 파일 전체를 새 문서로 열기"),
+        ("builtin", "도구", "이 프로그램의 기능 (사진·특수문자·양식 채우기 …)"),
     ]
 
     def __init__(self, master, span, rows=1):

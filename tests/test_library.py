@@ -35,6 +35,44 @@ class NormalizeLabelTest(unittest.TestCase):
         self.assertEqual(library.normalize_label("   "), "")
 
 
+class ResolveEditedLabelTest(unittest.TestCase):
+    r"""이름을 바꿨는데 라벨이 옛 이름으로 남던 버그 (2026-07-25).
+
+    수정 창의 라벨 칸은 '자세히' 안에 접혀 있어 사용자 눈에 안 보이는데 옛 값이
+    미리 채워진다. 그래서 이름만 고치면 라벨이 조용히 어긋났고, 팔레트 버튼은
+    id 로 찾으니 잘 되어서 "버튼은 되는데 변환만 안 되는" 증상이 됐다.
+    """
+
+    def test_라벨을_안_지었으면_이름을_따라간다(self):
+        # 학교합답1사진3선지 → …5선지 로 이름만 고친 경우
+        self.assertEqual(
+            library.resolve_edited_label(
+                "학교합답1사진3선지", "학교합답1사진3선지",
+                "학교합답1사진5선지", "학교합답1사진3선지"),
+            "학교합답1사진5선지")
+
+    def test_일부러_다르게_지은_라벨은_지킨다(self):
+        # 원안지 → 원안지양식 처럼 의도적으로 다른 라벨
+        self.assertEqual(
+            library.resolve_edited_label(
+                "원안지", "원안지양식", "원안지(2026)", "원안지양식"),
+            "원안지양식")
+
+    def test_라벨을_직접_고쳤으면_그것을_쓴다(self):
+        self.assertEqual(
+            library.resolve_edited_label("가", "가", "나", "내가정한라벨"),
+            "내가정한라벨")
+
+    def test_이름도_라벨도_그대로면_그대로(self):
+        self.assertEqual(
+            library.resolve_edited_label("가", "가", "가", "가"), "가")
+
+    def test_감싼_역슬래시가_있어도_같은_것으로_본다(self):
+        # 라벨 칸에 \가\ 로 적혀 있어도 '안 건드린 것'으로 봐야 한다
+        self.assertEqual(
+            library.resolve_edited_label("가", "가", "나", "\\가\\"), "나")
+
+
 class UniqueNameTest(unittest.TestCase):
     """이름은 분류 안에서 유일해야 한다 (개선안 3의 전제)."""
 

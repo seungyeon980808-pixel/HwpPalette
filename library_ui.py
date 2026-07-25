@@ -313,6 +313,64 @@ class MetaDialog(tk.Toplevel):
             parent=self)
 
 
+def capture_template_dialog(parent):
+    r"""한글의 현재 선택(또는 커서가 든 표)을 템플릿으로 등록한다.
+
+    반환: 등록된 항목 id. 사용자가 취소했거나 실패하면 None.
+
+    **라이브러리 창과 환경설정(팔레트) 창이 같은 코드를 쓰게 하려고 떼어냈다**
+    (2026-07-25). 예전에는 두 벌로 복사돼 있었고, 팔레트 쪽 복사본은 MetaDialog 를
+    임포트하지 않아 NameError 로 죽었다 — "라이브러리 창에서만 템플릿 추가가
+    되던" 원인. 한 벌로 합치면 이런 어긋남이 다시 생기지 않는다.
+    """
+    if not _ensure_hwp(parent):
+        return None
+    if not hwp_engine.has_selection():
+        # 드래그가 없어도, 표 안을 클릭만 해뒀으면 표 전체를 자동 선택
+        if not engine_library.auto_select_table_if_inside():
+            messagebox.showwarning("선택 없음",
+                "한글에서 템플릿으로 저장할 영역을 드래그로 선택하거나,\n"
+                "표를 저장하려면 표 안을 클릭만 해둬도 됩니다.", parent=parent)
+            return None
+    # 빈칸 스캔 — \ 하나가 빈칸 하나
+    captured = hwp_engine.read_selection_text(retries=6)
+    slot_count = captured.count("\\")
+    if slot_count:
+        note = (f"빈칸(\\) {slot_count}개 발견 — 마크다운 변환 시 아랫줄 "
+                f"{slot_count}줄이 위에서부터 순서대로 채워집니다.\n"
+                "   (비울 칸에는 '-' 한 줄)")
+    elif "/" in captured:
+        # 실제로 겪은 혼동: 빈칸을 슬래시(/)로 찍으면 인식 안 됨 (2026-07-16)
+        note = ("⚠ 빈칸 표시가 없습니다. 혹시 슬래시(/)를 쓰셨나요?\n"
+                "   빈칸은 역슬래시(\\)여야 합니다 — 한글에서 ₩ 로 보이는 그 키입니다.")
+    else:
+        note = ("빈칸 표시(\\)가 없습니다. 글자가 들어갈 자리에 \\ 를 넣어두면\n"
+                "마크다운 변환 때 아랫줄 내용이 순서대로 채워집니다.")
+    meta = MetaDialog(parent, title="템플릿 등록", extra_note=note)
+    parent.wait_window(meta)
+    if not meta.result:
+        return None
+    name, label, group = meta.result
+    # add_template_from_capture 의 두 번째 인자는 **함수**다 (목적지를 받아 거기
+    # 저장하는 함수). 조각을 최종 이름으로 바로 저장하므로 이름 바꾸기가 없고,
+    # 한글이 파일을 물고 있어 나던 WinError 32 도 생기지 않는다 (2026-07-19).
+    try:
+        item_id = library.add_template_from_capture(
+            name, engine_library.capture_fragment, label=label,
+            group=group, slot_count=slot_count)
+    except Exception as e:
+        applog.exc("템플릿 캡처 실패", e)
+        messagebox.showerror("캡처 실패", str(e), parent=parent)
+        return None
+    # 구버전이 한글에 열어둔 _tmp 문서가 있으면 닫고 디스크에서도 청소
+    try:
+        engine_library.close_stale_temp_docs()
+        library.cleanup_temp_fragments()
+    except Exception as e:
+        applog.exc("임시 파일 청소 실패 (무해)", e)
+    return item_id
+
+
 class TextInputDialog(tk.Toplevel):
     """문자/문구 등록 입력창."""
 
@@ -642,51 +700,9 @@ class LibraryManager(tk.Toplevel):
 
     # ── 템플릿 ───────────────────────────────────────
     def _add_template(self):
-        if not _ensure_hwp(self):
+        # 등록 절차는 환경설정 창과 공유한다 (capture_template_dialog)
+        if capture_template_dialog(self) is None:
             return
-        if not hwp_engine.has_selection():
-            # 드래그가 없어도, 표 안을 클릭만 해뒀으면 표 전체를 자동 선택
-            if not engine_library.auto_select_table_if_inside():
-                messagebox.showwarning("선택 없음",
-                    "한글에서 템플릿으로 저장할 영역을 드래그로 선택하거나,\n"
-                    "표를 저장하려면 표 안을 클릭만 해둬도 됩니다.", parent=self)
-                return
-        # 빈칸 스캔 — \ 하나가 빈칸 하나
-        captured_text = hwp_engine.read_selection_text(retries=6)
-        slot_count = captured_text.count("\\")
-        if slot_count:
-            note = (f"빈칸(\\) {slot_count}개 발견 — 마크다운 변환 시 아랫줄 "
-                    f"{slot_count}줄이 위에서부터 순서대로 채워집니다.\n"
-                    "   (비울 칸에는 '-' 한 줄)")
-        elif "/" in captured_text:
-            # 실제로 겪은 혼동: 빈칸을 슬래시(/)로 찍으면 인식 안 됨 (2026-07-16)
-            note = ("⚠ 빈칸 표시가 없습니다. 혹시 슬래시(/)를 쓰셨나요?\n"
-                    "   빈칸은 역슬래시(\\)여야 합니다 — 한글에서 ₩ 로 보이는 그 키입니다.")
-        else:
-            note = ("빈칸 표시(\\)가 없습니다. 글자가 들어갈 자리에 \\ 를 넣어두면\n"
-                    "마크다운 변환 때 아랫줄 내용이 순서대로 채워집니다.")
-        meta = MetaDialog(self, title="템플릿 등록", extra_note=note)
-        self.wait_window(meta)
-        if not meta.result:
-            return
-        name, label, group = meta.result
-        # 조각을 최종 위치에 '바로' 저장한다 — 임시 이름으로 저장 후 이름을 바꾸면
-        # 한글이 그 파일을 물고 있어 WinError 32 가 났다(2026-07-19). save_to 로
-        # 넘기면 library 가 uuid 경로를 만들어 여기에 직접 저장시킨다.
-        try:
-            library.add_template_from_capture(
-                name, engine_library.capture_fragment, label=label,
-                group=group, slot_count=slot_count)
-        except Exception as e:
-            applog.exc("템플릿 캡처 실패", e)
-            messagebox.showerror("캡처 실패", str(e), parent=self)
-            return
-        # 구버전이 한글에 열어둔 _tmp 문서가 있으면 닫고 디스크에서도 청소
-        try:
-            engine_library.close_stale_temp_docs()
-            library.cleanup_temp_fragments()
-        except Exception as e:
-            applog.exc("임시 파일 청소 실패 (무해)", e)
         self._refresh("템플릿")
         self._notify()
 
@@ -699,19 +715,29 @@ class LibraryManager(tk.Toplevel):
             parent=self)
         if not path:
             return
-        # 빈칸(\) 개수 세기 — 한글로 열어서 확인 (실패해도 등록은 진행)
-        slot_count = 0
-        try:
-            hwp_engine.connect()
-            slot_count = engine_library.count_slots_in_file(path)
-        except Exception:
-            pass
+        # 빈칸(\) 개수 세기 — 한글이 **이미 연결돼 있을 때만** 시도한다.
+        #
+        # 여기서 connect() 를 부르면 안 된다 (실측 2026-07-24): 한글이 꺼져 있으면
+        # 실행·연결을 기다리는 동안 Tkinter 단일 스레드가 통째로 묶여 **창이 멈춘
+        # 것처럼** 보인다. "양식 추가를 눌러도 무반응"의 원인이 이것이었다.
+        # 빈칸 개수는 안내용일 뿐 등록에 필수가 아니므로, 못 세면 그냥 넘어간다.
+        # (예전엔 except: pass 라 실패해도 아무 단서가 안 남았다 → 반드시 기록한다)
+        slot_count = None               # None = 못 셈, 0 = 세어 봤더니 없음
+        if hwp_engine.is_connected():
+            try:
+                slot_count = engine_library.count_slots_in_file(path)
+            except Exception as e:
+                applog.exc(f"양식 등록: 빈칸 세기 실패 — {path}", e)
         if slot_count:
             note = (f"빈칸(\\) {slot_count}개 발견 — \\라벨\\ 변환 시 아랫줄 "
                     f"{slot_count}줄이 순서대로 채워집니다. (비울 칸엔 '-')")
-        else:
+        elif slot_count == 0:
             note = ("빈칸(\\)이 없습니다. 양식에 \\ 를 넣어두면 변환 때 채울 수 있습니다.\n"
                     "지금 등록해도 '새 문서로 열기'는 됩니다.")
+        else:
+            note = ("한글에 연결돼 있지 않아 빈칸(\\) 수를 세지 못했습니다.\n"
+                    "등록과 '새 문서로 열기'는 그대로 됩니다. 빈칸 채우기까지 쓰려면\n"
+                    "한글을 켠 뒤 다시 등록해주세요.")
         default_name = pathlib.Path(path).stem
         meta = MetaDialog(self, title="양식 등록", name=default_name,
                           extra_note=note)
@@ -855,6 +881,10 @@ class LibraryManager(tk.Toplevel):
         if not meta.result:
             return
         name, label, group = meta.result
+        # 이름만 고쳤을 때 라벨이 옛 이름으로 남는 것을 막는다 (라벨 칸이 '자세히'
+        # 안에 접혀 있어 사용자 눈에 안 보인다). 규칙은 resolve_edited_label 참고.
+        label = library.resolve_edited_label(
+            item["name"], item.get("label", ""), name, label)
         library.update_item(cat, item["id"], name=name, label=label, group=group)
         self._refresh(cat)
         self._notify()
@@ -864,5 +894,12 @@ class LibraryManager(tk.Toplevel):
             self.on_saved()
 
 
-def open_manager(master, on_saved=None):
-    return LibraryManager(master, on_saved=on_saved)
+def open_manager(master, on_saved=None, cat=None):
+    """라이브러리 창을 연다. cat 을 주면 그 탭으로 바로 연다 ('내장' 등)."""
+    win = LibraryManager(master, on_saved=on_saved)
+    if cat in TABS:
+        try:
+            win._refresh(cat)
+        except Exception as e:
+            applog.exc(f"라이브러리 '{cat}' 탭으로 열기 실패 — 기본 탭으로 엽니다", e)
+    return win

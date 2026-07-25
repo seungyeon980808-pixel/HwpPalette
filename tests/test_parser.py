@@ -167,6 +167,175 @@ class BuildLibraryPlanTest(unittest.TestCase):
         ops, _ = md_parser.build_library_plan("\\결재란\\\n\\학교\\ 교장", lookup)
         self.assertEqual(ops[0][2], ["대왕중학교 교장"])
 
+    # ── { } 한 칸에 여러 줄 (2026-07-25) ─────────────────────────
+
+    def test_중괄호로_묶으면_한_빈칸에_여러_줄(self):
+        lookup = _lookup(문항=("템플릿", {"slot_count": 2, "file": "a.hwp"}))
+        ops, warns = md_parser.build_library_plan(
+            "\\문항\\\n{(가) 준비한다.\n(나) 측정한다.\n(다) 기록한다.}\n다음 칸",
+            lookup)
+        fills = ops[0][2]
+        self.assertEqual(len(fills), 2)                 # 덩어리가 한 칸을 먹는다
+        self.assertEqual(fills[0],
+                         md_parser.MultiLine(("(가) 준비한다.", "(나) 측정한다.",
+                                              "(다) 기록한다.")))
+        self.assertEqual(fills[1], "다음 칸")
+        self.assertEqual(warns, [])
+
+    def test_중괄호를_따로_한_줄에_둬도_된다(self):
+        lookup = _lookup(문항=("템플릿", {"slot_count": 1, "file": "a.hwp"}))
+        ops, _ = md_parser.build_library_plan(
+            "\\문항\\\n{\n가\n나\n}", lookup)
+        self.assertEqual(ops[0][2][0], md_parser.MultiLine(("가", "나")))
+
+    def test_한_줄짜리_덩어리도_된다(self):
+        lookup = _lookup(문항=("템플릿", {"slot_count": 1, "file": "a.hwp"}))
+        ops, _ = md_parser.build_library_plan("\\문항\\\n{한 줄}", lookup)
+        self.assertEqual(ops[0][2][0], md_parser.MultiLine(("한 줄",)))
+
+    def test_덩어리_안에서도_라벨과_서식이_된다(self):
+        lookup = _lookup(문항=("템플릿", {"slot_count": 1, "file": "a.hwp"}),
+                         학교=("문자", {"text": "대왕중"}))
+        ops, _ = md_parser.build_library_plan(
+            "\\문항\\\n{\\학교\\ 과학실\n\\굵게{주의}}", lookup)
+        block = ops[0][2][0]
+        self.assertEqual(block.lines[0], "대왕중 과학실")
+        self.assertIsInstance(block.lines[1], list)      # 서식은 조각 목록
+
+    def test_덩어리_안에서도_표가_만들어진다(self):
+        # 실제 사용 형태: [실험 결과] 아래 표가 같은 빈칸에 들어간다.
+        # 예전에는 덩어리 안의 \표3*3\ 을 '등록 안 된 라벨'로 보고 경고만 냈다.
+        lookup = _lookup(문항=("템플릿", {"slot_count": 1, "file": "a.hwp"}))
+        ops, warns = md_parser.build_library_plan(
+            "\\문항\\\n{[실험 결과]\n\\표3*3\\\n1&2&3\n4&5&6\n7&8&9\n}", lookup)
+        block = ops[0][2][0]
+        self.assertEqual(block.lines[0], "[실험 결과]")
+        table = block.lines[1]
+        self.assertIsInstance(table, md_parser.Table)
+        self.assertEqual((table.rows, table.cols), (3, 3))
+        self.assertEqual(table.grid,
+                         [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"]])
+        self.assertEqual(warns, [])
+
+    def test_덩어리_안_표가_닫는_중괄호를_행으로_먹지_않는다(self):
+        # 행이 모자랄 때 } 까지 표의 행으로 삼키면 덩어리가 안 닫힌다
+        lookup = _lookup(문항=("템플릿", {"slot_count": 2, "file": "a.hwp"}))
+        ops, warns = md_parser.build_library_plan(
+            "\\문항\\\n{\\표3*2\\\n1&2\n}\n다음 칸", lookup)
+        block = ops[0][2][0]
+        self.assertEqual(block.lines[0].grid, [["1", "2"]])
+        self.assertEqual(ops[0][2][1], "다음 칸")     # 덩어리가 제대로 닫혔다
+        self.assertEqual(warns, [])
+
+    def test_덩어리를_안_닫으면_경고한다(self):
+        lookup = _lookup(문항=("템플릿", {"slot_count": 1, "file": "a.hwp"}))
+        _, warns = md_parser.build_library_plan("\\문항\\\n{가\n나", lookup)
+        self.assertTrue(any("닫는 }" in w for w in warns))
+
+    # ── \표3*3\ (2026-07-25) ─────────────────────────────────────
+
+    def test_표는_아랫줄들을_행으로_읽는다(self):
+        ops, _ = md_parser.build_library_plan(
+            "\\표3*3\\\n1&2&3\n4&5&6\n7&8&9", {})
+        self.assertEqual(ops[0][0], "table")
+        self.assertEqual(ops[0][1], 3)          # 행
+        self.assertEqual(ops[0][2], 3)          # 열
+        self.assertEqual(ops[0][3],
+                         [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"]])
+
+    def test_표_행이_모자라도_만든다(self):
+        ops, _ = md_parser.build_library_plan("\\표3*2\\\n1&2", {})
+        self.assertEqual(ops[0][0], "table")
+        self.assertEqual(ops[0][3], [["1", "2"]])   # 나머지 행은 빈 칸으로 남음
+
+    def test_표_빈_칸은_하이픈(self):
+        ops, _ = md_parser.build_library_plan("\\표1*3\\\n1&-&3", {})
+        self.assertEqual(ops[0][3], [["1", None, "3"]])
+
+    def test_표_셀_안에_라벨과_서식을_쓸_수_있다(self):
+        lookup = _lookup(학교=("문자", {"text": "대왕중"}))
+        ops, _ = md_parser.build_library_plan(
+            "\\표1*2\\\n\\학교\\&\\굵게{중요}", lookup)
+        row = ops[0][3][0]
+        self.assertEqual(row[0], "대왕중")          # 문자 라벨은 치환
+        self.assertIsInstance(row[1], list)         # 서식은 조각 목록으로
+
+    def test_표_셀에_앰퍼샌드를_글자로_쓰려면_두_번(self):
+        ops, _ = md_parser.build_library_plan("\\표1*2\\\nA&&B&C", {})
+        self.assertEqual(ops[0][3], [["A&B", "C"]])
+
+    def test_라벨_바로_뒤의_앰퍼샌드도_칸을_나눈다(self):
+        # 라벨을 닫는 \ 때문에 \& 로 오해하면 안 된다 (이 문법을 고른 이유)
+        lookup = _lookup(학교=("문자", {"text": "대왕중"}))
+        ops, _ = md_parser.build_library_plan("\\표1*2\\\n\\학교\\&뒤", lookup)
+        self.assertEqual(ops[0][3], [["대왕중", "뒤"]])
+
+    def test_표_다음_표가_오면_거기서_끊는다(self):
+        ops, _ = md_parser.build_library_plan(
+            "\\표1*2\\\n1&2\n\\표1*2\\\n3&4", {})
+        self.assertEqual(len(ops), 2)
+        self.assertEqual(ops[0][3], [["1", "2"]])
+        self.assertEqual(ops[1][3], [["3", "4"]])
+
+    def test_표_크기가_터무니없으면_거부하고_원문을_남긴다(self):
+        ops, warns = md_parser.build_library_plan("\\표999*999\\", {})
+        self.assertEqual(ops[0][0], "line")
+        self.assertTrue(any("표 크기" in w for w in warns))
+
+    def test_등록한_라벨이_표보다_우선한다(self):
+        # 라벨에 * 가 들어가 키워드 인자로 못 쓰므로 사전을 직접 만든다
+        lookup = {"표2*2": ("문자", {"name": "표2*2", "label": "표2*2",
+                                     "text": "내가 정한 것"})}
+        ops, _ = md_parser.build_library_plan("\\표2*2\\", lookup)
+        self.assertEqual(ops, [("line", "내가 정한 것")])
+
+    def test_x_와_곱셈기호도_받아준다(self):
+        # 기본은 * (한글 IME 에서 영문 전환 없이 쳐진다) 지만 x·× 도 같은 뜻
+        for label in ("표1x2", "표1×2"):
+            ops, _ = md_parser.build_library_plan(f"\\{label}\\\n가&나", {})
+            self.assertEqual(ops[0][0], "table", label)
+            self.assertEqual(ops[0][3], [["가", "나"]], label)
+
+    # ── 양식 빈칸 ↔ 본문 경계 (시험지 한 장 통째 변환) ──────────────
+    # 양식에도 빈칸이 있고 그 뒤에 본문이 이어지는 실제 사용 형태.
+    # 어디까지가 양식 빈칸 몫이고 어디부터가 본문인지가 헷갈리기 쉬워 못박아 둔다.
+
+    def test_양식_빈칸을_채우고_그_뒤는_본문이_된다(self):
+        lookup = _lookup(
+            수능양식=("양식", {"slot_count": 2, "file": "c.hwp"}),
+            문제1=("템플릿", {"slot_count": 1, "file": "a.hwp"}))
+        ops, _ = md_parser.build_library_plan(
+            "\\수능양식\\\n물리학Ⅰ\n제4교시\n\\문제1\\\n1번 문제\n남는 줄", lookup)
+        # 양식 바로 뒷줄 2개(=빈칸 수)만 양식 몫
+        self.assertEqual(ops[0][0], "form")
+        self.assertEqual(ops[0][2], ["물리학Ⅰ", "제4교시"])
+        # 그다음부터는 본문 — 템플릿과 일반 줄로 이어진다
+        self.assertEqual(ops[1][0], "template")
+        self.assertEqual(ops[1][2], ["1번 문제"])
+        self.assertEqual(ops[2], ("line", "남는 줄"))
+
+    def test_양식_바로_뒤가_템플릿이면_양식_빈칸은_안_채워진다(self):
+        # 사용자가 빈칸 채울 줄을 안 쓰고 바로 본문을 시작한 경우.
+        # 템플릿 라벨은 '새 삽입 시작'이라 양식 빈칸 채우기를 여기서 끊는다.
+        lookup = _lookup(
+            수능양식=("양식", {"slot_count": 2, "file": "c.hwp"}),
+            문제1=("템플릿", {"slot_count": 1, "file": "a.hwp"}))
+        ops, _ = md_parser.build_library_plan(
+            "\\수능양식\\\n\\문제1\\\n1번 문제", lookup)
+        self.assertEqual(ops[0][0], "form")
+        self.assertEqual(ops[0][2], [])          # 양식 빈칸은 비워둔 채로
+        self.assertEqual(ops[1][0], "template")
+        self.assertEqual(ops[1][2], ["1번 문제"])
+
+    def test_양식_빈칸을_건너뛰고_싶으면_하이픈(self):
+        lookup = _lookup(
+            수능양식=("양식", {"slot_count": 2, "file": "c.hwp"}),
+            문제1=("템플릿", {"slot_count": 1, "file": "a.hwp"}))
+        ops, _ = md_parser.build_library_plan(
+            "\\수능양식\\\n-\n제4교시\n\\문제1\\\n1번 문제", lookup)
+        self.assertEqual(ops[0][2], [None, "제4교시"])
+        self.assertEqual(ops[1][0], "template")
+
     def test_템플릿_라벨이_줄_중간에_있으면_경고한다(self):
         lookup = _lookup(결재란=("템플릿", {"slot_count": 1, "file": "a.hwp"}))
         ops, warns = md_parser.build_library_plan(r"앞 \결재란\ 뒤", lookup)
@@ -380,29 +549,85 @@ class PhotoLabelTest(unittest.TestCase):
         self.assertEqual(segs[0]["style"], {"굵게": True})
         self.assertTrue(segs[1].get("image"))
 
-    def test_사진_단독_줄은_빈칸_채우기를_끝내고_따로_삽입된다(self):
-        # 라벨 단독 줄은 '다음 라벨 시작'으로 취급하는 기존 규칙 그대로
+    def test_사진_단독_줄은_빈칸에_들어간다(self):
+        # 사진은 '내용' 라벨이므로 빈칸을 채운다.
+        # (예전에는 여기서 채우기가 끊겨 사진이 템플릿 뒤로 밀려났다 —
+        #  \합답1사진3선지\ 처럼 사진 자리를 가진 템플릿을 쓸 수 없던 원인)
         lookup = dict(self.lookup)
         lookup["결재란"] = ("템플릿", {"name": "결재란", "slot_count": 2,
                                        "file": "a.hwp"})
         ops, _ = md_parser.build_library_plan(
             "\\결재란\\\n담당\n\\실험사진1\\", lookup)
+        self.assertEqual(len(ops), 1)                # 뒤로 새는 줄이 없다
         self.assertEqual(ops[0][0], "template")
-        self.assertEqual(ops[0][2], ["담당"])       # 사진 줄에서 채우기가 끊김
-        self.assertEqual(ops[1][0], "rich_line")     # 사진은 따로 삽입
-        self.assertTrue(ops[1][1][0].get("image"))
+        fills = ops[0][2]
+        self.assertEqual(fills[0], "담당")
+        self.assertIsInstance(fills[1], list)        # 조각 목록 = 사진이 든 빈칸
+        self.assertTrue(fills[1][0].get("image"))
 
-    def test_빈칸_채우기_줄에_글자와_섞인_사진은_경고하고_무시(self):
+    def test_템플릿_라벨은_여전히_빈칸_채우기를_끊는다(self):
+        # 사진과 달리 템플릿·양식은 '다음 삽입 시작'이므로 여기서 끊겨야 한다
+        lookup = dict(self.lookup)
+        lookup["결재란"] = ("템플릿", {"name": "결재란", "slot_count": 3,
+                                       "file": "a.hwp"})
+        lookup["도장"] = ("템플릿", {"name": "도장", "slot_count": 1, "file": "b.hwp"})
+        ops, _ = md_parser.build_library_plan(
+            "\\결재란\\\n담당\n\\도장\\\n인", lookup)
+        self.assertEqual(ops[0][2], ["담당"])
+        self.assertEqual(ops[1][0], "template")
+
+    def test_미등록_라벨은_여전히_빈칸_채우기를_끊는다(self):
+        # 무엇인지 모르는 것을 빈칸에 밀어 넣지 않는다 (예전 동작 유지)
+        lookup = dict(self.lookup)
+        lookup["결재란"] = ("템플릿", {"name": "결재란", "slot_count": 3,
+                                       "file": "a.hwp"})
+        ops, _ = md_parser.build_library_plan(
+            "\\결재란\\\n담당\n\\없는것\\", lookup)
+        self.assertEqual(ops[0][2], ["담당"])
+
+    def test_빈칸_채우기_줄에_글자와_섞인_사진도_들어간다(self):
         lookup = dict(self.lookup)
         lookup["결재란"] = ("템플릿", {"name": "결재란", "slot_count": 1,
                                        "file": "a.hwp"})
-        _, warns = md_parser.build_library_plan(
+        ops, warns = md_parser.build_library_plan(
             "\\결재란\\\n이름 \\실험사진1\\ 옆", lookup)
-        self.assertTrue(any("사진을 넣을 수 없어" in w for w in warns))
+        self.assertFalse(any("사진을 넣을 수 없어" in w for w in warns))
+        segs = ops[0][2][0]
+        self.assertIsInstance(segs, list)
+        self.assertTrue(any(s.get("image") for s in segs))
+        self.assertEqual("".join(s["text"] for s in segs), "이름  옆")
 
     def test_어디에도_없는_라벨_경고에_사진_폴더가_언급된다(self):
         _, warns = self._plan("\\없는것\\")
         self.assertIn("사진 폴더", warns[0])
+
+
+class SplitSelectionUnitsTest(unittest.TestCase):
+    r"""표에서 여러 셀을 선택했을 때의 조각 나누기.
+
+    한글은 셀 블록을 복사하면 열을 탭, 행을 줄바꿈으로 이어 붙여 준다.
+    탭을 경계로 안 보면 두 셀이 한 줄로 묶여, 변환 결과가 한 셀에 몰린다.
+    """
+
+    def test_탭은_셀_경계다(self):
+        units = md_parser.split_selection_units("\\문제2-1\\\t\\문제2-2\\")
+        self.assertEqual(units, ["\\문제2-1\\", "\\문제2-2\\"])
+
+    def test_행과_열을_읽는_순서대로_편다(self):
+        units = md_parser.split_selection_units("가\t나\r\n다\t라")
+        self.assertEqual(units, ["가", "나", "다", "라"])
+
+    def test_빈_셀은_빠진다(self):
+        units = md_parser.split_selection_units("가\t\t나\n\n다")
+        self.assertEqual(units, ["가", "나", "다"])
+
+    def test_표가_아닌_여러_줄도_줄마다_쪼갠다(self):
+        units = md_parser.split_selection_units("첫 줄\n둘째 줄")
+        self.assertEqual(units, ["첫 줄", "둘째 줄"])
+
+    def test_빈_입력은_빈_목록(self):
+        self.assertEqual(md_parser.split_selection_units(""), [])
+        self.assertEqual(md_parser.split_selection_units(None), [])
 
 
 if __name__ == "__main__":

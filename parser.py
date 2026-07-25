@@ -2,6 +2,7 @@
 """마크다운 텍스트 → 시험문제 데이터 파싱"""
 
 import re
+from collections import namedtuple
 
 CIRCLED_MARKER_PATTERN = r'[①-⑳㉠-㉭ⓐ-ⓩ㈀-㈎⒜-⒵Ⓐ-Ⓩ] ?'
 
@@ -138,6 +139,23 @@ _ANY_TOKEN_RE = re.compile(r'\\[^\\\r\n]+?\\|\\[^\\{}\r\n]+\{')
 
 _MAX_NEST = 8            # 중첩 깊이 한도 (실수로 무한 중첩되는 것 방지)
 
+# \표3*3\ — 그 자리에 표를 만든다 (2026-07-25).
+# 등록한 라벨이 아니라 **모양으로 알아보는** 라벨이다(\원1\ \로마3\ 과 같은 부류).
+#
+# 행·열을 무언가로 나눠야 한다 — \표310\ 은 3x10 인지 31x0 인지 알 수 없다.
+# 기본은 `*` 다: 한글 IME 로 글을 쓰는 중에 `x` 를 치려면 **영문 전환이 필요한데**
+# `*` 는 그대로 쳐진다. x·× 도 받아준다(뜻이 같고 헷갈릴 일이 없다).
+TABLE_LABEL_RE = re.compile(r'표\s*(\d+)\s*[*xX×]\s*(\d+)')
+# 셀 구분자 `&` 하나. 글자로 쓴 & 는 `&&` 로 적는다.
+#
+# 탈출을 `\&` 로 하지 않는 이유 (2026-07-25 테스트가 잡아냄):
+#   `\학교\&\굵게{중요}` 처럼 라벨 바로 뒤에 & 가 오면, 라벨을 **닫는** \ 가
+#   앞에 붙어 있어 `\&` 와 구별할 수 없다. 셀에 라벨을 넣는 건 흔한 일이므로
+#   그쪽을 살리고, 탈출은 \ 와 무관한 `&&` 로 정했다.
+CELL_SPLIT_RE = re.compile(r'(?<!&)&(?!&)')
+# 실수로 \표999x999\ 를 써서 한글이 멈추는 것을 막는 상한
+_MAX_TABLE_SIDE = 50
+
 # 값이 필요 없는 글자 서식 — 이름이 곧 필드명이다
 _TOGGLES = ("굵게", "기울임", "밑줄")
 
@@ -243,6 +261,24 @@ def resolve_style_token(tok, lookup, warnings):
 
 
 SKIP_MARK = '-'      # 이 줄은 해당 빈칸을 비워둔다
+
+# 한 빈칸에 여러 줄을 넣는 덩어리 (2026-07-25).
+#
+#     {(가) 매질 A, B를 준비한다.
+#     (나) A에서 B로 빛을 45°로 입사시킨다.
+#     (다) B에서 A로 빛을 30°로 입사시킨다.}
+#
+# `\줄\` 처럼 한 줄에 몰아 쓰는 방법도 있었지만, 줄이 길어져 원본 시험지와
+# 눈으로 대조가 안 된다. 여는 { 를 첫 줄 앞에, 닫는 } 를 마지막 줄 끝에 붙이면
+# **줄이 줄로 보이면서** 어디까지가 한 칸인지도 드러난다.
+#
+# `{` 를 새 기호로 들이지 않아도 되는 이유: 지금 `{` 는 **항상 `\명령` 뒤**에만
+# 온다(`\굵게{…}`). 줄 맨 앞에 홀로 선 `{` 는 다른 뜻일 수가 없다.
+MultiLine = namedtuple('MultiLine', 'lines')
+
+# 덩어리 안에 들어간 표. MultiLine.lines 의 한 자리를 차지한다 (2026-07-25).
+# [실험 결과] 처럼 **글과 표가 한 빈칸에 같이** 들어가는 문항이 실제로 있다.
+Table = namedtuple('Table', 'rows cols grid')
 
 
 def _try_style_span(text, i, lookup, warnings, style, depth):
@@ -368,14 +404,160 @@ def build_segments(line, lookup, warnings):
     return [s for s in segs if s["text"] or s.get("image")]
 
 
-def _replace_char_tokens(line, lookup, warnings):
-    r"""템플릿 빈칸에 넣을 값 — 서식·사진은 못 쓰고 글자만 남긴다."""
+def _slot_value(line, lookup, warnings):
+    r"""템플릿 빈칸에 넣을 값.
+
+    반환:
+      · 글자만 있으면 **문자열** (대부분의 경우 — 예전과 같다)
+      · 사진·서식이 섞였으면 **조각 목록** → fill_slots 가 insert_rich_line 으로 넣는다
+
+    예전에는 사진·서식을 경고와 함께 버렸다. 그런데 '사진 1개 + 선지 3개'처럼
+    사진 자리를 가진 템플릿이 실제로 있어서(\합답1사진3선지\), 빈칸에 사진을 못
+    넣으면 그 템플릿을 쓸 수가 없었다 — 사진이 템플릿 뒤로 빠져나갔다.
+    """
     segs = build_segments(line, lookup, warnings)
-    if any(s["style"] for s in segs):
-        warnings.append("빈칸에 넣는 줄에는 서식을 쓸 수 없어 무시했습니다")
-    if any(s.get("image") for s in segs):
-        warnings.append("빈칸에 넣는 줄에는 사진을 넣을 수 없어 무시했습니다")
+    if any(s.get("image") or s["style"] for s in segs):
+        return segs
     return "".join(s["text"] for s in segs)
+
+
+def _cell_value(text, lookup, warnings):
+    r"""표 셀 하나의 값. '-' 한 글자면 빈 칸(None).
+
+    빈칸 채우기의 '-' 규칙을 그대로 쓴다 — 새로 배울 것을 늘리지 않는다.
+    """
+    if text.strip() == SKIP_MARK:
+        return None
+    return _slot_value(text.replace('&&', '&'), lookup, warnings)
+
+
+def _read_block(lines, start, lookup, warnings):
+    r"""`{` 로 시작하는 줄부터 `}` 로 끝나는 줄까지를 **한 칸 값**으로 읽는다.
+
+    반환: (MultiLine, 다음 줄 번호). 여는 `{` 와 닫는 `}` 는 벗겨낸다.
+
+    괄호를 줄에 붙여 써도 되고 따로 한 줄에 둬도 된다 — 벗기고 남은 것이 없으면
+    그 줄은 내용으로 치지 않기 때문이다:
+        {가                     {                       {한 줄짜리}
+        나}                     가
+                                나
+                                }
+    닫는 `}` 를 **글자로** 쓰려면 이미 있는 `\}` 를 쓴다(그 줄은 안 닫힌다).
+
+    덩어리 안에서도 `\표3*3\` 이 통한다 — [실험 결과] 처럼 **글과 표가 한 빈칸에
+    같이** 들어가는 문항이 실제로 있다 (2026-07-25).
+
+    두 걸음으로 읽는 이유: 먼저 괄호를 벗겨 '덩어리 안의 줄' 목록을 만들고,
+    그다음 그 안에서 표를 찾는다. 한 번에 하면 표의 행을 읽다가 닫는 `}` 를
+    행으로 먹어버린다.
+    """
+    # ① 범위부터 — 여는 { 와 닫는 } 를 벗긴 줄 목록
+    inner, j, closed = [], start, False
+    while j < len(lines):
+        s = lines[j].strip()
+        if j == start:
+            s = s[1:]                       # 여는 { 벗기기
+        if s.endswith('}') and not s.endswith('\\}'):
+            s = s[:-1]
+            closed = True
+        inner.append(s)
+        j += 1
+        if closed:
+            break
+    if not closed:
+        warnings.append(
+            "덩어리를 닫는 } 가 없습니다 — { 로 시작했으면 } 로 닫아주세요")
+
+    # ② 그 안을 줄과 표로 읽는다
+    body, k = [], 0
+    while k < len(inner):
+        s = inner[k]
+        if not s.strip():
+            k += 1
+            continue
+        tm = None
+        m = LIB_TOKEN_RE.fullmatch(s.strip())
+        if m:
+            label = m.group(1).strip()
+            if not lookup.get(label):       # 등록한 라벨이 언제나 우선
+                tm = TABLE_LABEL_RE.fullmatch(label)
+        if tm:
+            rows_n, cols_n = int(tm.group(1)), int(tm.group(2))
+            if (1 <= rows_n <= _MAX_TABLE_SIDE
+                    and 1 <= cols_n <= _MAX_TABLE_SIDE):
+                grid, k = _table_rows(inner, k + 1, rows_n, cols_n,
+                                      lookup, warnings)
+                body.append(Table(rows_n, cols_n, grid))
+                continue
+            warnings.append(
+                f"표 크기가 범위를 벗어났습니다: {rows_n}x{cols_n} "
+                f"(1~{_MAX_TABLE_SIDE} 사이여야 합니다)")
+        body.append(_slot_value(s, lookup, warnings))
+        k += 1
+    return MultiLine(tuple(body)), j
+
+
+def _table_rows(lines, start, rows, cols, lookup, warnings):
+    r"""표 라벨 다음 줄들에서 셀 값을 읽는다. 반환: (셀 2차원 목록, 다음 줄 번호).
+
+    한 줄이 한 행이고, 행 안은 `&` 로 나눈다. 줄 수가 모자라거나 한 행의 칸이
+    모자라면 그 자리는 빈 칸으로 남는다 — 표는 이미 만들어졌으므로 사용자가
+    한글에서 마저 채우면 된다(변환을 통째로 실패시키는 것보다 낫다).
+    """
+    grid, j = [], start
+    while len(grid) < rows and j < len(lines):
+        raw = lines[j]
+        if not raw.strip():
+            j += 1
+            continue
+        if _starts_new_insert(raw.strip(), lookup):
+            break                       # 다음 삽입 시작 — 여기까지가 이 표 몫
+        parts = CELL_SPLIT_RE.split(raw)
+        if len(parts) > cols:
+            warnings.append(
+                f"{len(grid) + 1}번째 줄의 칸이 {len(parts)}개인데 표는 {cols}칸입니다 "
+                f"— 넘치는 칸은 버립니다")
+        grid.append([_cell_value(p, lookup, warnings) for p in parts[:cols]])
+        j += 1
+    return grid, j
+
+
+def _starts_new_insert(stripped_line, lookup):
+    r"""이 줄이 '다음 삽입을 시작하는' 라벨인가 (그러면 빈칸 채우기를 여기서 끊는다).
+
+    템플릿·양식은 새로운 삽입 명령이라 여기서 끊어야 한다. 반면 문자·사진은
+    빈칸에 들어갈 **내용**이다 — 예전에는 이것도 끊어서, 사진 자리를 가진 템플릿의
+    빈칸에 사진을 넣을 수 없었다(사진이 템플릿 뒤로 밀려나던 문제).
+
+    미등록 라벨은 예전처럼 끊는다. 무엇인지 모르는 것을 빈칸에 밀어 넣기보다,
+    사용자가 경고를 보고 고치는 편이 안전하다.
+    """
+    m = LIB_TOKEN_RE.fullmatch(stripped_line)
+    if not m:
+        return False
+    entry = lookup.get(m.group(1).strip())
+    if entry is None:
+        return True                     # 미등록 — 예전 동작 유지
+    return entry[0] in ('템플릿', '양식')
+
+
+def split_selection_units(text):
+    r"""선택 텍스트를 '한 셀의 한 줄' 단위로 쪼갠다.
+
+    표에서 여러 셀을 선택해 복사하면 한글은 **열을 탭, 행을 줄바꿈**으로 이어
+    붙인 문자열 하나를 준다. 그래서 줄바꿈만 경계로 보면 "셀A<탭>셀B" 가 한 줄로
+    묶여, 변환 결과가 전부 한 셀에 몰린다(사진이 한 칸에 쌓이던 버그의 원인).
+    탭도 줄바꿈과 똑같은 경계로 본다.
+
+    반환: 문서에 나오는 순서를 지킨 조각 목록. 빈 조각(빈 셀)은 뺀다.
+    """
+    s = (text or '').replace('\r\n', '\n').replace('\r', '\n')
+    units = []
+    for line in s.split('\n'):
+        for cell in line.split('\t'):
+            if cell.strip():
+                units.append(cell)
+    return units
 
 
 def build_library_plan(text, lookup):
@@ -410,14 +592,36 @@ def build_library_plan(text, lookup):
                     if not cand:
                         j += 1
                         continue
-                    if LIB_TOKEN_RE.fullmatch(cand):
-                        break          # 다음 라벨 시작 — 여기까지가 이 템플릿 몫
+                    if _starts_new_insert(cand, lookup):
+                        break          # 다음 삽입 시작 — 여기까지가 이 템플릿 몫
                     if cand == SKIP_MARK:
                         fills.append(None)     # 이 빈칸은 비움
+                        j += 1
+                    elif cand.startswith('{'):
+                        # { … } — 여러 줄이 이 빈칸 하나에 통째로 들어간다
+                        value, j = _read_block(lines, j, lookup, warnings)
+                        fills.append(value)
                     else:
-                        fills.append(_replace_char_tokens(lines[j], lookup, warnings))
-                    j += 1
+                        fills.append(_slot_value(lines[j], lookup, warnings))
+                        j += 1
                 ops.append((kind, item, fills))
+                i = j
+                continue
+            # \표3x3\ — 등록 라벨이 아닐 때만 본다(등록한 것이 언제나 우선)
+            tm = None if entry else TABLE_LABEL_RE.fullmatch(label)
+            if tm:
+                rows_n, cols_n = int(tm.group(1)), int(tm.group(2))
+                if not (1 <= rows_n <= _MAX_TABLE_SIDE
+                        and 1 <= cols_n <= _MAX_TABLE_SIDE):
+                    warnings.append(
+                        f"표 크기가 범위를 벗어났습니다: {rows_n}x{cols_n} "
+                        f"(1~{_MAX_TABLE_SIDE} 사이여야 합니다)")
+                    ops.append(('line', stripped))      # 원문을 남겨 눈에 띄게
+                    i += 1
+                    continue
+                grid, j = _table_rows(lines, i + 1, rows_n, cols_n,
+                                      lookup, warnings)
+                ops.append(('table', rows_n, cols_n, grid))
                 i = j
                 continue
         segs = build_segments(lines[i], lookup, warnings)

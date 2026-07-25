@@ -289,6 +289,32 @@ def delete_selection():
     hwp.HAction.Run("Delete")
 
 
+def cancel_selection():
+    hwp.HAction.Run("Cancel")
+
+
+def current_pos():
+    """현재 커서 위치 (list, para, pos). 못 읽으면 None."""
+    try:
+        return hwp.GetPos()
+    except Exception as e:
+        applog.exc("현재 위치 조회 실패", e)
+        return None
+
+
+def in_table():
+    """커서가 표(각주 등 본문 아닌 리스트) 안에 있는가.
+
+    GetPos()[0] 은 리스트 번호이고 본문이 0 이다. 표 안에서는 셀마다 리스트가
+    따로라, 여러 셀에 걸친 선택을 '한 덩어리 글'로 다루면 셀 경계가 사라진다.
+    """
+    try:
+        return hwp.GetPos()[0] != 0
+    except Exception as e:
+        applog.exc("표 안 여부 확인 실패 — 본문으로 간주", e)
+        return False
+
+
 def doc_end_para():
     """문서 마지막 문단 번호.
 
@@ -417,6 +443,31 @@ def _create_table(rows, cols, total_mm, row_heights_mm):
     for i in range(rows):
         ps.HTableCreation.RowHeight.SetItem(i, _mm(row_heights_mm[i]))
     act.Execute("TableCreate", ps.HTableCreation.HSet)
+
+
+def create_table_autofit(rows, cols):
+    r"""rows×cols 표를 '단에 맞춤'으로 만든다 (\표3x3\ 변환용, 2026-07-25).
+
+    _create_table 과 달리 폭을 계산하지 않는다. WidthType=0 이면 한글이
+    **커서가 있는 단의 폭**에 맞춰 주기 때문이다 — 2단 시험지의 한 단에 넣으면
+    그 단 폭, 본문이면 본문 폭. "들어가는 곳의 칸을 알아서 인식"이 이것이다.
+    (WidthType 값의 뜻은 _create_table 주석 참고: 0=단에 맞춤, 2=임의 값)
+
+    높이는 지정하지 않는다(HeightType=0) — 내용에 따라 늘어나게 둔다.
+    """
+    act = hwp.HAction
+    ps  = hwp.HParameterSet
+    act.GetDefault("TableCreate", ps.HTableCreation.HSet)
+    ps.HTableCreation.Rows       = rows
+    ps.HTableCreation.Cols       = cols
+    ps.HTableCreation.WidthType  = 0      # 단에 맞춤
+    ps.HTableCreation.HeightType = 0      # 자동 높이
+    act.Execute("TableCreate", ps.HTableCreation.HSet)
+
+
+def exit_table():
+    """표 편집 상태에서 본문으로 빠져나온다 (_exit_table 의 공개 이름)."""
+    _exit_table(hwp.HAction)
 
 
 # ── 찾기 ──────────────────────────────────────────────

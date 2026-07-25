@@ -142,11 +142,25 @@ class SlotCleanupTest(unittest.TestCase):
         fake = FakeHwp([(0, "\\ \\ \\"), (0, r"사용자 \ 글")])
         self._install(fake)
         # 빈칸 3개짜리 템플릿에 2개만 채움 → 남은 1개만 지워야 한다
-        filled = engine_library.fill_slots((0, 0, 0), ["가", "나"],
-                                           end_para=0, slot_count=3)
+        filled, want = engine_library.fill_slots((0, 0, 0), ["가", "나"],
+                                                 end_para=0, slot_count=3)
         self.assertEqual(filled, 2)
+        self.assertEqual(want, 2)          # 넣으려던 값도 2개 = 끝까지 채웠다
         self.assertEqual(fake.deleted, 1)
         self.assertIn(r"사용자 \ 글", fake.text())
+
+    def test_fill_slots_는_중간에_멈추면_못_채운_수를_알려준다(self):
+        r"""빈칸이 하나뿐인데 값이 셋 → 둘은 갈 곳이 없다.
+
+        예전에는 조용히 멈춰서 인쇄물을 보고서야 알았다. 이제 (채움, 채우려던 수)를
+        돌려주므로 호출부가 사용자에게 알릴 수 있다.
+        """
+        fake = FakeHwp([(0, "빈칸 \\ 하나")])
+        self._install(fake)
+        filled, want = engine_library.fill_slots((0, 0, 0), ["가", "나", "다"],
+                                                 end_para=0, slot_count=1)
+        self.assertEqual(want, 3)
+        self.assertLess(filled, want)      # 다 못 채웠다는 사실이 드러난다
 
 
     def test_삽입_지점보다_앞은_안_지운다(self):

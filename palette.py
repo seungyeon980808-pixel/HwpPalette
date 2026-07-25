@@ -24,6 +24,7 @@ get_config_value/set_config_value 만 거친다 — 읽고 쓰는 코드를 두 
 import copy
 import applog
 import settings
+import builtin_actions
 
 TABS_KEY = "palette_tabs"
 DEFAULT_FORMAT_KEY = "default_format"
@@ -57,6 +58,40 @@ def _seed_tabs():
     return [{"name": "빠른입력", "cols": DEFAULT_COLS, "blocks": blocks}]
 
 
+MAIN_TOOLS_SEEDED_KEY = "main_tools_seeded"
+
+
+def _seed_main_tools(tabs):
+    r"""'메인' 탭에 기본 도구 블럭을 **딱 한 번** 깔아 준다 (2026-07-25).
+
+    사진·특수문자·양식 채우기·기본 서식은 예전에 메인 화면에 코드로 박혀 있었다.
+    이제 블럭이 되어 사용자가 지우거나 옮길 수 있는데, 그러면 처음 켠 사람은
+    빈 자리만 보게 된다. 그래서 첫 실행에 한 번 깔아 준다.
+
+    **한 번만** 깔아야 한다 — 안 그러면 사용자가 지운 것이 다음 실행에 되살아난다.
+    그래서 '깔았다'는 사실을 config 에 기록한다(블럭이 비었는지로 판단하면
+    일부러 비운 사람에게 계속 되살아난다).
+
+    반환: 무언가 바꿨으면 True.
+    """
+    if settings.get_config_value(MAIN_TOOLS_SEEDED_KEY, False):
+        return False
+    main = next((t for t in tabs if t.get("name") == MAIN_TAB), None)
+    if main is None:
+        return False
+    settings.set_config_value(MAIN_TOOLS_SEEDED_KEY, True)
+    # 이미 다른 블럭이 있어도 **건너뛰면 안 된다** — 이 넷은 예전에 화면에 늘
+    # 붙어 있던 것이라, 안 깔면 사용자는 쓰던 기능을 잃는다. 빈자리를 찾아
+    # 나란히 놓는다(있던 블럭은 그대로 둔다).
+    cols = int(main.get("cols") or 8)
+    for key in builtin_actions.DEFAULT_MAIN_KEYS:
+        row, col = find_free_spot(main["blocks"], cols, span=2, rows=1)
+        main["blocks"].append({"type": "builtin", "key": key,
+                               "name": builtin_actions.name_of(key),
+                               "span": 2, "rows": 1, "row": row, "col": col})
+    return True
+
+
 def load_tabs():
     tabs = settings.get_config_value(TABS_KEY, None)
     if not isinstance(tabs, list) or not tabs:
@@ -67,6 +102,8 @@ def load_tabs():
     if not any(t.get("name") == MAIN_TAB for t in tabs):
         # 메인 버튼칸 탭 — 변환 버튼 옆 영역. 환경설정에서 다른 탭처럼 편집한다.
         tabs.append({"name": MAIN_TAB, "cols": 8, "blocks": []})
+        migrated = True
+    if _seed_main_tools(tabs):
         migrated = True
     for t in tabs:
         t.setdefault("cols", DEFAULT_COLS)
@@ -357,3 +394,31 @@ def get_default_format():
 
 def save_default_format(fmt):
     settings.set_config_value(DEFAULT_FORMAT_KEY, fmt)
+
+
+# ── 변환 버튼 크기 (2026-07-25) ────────────────────────
+# 블럭 격자와 **같은 칸 단위**로 잰다 — 옆 블럭들과 줄이 맞아야 하기 때문이다.
+# 창 폭에 직접 영향을 주므로 사용자가 고칠 수 있어야 한다.
+CONVERT_SIZE_KEY = "convert_button_size"
+DEFAULT_CONVERT_SIZE = {"span": 3, "rows": 2}   # 가로 3칸 · 세로 2줄
+CONVERT_SIZE_MAX = 12                            # 실수로 창이 화면을 넘지 않게
+
+
+def get_convert_size():
+    """(가로 칸, 세로 줄). 저장값이 이상하면 기본값으로 되돌린다."""
+    saved = settings.get_config_value(CONVERT_SIZE_KEY, None) or {}
+    out = []
+    for key in ("span", "rows"):
+        try:
+            v = int(saved.get(key, DEFAULT_CONVERT_SIZE[key]))
+        except (TypeError, ValueError):
+            v = DEFAULT_CONVERT_SIZE[key]
+        out.append(max(1, min(CONVERT_SIZE_MAX, v)))
+    return tuple(out)
+
+
+def save_convert_size(span, rows):
+    span = max(1, min(CONVERT_SIZE_MAX, int(span)))
+    rows = max(1, min(CONVERT_SIZE_MAX, int(rows)))
+    settings.set_config_value(CONVERT_SIZE_KEY, {"span": span, "rows": rows})
+    return span, rows

@@ -139,6 +139,24 @@ def normalize_label(label):
     return (label or "").strip().strip("\\").strip()
 
 
+def resolve_edited_label(old_name, old_label, new_name, new_label):
+    r"""수정 창에서 돌아온 라벨을 확정한다 (2026-07-25).
+
+    문제: 수정 창의 라벨 칸은 '자세히' 안에 **접혀 있어 보이지 않는데**, 열 때
+    옛 라벨이 미리 채워진다. 그래서 이름만 고치면 라벨이 옛 이름으로 남는다
+    (실측: '학교합답1사진3선지' → '…5선지' 로 이름을 바꿨는데 라벨이 3선지로
+    남아 \학교합답1사진5선지\ 변환이 "등록되지 않은 라벨"로 실패했다.
+    팔레트 버튼은 id 로 찾으므로 잘 되어, 원인을 짐작하기 더 어려웠다).
+
+    규칙: **라벨을 따로 지어 두지 않았고(라벨 == 이름) 이번에도 손대지 않았다면
+    이름을 따라간다.** 일부러 다르게 지은 라벨(원안지 → 원안지양식)은 건드리지
+    않는다 — 그건 사용자의 의도이기 때문이다.
+    """
+    untouched = normalize_label(new_label) == normalize_label(old_label)
+    was_auto = normalize_label(old_label) == normalize_label(old_name)
+    return new_name if (untouched and was_auto) else new_label
+
+
 def _meta(name, label, group):
     lab = normalize_label(label) or normalize_label(name) or name.strip()
     return {"id": uuid.uuid4().hex,
