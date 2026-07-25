@@ -98,5 +98,61 @@ class SeedMainToolsTest(unittest.TestCase):
         self.assertFalse(changed)
 
 
+class ProtectedBlockTest(unittest.TestCase):
+    r"""'변환'은 옮기고 크기를 바꿀 수 있지만 **마지막 하나는 못 지운다**.
+
+    고정 위젯이던 변환 버튼을 도구 블럭으로 옮기면서 생긴 규칙 (2026-07-25).
+    다 지워 버리면 화면에서 되살릴 길이 없다(전역 단축키는 남지만 보이지 않는다).
+    """
+
+    def _blk(self, key):
+        return {"type": "builtin", "key": key, "span": 2, "rows": 1,
+                "row": 0, "col": 0}
+
+    def test_변환은_보호_대상이다(self):
+        self.assertEqual(palette.protected_key_of(self._blk("convert")),
+                         "convert")
+
+    def test_다른_도구는_보호하지_않는다(self):
+        self.assertIsNone(palette.protected_key_of(self._blk("photo")))
+
+    def test_도구가_아닌_블럭은_보호하지_않는다(self):
+        self.assertIsNone(palette.protected_key_of(
+            {"type": "char", "value": "√"}))
+
+    def test_개수를_센다(self):
+        blocks = [self._blk("convert"), self._blk("photo"),
+                  self._blk("convert")]
+        self.assertEqual(palette.count_protected(blocks, "convert"), 2)
+        self.assertEqual(palette.count_protected(blocks, "photo"), 1)
+
+    def test_없으면_한_번_넣어_준다(self):
+        # 예전부터 쓰던 사람의 메인 탭에는 변환 블럭이 없다 — 이관이 채워야 한다
+        tabs = [{"name": palette.MAIN_TAB, "cols": 8,
+                 "blocks": [{"type": "char", "value": "가", "span": 1,
+                             "rows": 1, "row": 0, "col": 0}]}]
+        self.assertTrue(palette._ensure_protected_blocks(tabs))
+        self.assertEqual(
+            palette.count_protected(tabs[0]["blocks"], "convert"), 1)
+
+    def test_이미_있으면_더_넣지_않는다(self):
+        tabs = [{"name": palette.MAIN_TAB, "cols": 8,
+                 "blocks": [self._blk("convert")]}]
+        self.assertFalse(palette._ensure_protected_blocks(tabs))
+        self.assertEqual(
+            palette.count_protected(tabs[0]["blocks"], "convert"), 1)
+
+    def test_넣은_변환은_겹치지_않는다(self):
+        tabs = [{"name": palette.MAIN_TAB, "cols": 8,
+                 "blocks": [{"type": "char", "value": "가", "span": 2,
+                             "rows": 1, "row": 0, "col": 0}]}]
+        palette._ensure_protected_blocks(tabs)
+        blocks = tabs[0]["blocks"]
+        cells = palette.occupied_cells(blocks)
+        total = sum(int(b.get("span", 1)) * int(b.get("rows", 1))
+                    for b in blocks)
+        self.assertEqual(len(cells), total)
+
+
 if __name__ == "__main__":
     unittest.main()

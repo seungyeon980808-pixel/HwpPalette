@@ -21,48 +21,6 @@ def _blk(row, col, span=1, rows=1):
             "span": span, "rows": rows}
 
 
-class ConvertSizeTest(unittest.TestCase):
-    """변환 버튼 크기 (2026-07-25) — 창 너비에 직접 영향을 주므로 값이 안전해야 한다."""
-
-    def _with_store(self, saved):
-        store = {palette.CONVERT_SIZE_KEY: saved}
-        return mock.patch.object(
-            palette.settings, "get_config_value",
-            side_effect=lambda k, d=None: store.get(k, d)), store
-
-    def test_저장값이_없으면_기본값(self):
-        patch, _ = self._with_store(None)
-        with patch:
-            self.assertEqual(palette.get_convert_size(),
-                             (palette.DEFAULT_CONVERT_SIZE["span"],
-                              palette.DEFAULT_CONVERT_SIZE["rows"]))
-
-    def test_저장값을_읽는다(self):
-        patch, _ = self._with_store({"span": 4, "rows": 3})
-        with patch:
-            self.assertEqual(palette.get_convert_size(), (4, 3))
-
-    def test_너무_크면_상한으로_자른다(self):
-        # 실수로 큰 값을 넣어도 창이 화면을 넘지 않아야 한다
-        patch, _ = self._with_store({"span": 999, "rows": 999})
-        with patch:
-            self.assertEqual(palette.get_convert_size(),
-                             (palette.CONVERT_SIZE_MAX,
-                              palette.CONVERT_SIZE_MAX))
-
-    def test_0이나_음수는_1로_올린다(self):
-        patch, _ = self._with_store({"span": 0, "rows": -5})
-        with patch:
-            self.assertEqual(palette.get_convert_size(), (1, 1))
-
-    def test_숫자가_아니면_기본값으로_되돌린다(self):
-        patch, _ = self._with_store({"span": "넷", "rows": None})
-        with patch:
-            self.assertEqual(palette.get_convert_size(),
-                             (palette.DEFAULT_CONVERT_SIZE["span"],
-                              palette.DEFAULT_CONVERT_SIZE["rows"]))
-
-
 class OccupiedCellsTest(unittest.TestCase):
 
     def test_한_칸_블럭(self):

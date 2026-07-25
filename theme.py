@@ -25,6 +25,9 @@ LIGHT = {
     # 버전·저작자 표기처럼 작은 글자에 쓰이는 색이라 한 단계 어둡게 했다(4.7).
     "muted":  "#6e6e73",
     "border": "#d2d2d7",
+    # 강조색의 아주 옅은 판 — '지금 켜져 있음'을 색으로만 말하는 자리에 쓴다
+    # (툴바 버튼이 눌려 열려 있을 때 등). accent 를 그대로 깔면 너무 세다.
+    "accent_soft": "#e8f2fd",
     "subbg":  "#fafafa",
     "green":  "#0071e3",
     "yellow": "#e8e8ed",
@@ -39,6 +42,7 @@ DARK = {
     "text":   "#f2f2f7",
     "muted":  "#98989d",     # #86868b 는 어두운 배경에서 대비가 모자란다
     "border": "#48484a",
+    "accent_soft": "#16324f",
     "subbg":  "#242426",
     "green":  "#0a84ff",
     "yellow": "#3a3a3c",
@@ -99,6 +103,21 @@ BLOCK_LIGHT = {"char": "#ffffff", "template": "#eef4ff",
 BLOCK_DARK = {"char": "#2c2c2e", "template": "#1e2b3f",
               "function": "#3a2f1c", "form": "#18321f",
               "builtin": "#2b2740"}
+
+# 도구 중 **변환**만 진한 강조색 — 이 프로그램의 본체이고, 예전에 큰 파란
+# 버튼이던 것이 블럭으로 옮겨왔다. 눈에 띄어야 찾기 쉽다 (2026-07-25).
+# 사용자가 blk["color"] 로 직접 고르면 그쪽이 우선한다.
+BUILTIN_ACCENT = {"convert": True}
+
+
+def block_color(block):
+    """블럭 배경색 — 사용자 지정 > 도구 강조 > 종류별 기본."""
+    if block.get("color"):
+        return block["color"]
+    if (block.get("type") == "builtin"
+            and BUILTIN_ACCENT.get(block.get("key"))):
+        return colors()["accent"]
+    return block_colors().get(block.get("type"), colors()["card"])
 
 # 알림 색 (종류 → 글자색, 배경색)
 NOTICE_LIGHT = {

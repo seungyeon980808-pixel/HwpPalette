@@ -35,10 +35,20 @@ BUILTIN_ACTIONS = [
 
 ACTION_BY_KEY = {a["key"]: a for a in BUILTIN_ACTIONS}
 
-# 첫 실행 때 '메인' 탭에 깔아 둘 기본 도구. 예전에 코드로 박혀 있던 네 개를
+# 첫 실행 때 '메인' 탭에 깔아 둘 기본 도구. 예전에 코드로 박혀 있던 것들을
 # 그대로 옮겨 놓는다 — 처음 쓰는 사람이 빈 화면을 보지 않게 하려는 것이다.
 # 그 뒤로는 사용자가 지우든 옮기든 자유이고, 다시 채워 넣지 않는다.
-DEFAULT_MAIN_KEYS = ("reset_format", "photo", "special", "form_fill")
+DEFAULT_MAIN_KEYS = ("convert", "reset_format", "photo", "special", "form_fill")
+
+# 마지막 하나는 지울 수 없는 도구 (2026-07-25).
+# 변환은 이 프로그램의 본체다. 다른 블럭처럼 옮기고 크기를 바꾸고 이름도
+# 고칠 수 있게 하되, **모두 지워 버리면 되살릴 길이 없어** 마지막 하나만 막는다.
+# (전역 단축키 Ctrl+Alt+T 는 남지만, 화면에서 사라진 기능을 다시 찾기는 어렵다)
+PROTECTED_KEYS = ("convert",)
+
+# 그 블럭이 '마지막 남은 보호 대상'인지 판단할 때 쓸 기본 크기 — 변환은
+# 글자가 길어 한 칸으로는 못 읽는다.
+DEFAULT_SPANS = {"convert": (3, 2)}      # key → (가로 칸, 세로 줄)
 
 
 def name_of(key):

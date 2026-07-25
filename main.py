@@ -40,8 +40,9 @@ v1.0.0 (2026-07-05)
 ─────────────────────────────────────────
 """
 
-VERSION = "1.3.0"
-RELEASE_DATE = "2026-07-05"
+import appinfo                     # 이름·버전·슬로건 한 곳 모음
+VERSION = appinfo.VERSION
+RELEASE_DATE = appinfo.RELEASE_DATE
 
 # 전역 단축키 — 한글에서 작업하는 중에 눌러도 먹는다 (등록은 파일 끝에서).
 # 버튼 라벨과 실제 등록이 어긋나지 않도록 **한 곳에서만** 정한다
@@ -158,6 +159,7 @@ def notify(kind, text, detail=""):
         fg, bg = _NOTICE_COLORS.get(kind, _NOTICE_COLORS["info"])
         status_var.set(text)            # 여기서 notify 를 부르면 무한 재귀다
         status_lbl.config(fg=fg, bg=bg)
+        set_dot(kind)                   # 알림등도 같은 상태로 (초록/주황/빨강)
     except Exception:
         pass                # UI 가 아직 없는 시점 — 목록에는 이미 남았다
 
@@ -482,6 +484,7 @@ YELLOW = _C["yellow"]
 TEXT   = _C["text"]
 MUTED  = _C["muted"]
 BORDER = _C["border"]
+ACCENT_SOFT = _C["accent_soft"]   # 강조색의 옅은 판 ('지금 켜져 있음' 표시)
 SUBBG  = _C["subbg"]
 FONT   = theme.FONT
 
@@ -498,7 +501,7 @@ def _font(size, weight=None):
 
 
 root = tk.Tk()
-root.title(f"hwp_palette v{VERSION}")
+root.title(appinfo.WINDOW_TITLE)
 root.configure(bg=BG)
 root.resizable(False, False)
 root.attributes("-topmost", True)
@@ -541,23 +544,66 @@ except Exception as e:
 #   양식(조판 스펙 설정) — 템플릿으로 골격을 저장하는 방식이 자리를 잡아 안 쓴다.
 #   환경설정 — 아래 '설정' 과 같은 창이라 하나로 합쳤다.
 # ══════════════════════════════════════════════════════
-misc_row = tk.Frame(root, bg=CARD, padx=10, pady=4)
+misc_row = tk.Frame(root, bg=CARD, padx=10, pady=2)
 misc_row.pack(fill="x")
 
 
-def _misc_btn(parent, text, cmd, fg=None):
-    btn = tk.Button(parent, text=text, command=cmd, font=_font(8),
-                    fg=fg or TEXT, bg=CARD, activebackground=BORDER,
-                    bd=0, padx=6, pady=3, cursor="hand2")
-    ui_fx.attach(btn, CARD)     # 호버 보간 (A안) — 툴바 버튼은 평면 유지
-    return btn
+# 설정은 **버튼 하나**로 모은다 (사용자 결정 2026-07-25).
+#
+# '라이브러리'와 '설정'이 나란히 있으면 둘 다 설정인데 이름만 다른 것처럼
+# 보였다. 톱니 하나를 누르면 무엇을 설정할지 고르게 하면, 평소 화면에서는
+# 버튼 한 개만 보이고 관계도 분명해진다.
+#   팔레트 설정 = 버튼(물감)을 어디에 놓을지     (palette_ui)
+#   물감 설정   = 무엇을 넣어 둘지 (서식·문자·템플릿·양식)  (library_ui)
+def _settings_menu(anchor_widget):
+    m = tk.Menu(root, tearoff=0)
+    m.add_command(label="팔레트 설정", command=fn_open_palette_settings)
+    m.add_command(label="물감 설정", command=lambda: fn_open_library())
+    # 메뉴가 떠 있는 동안 버튼을 켜 둔다 — 지금 열려 있는 것이 어느 버튼에서
+    # 나왔는지 보인다. 윈도우의 tk_popup 은 메뉴가 닫힐 때까지 돌아오지 않으므로,
+    # finally 에서 끄면 곧 '닫힐 때 원래대로'다.
+    _bar_active(anchor_widget, True)
+    try:    # 버튼 바로 아래에 펼친다 — 어디서 나온 메뉴인지 보이게
+        m.tk_popup(anchor_widget.winfo_rootx(),
+                   anchor_widget.winfo_rooty() + anchor_widget.winfo_height())
+    finally:
+        m.grab_release()
+        _bar_active(anchor_widget, False)
 
 
-_misc_btn(misc_row, "라이브러리", lambda: fn_open_library()).pack(side="left")
-_misc_btn(misc_row, "설정", lambda: fn_open_palette_settings()).pack(
-    side="left", padx=(4, 0))
-_misc_btn(misc_row, "사용법", lambda: _toggle_guide()).pack(
-    side="left", padx=(4, 0))
+# 이 줄의 생김새 (사용자 결정 2026-07-25 — "심플하게").
+#
+# 글자 버튼 두 개를 아래 블럭과 같은 크기로 맞춰 봤더니, 안 쓰는 버튼이 화면에서
+# 가장 큰 덩어리가 되고 상자 안은 텅 비어 보였다. 그래서 **기호만 남기고 상자를
+# 벗긴다**:
+#   · 정사각 기호 버튼 — 톱니(설정) · 물음표(사용법). 이름은 툴팁으로 말한다.
+#   · 모서리는 6px — 아래 블럭(8px)보다 조여, 같은 계열이되 도구가 아님을 알린다.
+#   · 평소엔 테두리도 배경도 없다. 마우스를 올리면 옅은 회색, 눌러서 무언가
+#     열려 있는 동안(메뉴·사용법)에는 옅은 파랑 + 파란 기호.
+#   · 줄 높이는 버튼 크기 그대로 — 예전 두 칸 높이의 절반쯤이다.
+_BAR_BTN_PX = int(round(26 * SCALE))     # 정사각 한 변
+
+
+def _bar_btn(text, cmd, tip):
+    b = RoundButton(misc_row, text=text, command=cmd, bg=CARD, fg=MUTED,
+                    radius=6, font=_font(9), outline="", zone_bg=CARD)
+    b.config(width=_BAR_BTN_PX, height=_BAR_BTN_PX)   # fit() 대신 정사각 고정
+    # 기호만 있으므로 이름은 툴팁이 맡는다. _add_tooltip 은 이 줄보다 아래에서
+    # 정의되므로(파일 순서), 화면이 다 만들어진 뒤에 붙인다.
+    root.after_idle(lambda: _add_tooltip(b, tip))
+    return b
+
+
+def _bar_active(btn, on):
+    """켜짐 표시 — 눌러서 연 것(메뉴·사용법)이 닫힐 때까지 옅은 파랑으로 둔다."""
+    btn.retint(bg=ACCENT_SOFT if on else CARD, fg=ACCENT if on else MUTED)
+
+
+_gear = _bar_btn("⚙", lambda: _settings_menu(_gear), "설정")
+_gear.pack(side="left")
+# 도움말은 물음표 — 가장 널리 쓰이는 관습이라 글자를 안 읽어도 안다
+_help_btn = _bar_btn("?", lambda: _toggle_guide(), "사용법")
+_help_btn.pack(side="left", padx=(4, 0))
 
 # 상태줄(최근 알림)을 이 줄 오른쪽 빈 자리에 둔다 (2026-07-25).
 #
@@ -565,7 +611,7 @@ _misc_btn(misc_row, "사용법", lambda: _toggle_guide()).pack(
 # 알림은 **작업 중 눈이 가는 위쪽**에 있어야 보인다. 누르면 지난 알림이 펼쳐진다.
 # 초기값을 짧게 두는 이유: 이 줄의 일은 '방금 무슨 일이 있었는지'를 말하는 것이라
 # 늘 같은 안내가 박혀 있으면 정작 알림이 와도 눈에 안 들어온다.
-# 초기 문구는 _poll_connection 이 연결 상태로 채운다 ('준비됨'은 뜻이 없었다)
+# 처음에는 비워 둔다 — 알림이 왔을 때만 말한다 ('준비됨'은 뜻이 없었다)
 status_var = tk.StringVar(value="")
 status_lbl = tk.Label(misc_row, textvariable=status_var, font=_font(8),
                       fg=MUTED, bg=CARD, cursor="hand2", anchor="e")
@@ -575,8 +621,25 @@ status_lbl.bind("<Button-1>", lambda e: _show_notice_log())
 # 한글 연결 표시등 (UI 제안 4) — 눌러서 실패해야 알던 것을 미리 보여준다.
 # 알림 **바로 왼쪽**에 둔다: 둘 다 '지금 상태'를 말하는 것이라 붙어 있어야 읽힌다.
 # (side="right" 는 나중에 붙일수록 왼쪽으로 간다 — 그래서 알림 다음에 넣는다)
-conn_dot = tk.Label(misc_row, text="●", font=_font(9), fg="#c7c7cc", bg=CARD)
+# 알림등 (2026-07-25) — 한글 연결 표시등이던 자리를 물려받았다.
+#
+# 연결 여부는 버튼을 눌러 보면 그때 알 수 있어 늘 지켜볼 이유가 없었다.
+# 대신 **방금 한 일이 잘 됐는지**를 색으로 말한다: 초록이면 괜찮고, 빨강이면
+# 무언가 잘못됐다. 눌러 보면 지난 알림이 펼쳐진다.
+_DOT_COLORS = {"ok": "#34c759", "info": "#34c759",
+               "warn": "#ff9500", "error": "#ff3b30"}
+conn_dot = tk.Label(misc_row, text="●", font=_font(9),
+                    fg=_DOT_COLORS["ok"], bg=CARD, cursor="hand2")
 conn_dot.pack(side="right", padx=(0, 6))
+conn_dot.bind("<Button-1>", lambda e: _show_notice_log())
+
+
+def set_dot(kind):
+    """알림등 색 — ok/info 초록, warn 주황, error 빨강."""
+    try:
+        conn_dot.config(fg=_DOT_COLORS.get(kind, _DOT_COLORS["ok"]))
+    except Exception:
+        pass
 
 # '어둡게 / 크게' 버튼은 뺐다 (사용자 결정 2026-07-25 — "심플한 게 제일").
 # 값 자체는 config 에 남아 있어 theme.py·settings.py 가 그대로 읽는다.
@@ -647,6 +710,8 @@ def _toggle_guide():
         # 창 맨 아래(저작권 밑)에 붙는다. 안내는 설정 줄 바로 밑이어야 한다.
         guide_body.pack(fill="x", padx=10, pady=(6, 0), before=common_zone)
         _guide_open[0] = True
+    # 펼쳐 있는 동안 '?' 를 켜 둔다 — 지금 켜져 있음이 버튼에서 보인다
+    _bar_active(_help_btn, _guide_open[0])
     # 창 높이를 **이징으로** 목표까지 옮긴다 (2026-07-25). 한 번에 튀면
     # 화면이 순간 이동한 것처럼 보여 '버벅인다'고 느껴진다.
     root.update_idletasks()
@@ -711,36 +776,24 @@ def _zone_label(parent, text, bg):
 # 공통도구 = 기본 바탕 / 문서별 팔레트 = 살짝 다른 바탕.
 common_zone = tk.Frame(root, bg=BG)
 common_zone.pack(fill="x", pady=(0, 12))          # 구역 사이 여백
-_zone_label(common_zone, "공통도구", BG)
+_zone_label(common_zone, "공통 팔레트", BG)
 
 btn_area = tk.Frame(common_zone, bg=BG, padx=10, pady=2)
 btn_area.pack(fill="x")
 
-# 변환 버튼 크기 = 블럭 격자와 **같은 단위**로 3줄 × 2칸 (사용자 결정 2026-07-25).
+# 변환 버튼도 이제 **메인 탭의 도구 블럭**이다 (사용자 결정 2026-07-25).
 #
-# 예전에는 '창의 반 폭'이었는데, 메인 탭 칸 수가 늘면 변환 버튼도 같이 넓어져
-# 창이 두 배로 벌어졌다. 칸 단위로 못박으면 창 너비는 **메인 탭 칸 수만**
-# 따라간다. 실제 픽셀은 render_palette 에서 격자와 같은 칸 크기로 맞춘다.
-#
-# 기본 서식·사진·특수문자·양식 채우기는 여기 코드로 박혀 있었지만 이제 '도구'
-# 블럭이 되어 메인 탭에 들어간다. 변환 버튼만 고정으로 남긴다 — 이 프로그램의
-# 본체이고, 실수로 지우면 곤란하다.
-convert_holder = tk.Frame(btn_area, bg=BG)
-convert_holder.pack_propagate(False)      # 안의 버튼이 크기를 못 늘리게
-convert_holder.grid(row=0, column=0, sticky="nw")
-# 단축키는 버튼에 안 적는다 — 툴팁과 사용법에 있고, 버튼 안에서는 정작 중요한
-# '마크다운 변환' 글자를 작게 만들기만 했다.
-# RoundButton: 곡률 12px + 호버 보간 + 누르면 진해지며 글자 1px 침하 (A안)
-convert_btn = RoundButton(convert_holder, text="마크다운\n변환",
-                          command=fn_convert, bg=ACCENT, fg="white",
-                          radius=12, font=_font(11, "bold"), zone_bg=BG)
-convert_btn.pack(fill="both", expand=True)
+# 예전에는 여기 고정 위젯으로 박혀 있고 크기는 별도 설정 창에서 고쳤다.
+# 하나뿐인 버튼을 위해 전용 설정 창을 두는 것이 어색했고, 다른 도구는 다
+# 블럭인데 이것만 예외인 것도 관성이 어긋났다. 이제 다른 블럭과 똑같이
+# 끌어서 옮기고 크기를 바꾸고 이름도 고칠 수 있다.
+# 대신 **마지막 하나는 지울 수 없다** (palette.protected_key_of).
 quick_area = tk.Frame(btn_area, bg=BG)
-quick_area.grid(row=0, column=1, sticky="nw", padx=(5, 0))
+quick_area.pack(fill="x")
 
 
 # ══════════════════════════════════════════════════════
-# 구역 2 — 문서별 팔레트 (탭으로 갈아끼우는 것)
+# 구역 2 — 개인 팔레트 (탭으로 갈아끼우는 것)
 #
 # 이름을 '상황별도구'에서 바꿨다 (사용자 결정 2026-07-25): 탭이 실제로
 # 수능·학교 시험문제처럼 **만드는 문서 종류**로 갈리므로, 이름만 보고
@@ -748,15 +801,76 @@ quick_area.grid(row=0, column=1, sticky="nw", padx=(5, 0))
 # ══════════════════════════════════════════════════════
 doc_zone = tk.Frame(root, bg=SUBBG)
 doc_zone.pack(fill="x", pady=(0, 10))
-_zone_label(doc_zone, "문서별 팔레트", SUBBG)
 
 _pal_state = {"tab": 0}
 
-pal_tabbar = tk.Frame(doc_zone, bg=SUBBG, padx=10)
-pal_tabbar.pack(fill="x", pady=(2, 0))
+# 팔레트 고르기 = **이름표 옆 드롭다운** (사용자 결정 2026-07-25).
+#
+# 예전에는 탭 버튼을 한 줄로 늘어놓았다. 팔레트가 늘수록 그 줄이 길어져 창 폭을
+# 끌고 다녔고, 이름이 긴 팔레트('학교 시험문제')가 있으면 줄이 통째로 넓어졌다.
+# 이름표 오른쪽에 붙이면 '개인 팔레트 [수능 ▾]' 가 한 문장처럼 읽히고, 줄 하나가
+# 통째로 없어진다. 대신 고르는 데 두 번 눌러야 한다 — 팔레트가 서넛 이상으로
+# 늘어날수록 이쪽이 유리하다는 판단.
+pal_head = tk.Frame(doc_zone, bg=SUBBG)
+pal_head.pack(fill="x", padx=10, pady=(5, 0))
+tk.Label(pal_head, text="개인 팔레트", font=_font(7), fg=MUTED,
+         bg=SUBBG).pack(side="left")
+
+_PAL_NAME_MAX = 12      # 이름이 길어도 이 창 폭을 끌고 다니지 않게
+
+pal_pick = RoundButton(pal_head, text="", command=lambda: _pal_menu(),
+                       bg=CARD, fg=TEXT, radius=6, font=_font(8),
+                       outline=BORDER, focus_color=ACCENT, zone_bg=SUBBG)
+pal_pick.pack(side="left", padx=(6, 0))
 
 pal_area = tk.Frame(doc_zone, bg=SUBBG, padx=10, pady=2)
-pal_area.pack(fill="x", pady=(1, 6))
+pal_area.pack(fill="x", pady=(3, 6))
+
+
+def _pal_tabs():
+    """개인 팔레트 목록 — '메인' 탭은 위 공통 팔레트로 그려지므로 뺀다."""
+    return [t for t in palette.load_tabs()
+            if t.get("name") != palette.MAIN_TAB]
+
+
+def _pal_pick_text(tabs, cur):
+    if not tabs:
+        return "팔레트 없음  ▾"
+    name = tabs[min(cur, len(tabs) - 1)]["name"]
+    if len(name) > _PAL_NAME_MAX:
+        name = name[:_PAL_NAME_MAX - 1] + "…"
+    return f"{name}  ▾"          # ▾ 로 '눌러서 고르는 것'임을 알린다
+
+
+def _sync_pal_pick(tabs=None, cur=None):
+    """고르개에 지금 팔레트 이름을 써 넣는다 (폭도 다시 잰다)."""
+    tabs = _pal_tabs() if tabs is None else tabs
+    cur = _pal_state["tab"] if cur is None else cur
+    pal_pick.set_text(_pal_pick_text(tabs, cur), pad_x=9, pad_y=3)
+
+
+def _pal_menu():
+    """팔레트 고르개 — 지금 것에 표시가 붙고, 맨 아래에서 관리 창으로 간다."""
+    tabs = _pal_tabs()
+    m = tk.Menu(root, tearoff=0)
+    # 라디오 표시를 쓰면 '지금 어느 것인지'를 Tk 가 직접 그려 준다.
+    # 변수를 들고 있어야 한다 — 지역 변수로 두면 메뉴가 뜬 사이에 사라진다.
+    var = _pal_state.setdefault("menu_var", tk.IntVar())
+    var.set(_pal_state["tab"])
+    for i, t in enumerate(tabs):
+        m.add_radiobutton(label=t["name"], variable=var, value=i,
+                          command=lambda idx=i: _select_pal_tab(idx))
+    if tabs:
+        m.add_separator()
+    # 팔레트를 새로 만들려고 설정을 뒤지던 것을 여기서 바로 갈 수 있게 한다
+    m.add_command(label="팔레트 관리…", command=fn_open_palette_settings)
+    pal_pick.retint(bg=ACCENT_SOFT, fg=ACCENT)      # 열려 있는 동안 켜 둔다
+    try:
+        m.tk_popup(pal_pick.winfo_rootx(),
+                   pal_pick.winfo_rooty() + pal_pick.winfo_height())
+    finally:
+        m.grab_release()
+        pal_pick.retint(bg=CARD, fg=TEXT)
 
 
 def _select_pal_tab(i):
@@ -769,14 +883,7 @@ def _select_pal_tab(i):
     if _pal_state["tab"] == i:
         return                              # 같은 탭 — 아무것도 할 필요 없다
     _pal_state["tab"] = i
-    for idx, btn in enumerate(_pal_state.get("tab_btns", [])):
-        try:
-            active = idx == i
-            bg = ACCENT if active else CARD
-            btn.config(bg=bg, fg="white" if active else TEXT)
-            ui_fx.rebase(btn, bg)           # 호버 기준색도 함께 갱신
-        except Exception:
-            pass
+    _sync_pal_pick()                    # 고르개에 새 이름을 써 넣는다
     _render_current_tab()
     root.after_idle(_fit_window)        # 탭마다 격자 크기가 달라 창도 맞춘다
 
@@ -847,10 +954,13 @@ def _render_block_grid(parent, tab):
     grid.pack(anchor="w")
     # 칸을 **실제 쓰는 데까지만** 예약한다 (2026-07-25). 탭의 cols(예: 15)를
     # 전부 잡으면 블럭이 6칸까지만 있어도 창이 15칸 폭으로 벌어진다 — 창 크기는
-    # 가장 오른쪽 블럭에 맞아야 한다(빈 칸은 환경설정 창에서나 의미가 있다).
+    # 가장 오른쪽 블럭에 맞아야 한다(빈 칸은 팔레트 설정 창에서나 의미가 있다).
+    #
+    # 다만 **최소 폭은 지킨다** (사용자 결정 2026-07-25): 블럭이 몇 개 없다고
+    # 창이 홀쭉해지면 이름이 잘리고 화면이 초라해 보인다.
     used_cols = max((int(b.get("col", 0)) + max(1, int(b.get("span", 1)))
                      for b in blocks), default=1)
-    for i in range(min(cols, used_cols)):
+    for i in range(min(cols, max(used_cols, _MIN_GRID_COLS))):
         grid.columnconfigure(i, minsize=cell_px + _BLOCK_GAP_PX, weight=0)
     for blk in blocks:
         span = max(1, min(int(blk.get("span", 1)), cols))
@@ -872,8 +982,6 @@ def render_palette():
     # 블럭이 바뀌었을 수 있으므로 묵은 격자를 재사용하면 안 된다.
     _pal_state["tab_frames"] = {}
     _pal_state["shown_frame"] = None
-    for w in pal_tabbar.winfo_children():
-        w.destroy()
     for w in pal_area.winfo_children():
         w.destroy()
     for w in quick_area.winfo_children():
@@ -884,17 +992,6 @@ def render_palette():
     main_tab = next((t for t in all_tabs
                      if t.get("name") == palette.MAIN_TAB), None)
     tabs = [t for t in all_tabs if t.get("name") != palette.MAIN_TAB]
-
-    # 변환 버튼을 옆 격자와 **같은 칸 크기**로 맞춘다 (기본 가로 3칸 · 세로 2줄).
-    # 여기서 하는 이유: 칸 크기는 메인 탭 칸 수에 따라 정해지므로 그릴 때가 아니면
-    # 알 수 없다. 안 맞추면 버튼과 블럭의 윗줄·아랫줄이 어긋나 보인다.
-    # 크기는 환경설정에서 바꿀 수 있다 (palette.get_convert_size).
-    conv_span, conv_rows = palette.get_convert_size()
-    main_cols = max(1, int((main_tab or {}).get("cols", palette.DEFAULT_COLS)))
-    cell_px = _adaptive_cell_px(main_cols)
-    convert_holder.config(
-        width=cell_px * conv_span + _BLOCK_GAP_PX * (conv_span - 1),
-        height=cell_px * conv_rows + _BLOCK_GAP_PX * (conv_rows - 1))
 
     if main_tab is not None:
         if main_tab.get("blocks"):
@@ -910,28 +1007,16 @@ def render_palette():
                       pady=3, cursor="hand2").pack(fill="x")
 
     if not tabs:
-        tk.Label(pal_area, text="‘환경설정’에서 탭과 블럭을 만들어보세요.",
+        _sync_pal_pick(tabs, 0)         # 고르개는 '팔레트 없음'으로 두고
+        tk.Label(pal_area, text="‘팔레트 관리…’에서 팔레트를 만들어보세요.",
                  font=_font(8), fg=MUTED, bg=SUBBG).pack(anchor="w")
         return
     cur = _pal_state["tab"]
     if cur >= len(tabs):
         cur = _pal_state["tab"] = 0
-
-    # 탭 버튼들 — 평면 유지(macOS 툴바 버튼처럼), 호버 보간만 단다 (A안).
-    # 만든 버튼을 들고 있는다 → 탭 전환 때 부수지 않고 색만 갈아끼운다.
-    _pal_state["tab_btns"] = []
-    for i, t in enumerate(tabs):
-        active = i == cur
-        tab_bg = ACCENT if active else CARD
-        tab_btn = tk.Button(pal_tabbar, text=t["name"], font=_font(8, "bold"),
-                            bg=tab_bg, fg="white" if active else TEXT,
-                            bd=0, padx=7, pady=2, cursor="hand2",
-                            command=lambda idx=i: _select_pal_tab(idx))
-        tab_btn.pack(side="left", padx=(0, 3))
-        ui_fx.attach(tab_btn, tab_bg)
-        _pal_state["tab_btns"].append(tab_btn)
-    # 여기 있던 '설정' 버튼은 뺐다 (사용자 결정 2026-07-25) — 위 구역3의 '설정'과
-    # 같은 창을 열어 두 곳에 있었다. 위쪽 하나로 모은다.
+    # 탭 버튼 줄은 이름표 옆 드롭다운(pal_pick)이 대신한다 — 여기서는 지금
+    # 팔레트 이름만 써 넣는다.
+    _sync_pal_pick(tabs, cur)
 
     _render_current_tab(tabs)
     root.after_idle(_fit_window)
@@ -949,6 +1034,9 @@ _BLOCK_COLOR = theme.block_colors()
 _BLOCK_CELL_MAX_PX = 42   # SCALE 적용 전 기준값     # 칸 수가 적어도 이보다 크게는 안 키운다
 _BLOCK_CELL_MIN_PX = 20     # 칸 수가 많아도 이보다 작아지면 못 누른다
 _BLOCK_GAP_PX = 2
+# 창이 아무리 홀쭉해져도 이 칸 수만큼은 폭을 잡는다 (사용자 결정 2026-07-25).
+# 팔레트 설정 창의 칸 줄이기도 같은 값에서 멈춘다 (palette.MIN_COLS).
+_MIN_GRID_COLS = palette.MIN_COLS
 # 창 폭을 재서 칸을 맞추던 값들은 필요 없어졌다 (2026-07-25) — 이제 칸 크기가
 # 먼저이고 창이 따라간다. 격자가 창 폭을 결정하므로 여백 상수도 쓰지 않는다.
 
@@ -1033,7 +1121,11 @@ def _block_tooltip(blk):
     btype = blk.get("type")
     name = _block_label(blk)
     if btype == "builtin":
-        return f"도구 · {name}\n{builtin_actions.hint_of(blk.get('key'))}"
+        key = blk.get("key")
+        tip = f"도구 · {name}\n{builtin_actions.hint_of(key)}"
+        if key == "convert":    # 단축키는 버튼 글자에 안 적으므로 여기서 알려준다
+            tip += f"\n한글에서 드래그한 뒤 {CONVERT_HOTKEY_LABEL} 로도 됩니다"
+        return tip
     if btype == "char":
         return f"문자 삽입\n{blk.get('value', '')}"
     if btype == "function":
@@ -1123,7 +1215,7 @@ def _make_block_button(parent, blk, span=1):
     # 종류 구분은 배경색이 하고, 색은 사용자가 지정할 수도 있다(blk["color"]).
     full = _block_label(blk)
     label = _fit_label(full, span)
-    bg = blk.get("color") or _BLOCK_COLOR.get(blk.get("type"), CARD)
+    bg = theme.block_color(blk)     # 사용자 지정 > 도구 강조(변환) > 종류별 기본
     # RoundButton (A안): 곡률 8px + 호버 보간 + 누름 침하.
     # 글자색을 TEXT 로 고정하면 사용자가 남색·빨강을 고르거나 어두운 모드로
     # 바꿨을 때 글자가 배경에 묻힌다 (UI 제안 18) — text_on 이 밝기를 재서 정한다.
@@ -1138,11 +1230,6 @@ def _make_block_button(parent, blk, span=1):
     return btn
 
 
-# 단축키를 버튼 글자에서 뺐으므로 툴팁으로 남긴다
-_add_tooltip(convert_btn,
-             f"마크다운 변환\n한글에서 드래그한 뒤 {CONVERT_HOTKEY_LABEL} 로도 됩니다",
-             force=True)
-
 render_palette()
 
 # 하단 표기 — 저작권 한 줄만 (사용자 결정 2026-07-25).
@@ -1150,11 +1237,22 @@ render_palette()
 # 버전은 윈도우 제목표시줄에 이미 있고(hwp_palette v1.3.0), 날짜는 평소에 볼
 # 일이 없다. 둘 다 '사용법' 화면 맨 아래로 옮겨 필요할 때만 보이게 했다.
 # (CLAUDE.md 의 '하단에 버전+날짜' 규칙에서 벗어나는 부분 — 사용자 확인함)
-# 위아래 여백을 같게 두어 글자가 그 줄의 **한가운데** 오게 한다 (2026-07-25).
-# 예전엔 (4, 8) 이라 글자가 위로 붙어 보였고 줄 자체도 높았다 — 약 25% 낮췄다.
-tk.Label(root, text="Copyright © 2026. Developed by 박승연 | SOMC",
-         font=_font(7), fg=MUTED, bg=BG, anchor="center").pack(fill="x",
-                                                               pady=(4, 4))
+# 푸터 — 글자를 그 띠의 **한가운데**에 (2026-07-25).
+#
+# pady 로 맞추려 했지만 계속 위로 붙어 보였다. 위쪽 여백은 이 라벨의 pady 뿐
+# 아니라 **바로 위 구역(개인 팔레트)의 아래 여백까지 더해져서**, 라벨만 대칭으로
+# 줘도 눈에는 위가 더 넓었다.
+# 높이를 고정한 띠를 만들고 그 안에서 expand 로 띄우면, 위에 무엇이 있든
+# 글자는 띠의 정중앙에 온다.
+_FOOTER_H = int(round(theme.fs(7) * 2.6))
+_footer = tk.Frame(root, bg=BG, height=_FOOTER_H)
+_footer.pack(fill="x")
+_footer.pack_propagate(False)        # 안의 라벨이 높이를 바꾸지 못하게
+# 산술 중앙(expand)으로도 눈에는 아래로 처져 보였다 (사용자 확인 2026-07-25) —
+# 글자의 시각 무게가 베이스라인 쪽에 쏠려서다. 아래에만 여백을 더해 약 1mm(4px)
+# 올린다: pack 은 '라벨+아래 4px' 묶음을 중앙에 놓으므로 글자는 그만큼 위로 간다.
+tk.Label(_footer, text=appinfo.COPYRIGHT, font=_font(7), fg=MUTED, bg=BG,
+         anchor="center").pack(expand=True, pady=(0, 8))
 
 def _pos_on_screen(x, y):
     """그 위치가 지금 화면 안인가 — 모니터를 뺐을 때 창이 사라지는 것 방지."""
@@ -1268,24 +1366,6 @@ def _open_search():
     return win
 
 
-def _poll_connection():
-    """연결 표시등 갱신 — 2초마다. 연결을 새로 만들지는 않는다."""
-    try:
-        ok = hwp_engine.is_connected()
-        conn_dot.config(fg="#34c759" if ok else "#c7c7cc")
-        _tip(conn_dot, "한글에 연결됨" if ok else
-             "한글에 연결 안 됨 — 버튼을 누르면 연결을 시도합니다")
-        # 알림이 아직 없을 때는 이 줄이 **연결 상태**를 말로 풀어 준다 (2026-07-25).
-        # 예전 초기값 '준비됨'은 무엇이 준비됐다는 건지 알 수 없었다. 표시등(●)의
-        # 뜻을 글로 쓰면 초록 점을 모르는 사람도 읽고, 알림이 오면 그때부터는
-        # notify 가 이 줄을 가져간다.
-        if not _notices:
-            status_var.set("한글 연결됨" if ok else "한글을 켜면 연결됩니다")
-    except Exception:
-        pass
-    root.after(2000, _poll_connection)
-
-
 def _tip(widget, text):
     """상태가 바뀌는 위젯의 툴팁 문구를 갈아끼운다 (바인딩은 한 번만)."""
     state = getattr(widget, "_tip_state", None)
@@ -1295,7 +1375,10 @@ def _tip(widget, text):
         state["text"] = text
 
 
-_poll_connection()
+# 한글 연결 상태를 2초마다 확인해 표시등을 칠하던 _poll_connection 은 없앴다
+# (사용자 결정 2026-07-25). 연결 여부는 버튼을 누르면 그때 알려 주면 되고,
+# 그 동그라미는 이제 **알림등**으로 쓴다 — set_dot 참고.
+set_dot("ok")
 
 # ── 단축키 ──────────────────────────────────────────────
 # 아래 bind_all 은 **이 창이 선택돼 있을 때만** 동작한다. 한글에서 작업하는

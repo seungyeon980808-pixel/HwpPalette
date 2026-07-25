@@ -22,8 +22,10 @@ import builtin_actions              # 프로그램 기능 블럭('도구') 카�
 import hwp_engine
 import library_ui                  # commit_ime · capture_template_dialog 공용
 
+import appinfo
 import theme                       # 색은 theme.py 한 곳에서 (밝게/어둡게)
 import ui_fx                       # 호버 보간 (애플 A안)
+from roundbtn import RoundButton   # 둥근 모서리 버튼
 
 _C = theme.colors()
 BG = _C["bg"]
@@ -49,6 +51,7 @@ CELL_MAX_PX = 34
 CELL_MIN_PX = 16
 CELL_GAP = 2
 HEADER_ROWS = 1          # 격자 맨 위 열 머리글 한 줄 (좌표 계산 시 빼야 한다)
+HEADER_COLS = 1          # 격자 맨 왼쪽 줄 머리글 한 칸 (칸 번호와 짝을 맞춘다)
 HEADER_PX = 12           # 그 머리글이 차지하는 높이(px)
 EMPTY_BG = "#fbfbfd"     # 빈칸 배경
 RANGE_BG = "#d8e9ff"     # 끌어서 지정 중인 범위
@@ -203,11 +206,75 @@ class FunctionDialog(tk.Toplevel):
 
 
 # ───────────────────────── 환경설정 메인 창 ─────────────────────────
+def _tiny_btn(parent, text, cmd):
+    """번호 줄 옆에 놓는 아주 작은 ＋／－.
+
+    번호(1·2·3…)와 같은 크기·같은 흐린 색이라 자기주장을 하지 않는다.
+    무엇을 늘리는지는 **놓인 자리**가 말해 준다(칸 번호 옆 = 칸, 줄 번호 밑 = 줄).
+    """
+    lab = tk.Label(parent, text=text, font=(FONT, theme.fs(7)), bg=CARD,
+                   fg=MUTED, cursor="hand2", padx=1)
+    lab.bind("<Button-1>", lambda e: cmd())
+    lab.bind("<Enter>", lambda e: lab.config(fg=ACCENT))
+    lab.bind("<Leave>", lambda e: lab.config(fg=MUTED))
+    return lab
+
+
+def _mini_btn(parent, text, cmd):
+    """작은 정사각 둥근 버튼 (＋／－ 같은 기호 하나짜리)."""
+    b = RoundButton(parent, text=text, command=cmd, bg=CARD, fg=TEXT,
+                    radius=7, font=(FONT, theme.fs(9)), outline=BORDER,
+                    zone_bg=parent.cget("bg"))
+    b.config(width=theme.fs(26), height=theme.fs(20))
+    return b
+
+
+def _tip(widget, text):
+    """작은 말풍선 — 기호만 남긴 버튼이 무엇인지 알려준다."""
+    state = {"win": None, "job": None}
+
+    def _build():
+        state["job"] = None
+        try:
+            if not widget.winfo_exists() or state["win"]:
+                return
+            win = tk.Toplevel(widget)
+            win.wm_overrideredirect(True)
+            win.attributes("-topmost", True)
+            win.wm_geometry(f"+{widget.winfo_rootx()}"
+                            f"+{widget.winfo_rooty() + widget.winfo_height() + 4}")
+            tk.Label(win, text=text, font=(FONT, theme.fs(8)), fg=TEXT,
+                     bg="#ffffe0", bd=1, relief="solid", padx=6, pady=3).pack()
+            state["win"] = win
+        except Exception:
+            pass
+
+    def show(_e=None):
+        if state["job"] is None and state["win"] is None:
+            state["job"] = widget.after(450, _build)
+
+    def hide(_e=None):
+        if state["job"] is not None:
+            try:
+                widget.after_cancel(state["job"])
+            except Exception:
+                pass
+            state["job"] = None
+        if state["win"] is not None:
+            state["win"].destroy()
+            state["win"] = None
+
+    widget.bind("<Enter>", show, add="+")
+    widget.bind("<Leave>", hide, add="+")
+    widget.bind("<ButtonPress-1>", hide, add="+")
+
+
 class SettingsWindow(tk.Toplevel):
     def __init__(self, master, on_saved=None):
         super().__init__(master)
         self.on_saved = on_saved
-        self.title("환경설정 — 팔레트")
+        self._base_title = appinfo.WINDOW_TITLE
+        self.title(self._base_title)
         self.configure(bg=BG)
         self.resizable(True, True)
         self.attributes("-topmost", True)
@@ -220,113 +287,149 @@ class SettingsWindow(tk.Toplevel):
         self._used_cells = set()
         self._new_from = None      # 빈칸을 끌어 새 블럭 자리를 잡는 중
         self._new_to = None
+        self._lifted = None        # 끌면서 들어 올린 타일 (커서를 따라온다)
+        self._grab_xy = None
         self._extra_rows = 0       # ＋줄 추가로 늘린 빈 줄 수
 
-        tk.Label(self, text="환경설정", font=(FONT, theme.fs(12), "bold"),
+        tk.Label(self, text="팔레트 설정", font=(FONT, theme.fs(12), "bold"),
                  bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(12, 2))
-        tk.Label(self, text="탭을 만들고, 그 안에 문자·템플릿·서식 조합 블럭을 넣어 나만의 팔레트를 구성합니다.",
-                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(anchor="w", padx=16, pady=(0, 8))
+        tk.Label(self,
+                 text="원하는 물감을 짜서, 나만의 팔레트를 구성합니다.",
+                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(
+            anchor="w", padx=16, pady=(0, 10))
 
-        main = tk.Frame(self, bg=BG, padx=16)
-        main.pack(fill="both", expand=True)
+        # 왼쪽 목록과 오른쪽 격자를 **하나의 흰 판** 안에 나란히 둔다 (2026-07-25).
+        # 고른 팔레트(왼쪽)와 그 내용(오른쪽)이 같은 판 위에 있어야
+        # "이 팔레트의 내용이 저것"임이 눈으로 이어진다 — 따로 떠 있으면
+        # 둘이 무슨 사이인지 알 수 없다. macOS 설정 창의 사이드바와 같은 짜임이다.
+        main = tk.Frame(self, bg=CARD, highlightbackground=BORDER,
+                        highlightthickness=1)
+        main.pack(fill="both", expand=True, padx=16, pady=(0, 14))
 
-        # 왼쪽: 탭 목록
-        left = tk.Frame(main, bg=BG)
-        left.pack(side="left", fill="y", padx=(0, 12))
-        tk.Label(left, text="탭", font=(FONT, theme.fs(9), "bold"), bg=BG, fg=TEXT).pack(anchor="w")
-        # height 는 줄 수. 크면 이쪽이 창 높이를 정해 버려서, 격자에 줄을 더해도
-        # 창이 안 커진다(실측 2026-07-19: 왼쪽 272px > 오른쪽 180px). 작게 잡는다.
-        self.tab_list = tk.Listbox(left, width=16, height=6, font=(FONT, theme.fs(10)),
-                                   relief="solid", bd=1, exportselection=False,
-                                   selectbackground=ACCENT, selectforeground="white")
-        self.tab_list.pack()
-        self.tab_list.bind("<<ListboxSelect>>", self._on_tab_select)
-        # 탭 순서를 끌어서 바꾼다 (UI 제안 14) — 블럭은 드래그인데 탭만 ▲▼ 버튼인
-        # 관성 불일치를 없앤다. ▲▼ 버튼도 그대로 둔다(키보드/정밀 조작용).
-        self.tab_list.bind("<B1-Motion>", self._on_tab_drag)
-        self.tab_list.bind("<ButtonRelease-1>", lambda e: setattr(self, "_tab_drag_from", None))
-        tb = tk.Frame(left, bg=BG)
-        tb.pack(fill="x", pady=4)
-        for txt, cmd in [("+", self._add_tab), ("이름", self._rename_tab),
-                         ("삭제", self._del_tab), ("▲", lambda: self._move_tab(-1)),
-                         ("▼", lambda: self._move_tab(1))]:
-            tk.Button(tb, text=txt, command=cmd, font=(FONT, theme.fs(8)), bg=CARD, fg=TEXT,
-                      bd=1, padx=6, pady=2, cursor="hand2").pack(side="left", padx=1)
+        # 왼쪽: 팔레트 목록 ('팔레트' 라벨은 뺐다 — 위 제목이 이미 말해 준다)
+        # 오른쪽 여백을 0 으로 — 고른 항목이 경계선까지 닿아야 이어져 보인다
+        left = tk.Frame(main, bg=CARD, padx=0, pady=6)
+        left.pack(side="left", fill="y")
+        left.configure(padx=0)
+        # 목록 — Listbox 가 아니라 **둥근 버튼을 세로로 쌓는다** (2026-07-25).
+        #
+        # Listbox 는 모서리를 못 깎고 항목마다 우클릭 메뉴를 달기도 어렵다.
+        # 버튼으로 만들면 나머지 화면(둥근 블럭)과 모양이 맞고, 엑셀처럼
+        # 목록 끝의 작은 ＋ 로 더할 수 있다.
+        # 테두리로 감싸 **하나의 목록**으로 보이게 한다 — 버튼이 따로 떠 있으면
+        # 무엇이 한 묶음인지 눈에 안 들어온다.
+        self.tab_box = tk.Frame(left, bg=CARD)
+        self.tab_box.pack(anchor="n", fill="x", padx=(6, 0))
+        self._tab_btns = []
+        # 조작법 안내는 지웠다 — 끌기·더블클릭·우클릭은 다른 곳과 같은 규칙이라
+        # 한 번 익히면 되고, 늘 떠 있으면 화면만 어지럽다 (2026-07-25).
 
-        # 오른쪽: 블럭 목록 + 추가
-        right = tk.Frame(main, bg=BG)
+        # 목록과 격자 사이 세로 실선 — 사이드바와 본문의 경계
+        tk.Frame(main, bg=BORDER, width=1).pack(side="left", fill="y")
+
+        # 오른쪽: 팔레트 격자. 위쪽 여백을 왼쪽과 같게 줘 **시작 높이가 맞는다**
+        right = tk.Frame(main, bg=CARD, padx=8, pady=6)
         right.pack(side="left", fill="both", expand=True)
-        self.block_head = tk.Label(right, text="블럭", font=(FONT, theme.fs(9), "bold"),
-                                   bg=BG, fg=TEXT)
-        self.block_head.pack(anchor="w")
+        # 격자 위 머리말(블럭 수·조작 안내)은 지웠다 — 위 설명이 이미 무엇을
+        # 하는 곳인지 말해 준다. 끄는 중 크기 안내는 **창 제목**으로 보여준다.
 
-        addbar = tk.Frame(right, bg=BG)
-        addbar.pack(fill="x", pady=(2, 6))
-        tk.Button(addbar, text="+ 문자", command=self._add_char, font=(FONT, theme.fs(9)),
-                  bg="#e8e8ed", fg=TEXT, bd=0, padx=10, pady=5,
-                  cursor="hand2").pack(side="left", padx=(0, 4))
-        tk.Button(addbar, text="+ 템플릿", command=self._add_template, font=(FONT, theme.fs(9)),
-                  bg="#e8e8ed", fg=TEXT, bd=0, padx=10, pady=5,
-                  cursor="hand2").pack(side="left", padx=(0, 4))
-        tk.Button(addbar, text="+ 서식 조합", command=self._add_function, font=(FONT, theme.fs(9)),
-                  bg="#e8e8ed", fg=TEXT, bd=0, padx=10, pady=5,
-                  cursor="hand2").pack(side="left", padx=(0, 4))
-        tk.Button(addbar, text="+ 양식", command=self._add_form, font=(FONT, theme.fs(9)),
-                  bg="#e8e8ed", fg=TEXT, bd=0, padx=10, pady=5,
-                  cursor="hand2").pack(side="left", padx=(0, 4))
-        # 프로그램 기능(사진·특수문자 등)도 블럭으로 — 예전엔 코드에 박혀 있었다
-        tk.Button(addbar, text="+ 도구", command=self._add_builtin, font=(FONT, theme.fs(9)),
-                  bg="#e8e8ed", fg=TEXT, bd=0, padx=10, pady=5,
-                  cursor="hand2").pack(side="left")
-
-        self.block_area = tk.Frame(right, bg=BG)
+        self.block_area = tk.Frame(right, bg=CARD)
         self.block_area.pack(fill="both", expand=True)
 
-        # 기본 서식 버튼
-        tk.Frame(self, bg=BORDER, height=1).pack(fill="x", padx=16, pady=(8, 0))
-        foot = tk.Frame(self, bg=BG, padx=16, pady=10)
-        foot.pack(fill="x")
         # 실행 취소 / 다시 실행 (UI 제안 1) — 잘못 지운 블럭을 되살린다
         self.bind_all("<Control-z>", lambda e: self._undo())
         self.bind_all("<Control-Z>", lambda e: self._undo())
         self.bind_all("<Control-y>", lambda e: self._redo())
         self.bind_all("<Control-Y>", lambda e: self._redo())
-        tk.Button(foot, text="되돌리기 (Ctrl+Z)", command=self._undo,
-                  font=(FONT, theme.fs(9)), bg=CARD, fg=TEXT, bd=1, padx=10, pady=5,
-                  cursor="hand2").pack(side="left", padx=(0, 6))
-        tk.Button(foot, text="기본 서식 설정", command=self._edit_default_format,
-                  font=(FONT, theme.fs(9)), bg=CARD, fg=TEXT, bd=1, padx=10, pady=5,
-                  cursor="hand2").pack(side="left", padx=(0, 6))
-        # 변환 버튼 크기 — 창 너비에 바로 영향을 주므로 사용자가 고칠 수 있어야 한다
-        tk.Button(foot, text="변환 버튼 크기", command=self._edit_convert_size,
-                  font=(FONT, theme.fs(9)), bg=CARD, fg=TEXT, bd=1, padx=10, pady=5,
-                  cursor="hand2").pack(side="left")
-        tk.Button(foot, text="닫기", command=self._close, font=(FONT, theme.fs(10), "bold"),
-                  bg=ACCENT, fg="white", bd=0, padx=16, pady=6,
-                  cursor="hand2").pack(side="right")
+        # 아래 버튼 줄을 통째로 없앴다 (2026-07-25):
+        #   닫기        — 제목표시줄의 ✕ 가 이미 한다. 창을 닫는 방법이 둘일 이유가 없다
+        #   되돌리기    — Ctrl+Z 로 충분 (위 bind_all)
+        #   기본 서식   — 다른 곳에서 다루기로 함
+        #   변환 버튼 크기 — 이제 도구 블럭이라 끌어서 바꾼다
+        # 버튼 줄이 사라지면서 아래 여백과 구분선도 함께 없앴다.
+        self.protocol("WM_DELETE_WINDOW", self._close)   # ✕ 로 닫아도 저장 알림
 
         self._reload_tabs()
         self.update_idletasks()
-        self.minsize(600, 380)   # 높이는 내용에 맞춰 줄었다 늘었다 한다
+        # 최소 크기를 600×380 으로 못박아 두었더니, 안을 정리해 내용이 작아져도
+        # 창만 그대로 커서 오른쪽에 빈 여백이 남았다 (2026-07-25).
+        # **내용이 최소 크기**다 — 팔레트 격자가 넓어지면 창도 따라 넓어진다.
+        self.minsize(self.winfo_reqwidth(), self.winfo_reqheight())
         # 크기는 지정하지 않는다 — _fit_window 가 내용에 맞춰 잡는다(줄이 늘면 커짐)
         self.geometry(f"+{max(20, master.winfo_rootx()-660)}+{master.winfo_rooty()}")
 
     # ── 탭 목록 ──
+    def _say(self, msg=None):
+        """끌면서 잡은 칸 수 안내 — 지금은 **아무 데도 쓰지 않는다**.
+
+        한때 창 제목에 붙였는데, 제목이 계속 바뀌어 오히려 어수선했다
+        (사용자 지적 2026-07-25). 잡은 범위는 격자에 파랗게 칠해져 이미 보이므로
+        글로 또 말할 필요가 없다. 호출부를 남겨 둔 것은 나중에 다른 자리에
+        붙이고 싶을 때를 위해서다.
+        """
+        return
+
+    _TAB_W = 150            # 팔레트 버튼 폭(px) — 목록이 들쭉날쭉하지 않게 고정
+    _SEL_BLEED = 6          # 고른 것이 오른쪽 경계선까지 넘어가는 만큼
+
     def _reload_tabs(self):
-        self.tab_list.delete(0, tk.END)
-        for t in palette.load_tabs():
-            self.tab_list.insert(tk.END, t["name"])
+        """탭 목록을 다시 그린다 — 둥근 버튼 세로 목록 + 끝에 작은 ＋."""
+        for w in self.tab_box.winfo_children():
+            w.destroy()
+        self._tab_btns = []
         tabs = palette.load_tabs()
         if tabs:
             self.sel_tab = min(self.sel_tab, len(tabs) - 1)
-            self.tab_list.selection_set(self.sel_tab)
+        for i, t in enumerate(tabs):
+            active = (i == self.sel_tab)
+            bg = ACCENT if active else CARD
+            # 사방 테두리 — '누를 수 있는 것'임이 드러난다. 고른 것은 진한
+            # 파랑이라 테두리가 없어도 충분하고, 있으면 오히려 지저분하다.
+            btn = RoundButton(self.tab_box, text=t["name"],
+                              command=lambda idx=i: self._pick_tab(idx),
+                              bg=bg, fg="white" if active else TEXT,
+                              radius=8, font=(FONT, theme.fs(9)),
+                              outline="" if active else BORDER, zone_bg=CARD)
+            btn.fit(pad_x=10, pad_y=5, min_w=self._TAB_W)
+            # 고른 것만 **오른쪽 경계선까지 늘려** 붙인다 (2026-07-25).
+            # 왼쪽에서 고른 것이 오른쪽 격자의 내용이라는 관계를, 두 영역이
+            # 맞닿는 모습으로 보여준다 — 색만 다르면 그냥 '선택됨'에 그친다.
+            btn.config(width=self._TAB_W + (self._SEL_BLEED if active else 0))
+            # 항목마다 **사방 테두리** — 위아래 선만 있으면 목록이라기보다
+            # 글자 더미로 보인다. 테두리를 두르면 '누를 수 있는 것'이 드러난다
+            # (사용자 지적 2026-07-25).
+            btn.pack(anchor="w", pady=2)
+            # 순서는 끌어서, 이름은 더블클릭, 삭제는 우클릭 메뉴
+            btn.bind("<B1-Motion>", lambda e, idx=i: self._on_tab_drag(e, idx))
+            btn.bind("<Double-Button-1>",
+                     lambda e, idx=i: self._rename_tab(idx))
+            btn.bind("<Button-3>", lambda e, idx=i: self._tab_menu(e, idx))
+            self._tab_btns.append(btn)
+        # 엑셀처럼 목록 끝의 작은 ＋ — 큰 '+ 탭' 버튼을 대신한다
+        add = RoundButton(self.tab_box, text="＋", command=self._add_tab,
+                          bg=CARD, fg=MUTED, radius=8,
+                          font=(FONT, theme.fs(9)), outline=BORDER, zone_bg=CARD)
+        add.fit(pad_x=10, pad_y=4, min_w=self._TAB_W)
+        add.config(width=self._TAB_W)
+        add.pack(anchor="w", pady=(2, 0))
+        _tip(add, "팔레트 추가")
         self._render_blocks()
 
-    def _on_tab_select(self, e=None):
-        sel = self.tab_list.curselection()
-        if sel:
-            self.sel_tab = sel[0]
-            self._render_blocks()
+    def _pick_tab(self, idx):
+        if idx == self.sel_tab:
+            return
+        self.sel_tab = idx
+        self._reload_tabs()
+
+    def _tab_menu(self, e, idx):
+        """탭 우클릭 — 삭제 버튼을 따로 두지 않는다 (2026-07-25)."""
+        self._pick_tab(idx)
+        m = tk.Menu(self, tearoff=0)
+        m.add_command(label="이름 바꾸기  (더블클릭)",
+                      command=lambda: self._rename_tab(idx))
+        m.add_separator()
+        m.add_command(label="삭제", command=lambda: self._del_tab(idx))
+        m.tk_popup(e.x_root, e.y_root)
 
     def _add_tab(self):
         name = simpledialog.askstring("탭 추가", "새 탭 이름:", parent=self)
@@ -336,10 +439,12 @@ class SettingsWindow(tk.Toplevel):
             self._reload_tabs()
             self._notify()
 
-    def _rename_tab(self):
+    def _rename_tab(self, idx=None):
         tabs = palette.load_tabs()
         if not tabs:
             return
+        if idx is not None:
+            self.sel_tab = min(idx, len(tabs) - 1)
         if tabs[self.sel_tab].get("name") == palette.MAIN_TAB:
             messagebox.showinfo("이름 고정",
                 "'메인' 탭 이름은 메인 창이 찾는 열쇠라 바꿀 수 없습니다.",
@@ -356,10 +461,12 @@ class SettingsWindow(tk.Toplevel):
             self._reload_tabs()
             self._notify()
 
-    def _del_tab(self):
+    def _del_tab(self, idx=None):
         tabs = palette.load_tabs()
         if not tabs:
             return
+        if idx is not None:
+            self.sel_tab = min(idx, len(tabs) - 1)
         if tabs[self.sel_tab].get("name") == palette.MAIN_TAB:
             messagebox.showinfo(
                 "삭제할 수 없음",
@@ -373,12 +480,20 @@ class SettingsWindow(tk.Toplevel):
             self._reload_tabs()
             self._notify()
 
-    def _on_tab_drag(self, e):
-        """목록에서 탭을 끌어 순서를 바꾼다. 한 칸씩 따라 움직인다."""
+    def _on_tab_drag(self, e, idx):
+        """탭 버튼을 끌어 순서를 바꾼다 — 커서가 넘어간 칸만큼 한 칸씩."""
         tabs = palette.load_tabs()
-        if len(tabs) < 2:
+        if len(tabs) < 2 or not self._tab_btns:
             return
-        target = self.tab_list.nearest(e.y)
+        if idx != self.sel_tab:
+            self._pick_tab(idx)
+            return
+        try:    # 커서의 화면 y 로 몇 번째 탭 위인지 계산
+            top = self._tab_btns[0].winfo_rooty()
+            step_px = max(1, self._tab_btns[0].winfo_height() + 2)
+            target = int((e.y_root - top) // step_px)
+        except Exception:
+            return
         if not (0 <= target < len(tabs)) or target == self.sel_tab:
             return
         step = 1 if target > self.sel_tab else -1
@@ -392,20 +507,26 @@ class SettingsWindow(tk.Toplevel):
 
     # ── 블럭 그리드 (문자표처럼 격자 + 드래그로 자유 이동) ──
     def _render_blocks(self):
+        r"""블럭 격자를 다시 그린다.
+
+        **그리는 동안 화면 갱신을 멈춘다** (2026-07-25). 예전에는 지우기와
+        다시 만들기 사이의 중간 상태가 그대로 화면에 나가, 칸·줄을 늘릴 때마다
+        격자가 한 번 번쩍였다. 다 만든 뒤 한꺼번에 보여주면 그 깜빡임이 없다.
+        """
+        try:
+            self.block_area.update_idletasks()      # 밀린 그리기를 먼저 비운다
+        except Exception:
+            pass
         for w in self.block_area.winfo_children():
             w.destroy()
         self._tile_map = {}
         self._tiles = {}
         tabs = palette.load_tabs()
         if not tabs:
-            self.block_head.config(text="블럭")
             return
         tab = tabs[self.sel_tab]
         blocks = tab.get("blocks", [])
         cols = tab.get("cols", palette.DEFAULT_COLS)
-        self.block_head.config(
-            text=f"'{tab['name']}'  ·  블럭 {len(blocks)}개  ·  "
-                 f"빈칸을 끌어 칸 수를 정하면 새 블럭, 타일을 끌면 자리 이동")
 
         # 옛 상단 바(칸수 스핀박스·편집·크기·삭제)는 없앴다 (2026-07-19):
         #  - 칸수 스핀박스는 to=10 이라 ＋칸 버튼과 싸우며 칸 수를 되돌렸다(버그)
@@ -419,42 +540,26 @@ class SettingsWindow(tk.Toplevel):
                      justify="left").pack(anchor="w", pady=(0, 4))
 
         # 격자는 스크롤 없이 그대로 편다 — 줄이 늘면 창 자체가 커진다(_fit_window).
-        # 배치: 격자 오른쪽에 칸(가로) 버튼, 아래에 줄(세로) 버튼 — 방향과 위치를 맞춤
+        #
+        # ＋／－ 는 **평소엔 숨어 있다가 격자에 마우스를 올리면 나타난다**
+        # (2026-07-25). 늘 떠 있으면 화면에 보이는 것이 늘어 어지럽다. place 로
+        # 격자 위에 얹으므로, 나타나고 사라져도 배치가 흔들리지 않는다.
         outer = tk.Frame(self.block_area, bg=BG)
-        outer.pack(anchor="w", pady=(2, 0))
-        wrap = tk.Frame(outer, bg=CARD, highlightbackground=BORDER,
-                        highlightthickness=1)
-        wrap.grid(row=0, column=0, sticky="nw")
-        grid = tk.Frame(wrap, bg=CARD, padx=2, pady=2)
+        outer.pack(anchor="w", pady=(0, 0))
+        grid = tk.Frame(outer, bg=CARD, padx=2, pady=2)
         grid.pack(anchor="w")
-
-        colbar = tk.Frame(outer, bg=BG)          # 오른쪽: 칸(가로 방향) 조절
-        colbar.grid(row=0, column=1, sticky="n", padx=(4, 0))
-        for txt, cmd in (("＋ 칸", self._add_col), ("－ 칸", self._remove_col)):
-            tk.Button(colbar, text=txt, command=cmd, font=(FONT, theme.fs(8)),
-                      bg=CARD, fg=TEXT, bd=1, padx=6, pady=3,
-                      cursor="hand2").pack(pady=(0, 3))
-
-        rowbar = tk.Frame(outer, bg=BG)          # 아래: 줄(세로 방향) 조절
-        rowbar.grid(row=1, column=0, sticky="w", pady=(4, 0))
-        for txt, cmd in (("＋ 줄", self._add_row), ("－ 줄", self._remove_row)):
-            tk.Button(rowbar, text=txt, command=cmd, font=(FONT, theme.fs(8)),
-                      bg=CARD, fg=TEXT, bd=1, padx=8, pady=3,
-                      cursor="hand2").pack(side="left", padx=(0, 3))
-        tk.Label(rowbar,
-                 text=f"가로 {cols}칸 · 칸 {self._cell_px(cols)}px",
-                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(side="left", padx=(8, 0))
 
         # 칸 크기는 칸 수에 맞춰 정한다 (메인 창과 같은 규칙 — 미리보기가 실물과 맞게)
         cell_px = self._cell_px(cols)
+        grid.columnconfigure(0, minsize=theme.fs(16), weight=0)   # 줄 번호 칸
         for c in range(cols):
-            grid.columnconfigure(c, minsize=cell_px + CELL_GAP, weight=0,
-                                 uniform="cell")
+            grid.columnconfigure(c + HEADER_COLS, minsize=cell_px + CELL_GAP,
+                                 weight=0, uniform="cell")
 
         # 열 머리글 (UI 제안 12) — 15칸이 되니 "몇 번째 칸"을 셀 수 있어야 한다
         for cc in range(cols):
             tk.Label(grid, text=str(cc + 1), font=(FONT, theme.fs(7)), bg=CARD,
-                     fg=MUTED).grid(row=0, column=cc, pady=(0, 1))
+                     fg=MUTED).grid(row=0, column=cc + HEADER_COLS, pady=(0, 1))
 
         self._used_cells = palette.occupied_cells(blocks)
 
@@ -467,7 +572,7 @@ class SettingsWindow(tk.Toplevel):
                             height=cell_px * rows + CELL_GAP * (rows - 1))
             cell.pack_propagate(False)
             cell.grid(row=int(blk.get("row", 0)) + HEADER_ROWS,
-                      column=int(blk.get("col", 0)),
+                      column=int(blk.get("col", 0)) + HEADER_COLS,
                       columnspan=span, rowspan=rows,
                       padx=CELL_GAP // 2, pady=CELL_GAP // 2)
             self._make_tile(cell, i, blk, span).pack(fill="both", expand=True)
@@ -480,6 +585,36 @@ class SettingsWindow(tk.Toplevel):
             for cc in range(cols):
                 if (rr, cc) not in self._used_cells:
                     self._make_empty_cell(grid, rr, cc, cell_px)
+
+        # 줄 머리글 — 칸 번호(위)와 짝. 줄이 몇 개인지 눈에 보여야 한다 (2026-07-25)
+        for rr in range(total_rows):
+            tk.Label(grid, text=str(rr + 1), font=(FONT, theme.fs(7)), bg=CARD,
+                     fg=MUTED).grid(row=rr + HEADER_ROWS, column=0,
+                                    padx=(0, 2))
+
+        # ③ 끝쪽 ＋／－ — **번호가 끝나는 자리**에 작게 늘 둔다 (2026-07-25).
+        #
+        # 숨겼다 보여주는 방식은 '거기 버튼이 있다'는 걸 아무도 모른다는 게
+        # 문제였다. 번호 줄(위·왼쪽)의 연장선에 놓으면 무엇을 늘리는지가
+        # 자리로 드러나므로, 작고 흐리게 둬도 알아볼 수 있다.
+        # 칸 조절은 격자 오른쪽에 **＋ 위, － 아래**로 세로로 쌓는다.
+        # 가로로 늘어놓으면 칸 하나만큼 폭을 더 먹는다 (2026-07-25).
+        colbar = tk.Frame(grid, bg=CARD)        # 칸 번호가 끝나는 오른쪽
+        colbar.grid(row=0, column=cols + HEADER_COLS,
+                    rowspan=2, sticky="n", padx=(4, 0))
+        for txt, cmd, tip in (("＋", self._add_col, "칸(가로) 늘리기"),
+                              ("－", self._remove_col, "칸(가로) 줄이기")):
+            b = _tiny_btn(colbar, txt, cmd)
+            b.pack()
+            _tip(b, tip)
+
+        rowbar = tk.Frame(grid, bg=CARD)        # 줄 번호가 끝나는 아래쪽
+        rowbar.grid(row=total_rows + HEADER_ROWS, column=0, pady=(3, 0))
+        for txt, cmd, tip in (("＋", self._add_row, "줄(세로) 늘리기"),
+                              ("－", self._remove_row, "줄(세로) 줄이기")):
+            b = _tiny_btn(rowbar, txt, cmd)
+            b.pack(side="left")
+            _tip(b, tip)
 
         # 드래그 좌표 계산용 (winfo_containing 없이 수학으로 — 부드러운 이유)
         self._grid_widget = grid
@@ -510,9 +645,18 @@ class SettingsWindow(tk.Toplevel):
         self._set_cols(self._cur_cols() + 1)
 
     def _remove_col(self):
-        """칸을 줄인다 — 오른쪽 끝에 블럭이 있으면 막는다(잘려 사라지지 않게)."""
+        """칸을 줄인다 — 오른쪽 끝에 블럭이 있으면 막는다(잘려 사라지지 않게).
+
+        최소 8칸(palette.MIN_COLS) 밑으로는 못 줄인다 (사용자 결정 2026-07-25) —
+        메인 창이 어차피 8칸 폭을 확보해서, 그 밑으로 줄여도 좁아지지 않는다.
+        """
         cols = self._cur_cols()
-        if cols <= 1:
+        if cols <= palette.MIN_COLS:
+            messagebox.showinfo(
+                "칸을 줄일 수 없음",
+                f"팔레트는 최소 {palette.MIN_COLS}칸입니다.\n"
+                "메인 창이 이 폭을 항상 확보하므로, 더 줄여도 창은 좁아지지 "
+                "않습니다.", parent=self)
             return
         blocks = palette.load_tabs()[self.sel_tab]["blocks"]
         edge = [b for b in blocks
@@ -529,7 +673,7 @@ class SettingsWindow(tk.Toplevel):
         return palette.load_tabs()[self.sel_tab].get("cols", palette.DEFAULT_COLS)
 
     def _set_cols(self, cols):
-        palette.set_tab_cols(self.sel_tab, max(1, min(30, cols)))
+        palette.set_tab_cols(self.sel_tab, max(palette.MIN_COLS, min(30, cols)))
         self._render_blocks()
         self._notify()
 
@@ -544,6 +688,12 @@ class SettingsWindow(tk.Toplevel):
         폭은 사용자가 늘려 둘 수 있으므로 줄이지 않는다.
         """
         self.update_idletasks()
+        # 최소 크기도 내용에 맞춰 갱신한다 — 안 하면 한 번 커진 뒤로는 minsize 가
+        # 창을 붙들어, 칸을 줄여도 오른쪽에 빈 여백이 남는다 (2026-07-25).
+        try:
+            self.minsize(self.winfo_reqwidth(), self.winfo_reqheight())
+        except Exception:
+            pass
         # geometry("") = "내용에 맞춰라". 크기를 직접 계산해 넣으면 그 순간의
         # winfo_reqheight() 가 한 박자 늦어서 첫 '줄 추가'가 반영되지 않았다(실측).
         self.geometry("")
@@ -554,7 +704,7 @@ class SettingsWindow(tk.Toplevel):
         f = tk.Frame(grid, bg=EMPTY_BG, width=cell_px, height=cell_px,
                      highlightbackground=BORDER, highlightthickness=1)
         f.pack_propagate(False)
-        f.grid(row=r + HEADER_ROWS, column=c,
+        f.grid(row=r + HEADER_ROWS, column=c + HEADER_COLS,
                padx=CELL_GAP // 2, pady=CELL_GAP // 2)
         self._empty_map[str(f)] = (r, c)
         f.bind("<ButtonPress-1>", lambda e, rc=(r, c): self._empty_press(rc))
@@ -625,11 +775,9 @@ class SettingsWindow(tk.Toplevel):
     def _paint_range(self):
         """지금 끌고 있는 사각형을 칠하고, 크기·자리를 글로도 알려준다."""
         r0, c0, span, rows = self._drag_area()
-        try:    # UI 제안 12 — 지금 몇 칸을 잡았는지 숫자로 (열 머리글과 짝)
-            self.block_head.config(
-                text=f"{span}×{rows}칸  ·  {r0 + 1}번째 줄, {c0 + 1}번째 칸부터")
-        except Exception:
-            pass
+        # 지금 몇 칸을 잡았는지 **창 제목**으로 (UI 제안 12).
+        # 화면에 고정 라벨을 두면 평소에도 자리를 먹는다 — 끄는 동안만 보인다.
+        self._say(f"{span}×{rows}칸 · {r0 + 1}번째 줄, {c0 + 1}번째 칸부터")
         for key, (rr, cc) in self._empty_map.items():
             try:
                 w = self.nametowidget(key)
@@ -675,7 +823,7 @@ class SettingsWindow(tk.Toplevel):
     def _make_tile(self, parent, i, blk, span=1):
         selected = (self.sel_block == i)
         # 사용자 지정 색이 우선, 없으면 종류별 기본색 (메인 창과 같은 규칙)
-        bg = blk.get("color") or theme.block_colors().get(blk["type"], CARD)
+        bg = theme.block_color(blk)     # 메인 창과 같은 규칙 (변환은 강조색)
         tile = tk.Frame(parent, bg=bg,
                         highlightbackground=ACCENT if selected else BORDER,
                         highlightthickness=2 if selected else 1)
@@ -688,7 +836,7 @@ class SettingsWindow(tk.Toplevel):
         self._tiles[i] = tile
         for w in (tile, lab):
             self._tile_map[str(w)] = i
-            w.bind("<ButtonPress-1>", lambda e, idx=i: self._on_press(idx))
+            w.bind("<ButtonPress-1>", lambda e, idx=i: self._on_press(idx, e))
             w.bind("<B1-Motion>", self._on_drag)
             w.bind("<ButtonRelease-1>", self._on_release)
             w.bind("<Double-Button-1>", lambda e, idx=i: self._edit_block(idx))
@@ -735,10 +883,7 @@ class SettingsWindow(tk.Toplevel):
                                     skip_index=g["idx"]):
             return                      # 다른 블럭 위로는 넘어가지 않는다
         g["span"], g["rows"] = span, rows
-        try:                            # 지금 몇 칸인지 글로도 (UI 제안 12 와 짝)
-            self.block_head.config(text=f"{span}×{rows}칸 으로 조절 중")
-        except Exception:
-            pass
+        self._say(f"{span}×{rows}칸 으로 조절 중")
 
     def _grip_release(self, e):
         g = getattr(self, "_grip", None)
@@ -871,9 +1016,51 @@ class SettingsWindow(tk.Toplevel):
             except Exception:
                 pass
 
-    def _on_press(self, idx):
+    def _on_press(self, idx, event=None):
         self._drag_from = idx
         self._set_selection(idx)
+        # 끌기 준비 — 실제로 '들어 올리는' 것은 손이 조금 움직인 뒤다.
+        # 바로 들면 그냥 클릭한 것도 타일이 튀어 보인다.
+        self._lifted = None
+        self._grab_xy = (event.x_root, event.y_root) if event else None
+
+    def _lift_tile(self, idx, x_root, y_root):
+        r"""끌고 있는 타일을 격자에서 **들어 올려** 커서를 따라오게 한다.
+
+        예전에는 타일이 제자리에 붙어 있고 테두리 색만 바뀌어, 끄는 동안
+        아무것도 안 움직여 '끊긴다'고 느껴졌다 (2026-07-25).
+        물감을 짜서 옮기듯 타일 자체가 손을 따라오면 그 느낌이 사라진다.
+        """
+        tile = getattr(self, "_tiles", {}).get(idx)
+        if tile is None:
+            return False
+        try:
+            info = tile.grid_info()
+            w, h = tile.winfo_width(), tile.winfo_height()
+            # 커서 안에서 잡은 지점 — 타일이 커서에 '붙어' 따라오게 한다
+            off = (x_root - tile.winfo_rootx(), y_root - tile.winfo_rooty())
+            tile.grid_forget()
+            tile.place(in_=self.block_area, x=0, y=0, width=w, height=h)
+            tile.lift()
+            self._lifted = {"tile": tile, "grid": info, "off": off,
+                            "size": (w, h)}
+            return True
+        except Exception as e:
+            applog.exc("타일 들어 올리기 실패 — 예전 방식으로 끕니다", e)
+            self._lifted = None
+            return False
+
+    def _drop_tile(self):
+        """들어 올린 타일을 내려놓는다 (자리 계산은 호출부가 한다)."""
+        lifted = self._lifted
+        self._lifted = None
+        if not lifted:
+            return
+        try:
+            lifted["tile"].place_forget()
+            lifted["tile"].grid(**lifted["grid"])
+        except Exception:
+            pass                    # 곧 _render_blocks 가 다시 그린다
 
     def _cell_owner(self, rc):
         """그 칸을 차지한 블럭 index. 빈칸이면 None."""
@@ -889,9 +1076,22 @@ class SettingsWindow(tk.Toplevel):
         return None
 
     def _on_drag(self, e):
-        """드래그 중 — 지금 놓으면 어디로 갈지 표시. 좌표 수학이라 부드럽다."""
+        """드래그 중 — 타일이 커서를 따라오고, 놓일 자리를 미리 칠한다."""
         if self._drag_from is None:
             return
+        # 손이 4px 넘게 움직인 뒤에야 들어 올린다 — 그냥 클릭한 것과 구분
+        if self._lifted is None and self._grab_xy:
+            if (abs(e.x_root - self._grab_xy[0]) > 4
+                    or abs(e.y_root - self._grab_xy[1]) > 4):
+                self._lift_tile(self._drag_from, *self._grab_xy)
+        if self._lifted:
+            try:
+                area = self.block_area
+                self._lifted["tile"].place(
+                    x=e.x_root - area.winfo_rootx() - self._lifted["off"][0],
+                    y=e.y_root - area.winfo_rooty() - self._lifted["off"][1])
+            except Exception:
+                pass
         rc = self._xy_to_cell(e.x_root, e.y_root)
         target = self._cell_owner(rc)
         hint = target if target is not None else rc
@@ -922,6 +1122,8 @@ class SettingsWindow(tk.Toplevel):
         src = self._drag_from
         self._drag_from = None
         self._drop_hint = None
+        self._grab_xy = None
+        self._drop_tile()               # 들어 올렸던 타일을 제자리로 (곧 다시 그린다)
         if src is None:
             return
         rc = self._xy_to_cell(e.x_root, e.y_root)
@@ -978,6 +1180,20 @@ class SettingsWindow(tk.Toplevel):
     def _del_selected(self):
         if not self._need_sel():
             return
+        blocks = palette.load_tabs()[self.sel_tab].get("blocks", [])
+        if not (0 <= self.sel_block < len(blocks)):
+            return
+        # 마지막 남은 '변환' 블럭은 못 지운다 (2026-07-25) — 옮기고 크기를
+        # 바꾸는 건 자유지만, 다 지워 버리면 화면에서 되살릴 길이 없다.
+        key = palette.protected_key_of(blocks[self.sel_block])
+        if key and palette.count_protected(blocks, key) <= 1:
+            messagebox.showinfo(
+                "지울 수 없음",
+                f"'{builtin_actions.name_of(key)}'는 이 프로그램의 본체라\n"
+                "마지막 하나는 지울 수 없습니다.\n\n"
+                "자리·크기·이름은 다른 블럭과 똑같이 바꿀 수 있습니다.",
+                parent=self)
+            return
         palette.delete_block(self.sel_tab, self.sel_block)
         self.sel_block = None
         self._render_blocks()
@@ -1027,7 +1243,10 @@ class SettingsWindow(tk.Toplevel):
             return False
         return True
 
-    def _add_char(self, span=1, rows=1):
+    # 새 블럭의 기본 폭은 **모든 종류 두 칸** (사용자 결정 2026-07-25) —
+    # 종류마다 폭이 다르면(문자 1칸, 템플릿 2칸) 격자가 들쭉날쭉해 보였다.
+    # 한 칸이면 충분한 블럭은 놓은 뒤 손잡이로 줄이면 된다.
+    def _add_char(self, span=2, rows=1):
         if not self._need_tab():
             return
         prefill = ""
@@ -1079,7 +1298,7 @@ class SettingsWindow(tk.Toplevel):
         self._place({"type": "template", "ref": item["id"],
                      "template": item["name"], "span": span, "rows": rows})
 
-    def _add_function(self, span=1, rows=1):
+    def _add_function(self, span=2, rows=1):
         if not self._need_tab():
             return
         dlg = FunctionDialog(self)
@@ -1147,12 +1366,6 @@ class SettingsWindow(tk.Toplevel):
 
     def _edit_default_format(self):
         dlg = _DefaultFormatDialog(self)
-        self.wait_window(dlg)
-        self._notify()
-
-    def _edit_convert_size(self):
-        """마크다운 변환 버튼의 크기 (블럭 격자와 같은 칸 단위)."""
-        dlg = _ConvertSizeDialog(self)
         self.wait_window(dlg)
         self._notify()
 
@@ -1299,68 +1512,6 @@ class _DefaultFormatDialog(tk.Toplevel):
             messagebox.showwarning("값 오류", "크기·줄간격·자간은 숫자여야 합니다.", parent=self)
             return
         palette.save_default_format(fmt)
-        self.destroy()
-
-
-class _ConvertSizeDialog(tk.Toplevel):
-    """마크다운 변환 버튼 크기 — 블럭 격자와 **같은 칸 단위**로 정한다.
-
-    칸 단위인 이유: 옆 블럭들과 윗줄·아랫줄이 맞아야 보기 좋고, 픽셀로 두면
-    화면 배율(크게/작게)이 바뀔 때 어긋난다.
-    """
-
-    def __init__(self, master):
-        super().__init__(master)
-        self.title("변환 버튼 크기")
-        self.configure(bg=BG)
-        self.resizable(False, False)
-        self.attributes("-topmost", True)
-
-        span, rows = palette.get_convert_size()
-        self.span_var = tk.IntVar(value=span)
-        self.rows_var = tk.IntVar(value=rows)
-
-        tk.Label(self, text="마크다운 변환 버튼", font=(FONT, theme.fs(11), "bold"),
-                 bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(12, 2))
-        tk.Label(self,
-                 text="옆 블럭과 같은 칸 단위입니다. 가로를 늘리면 창도 넓어집니다.",
-                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(anchor="w", padx=16,
-                                                       pady=(0, 10))
-
-        body = tk.Frame(self, bg=BG, padx=16)
-        body.pack(fill="x")
-        for r, (text, var) in enumerate((("가로 (칸)", self.span_var),
-                                         ("세로 (줄)", self.rows_var))):
-            tk.Label(body, text=text, font=(FONT, theme.fs(9)), bg=BG, fg=TEXT).grid(
-                row=r, column=0, sticky="w", pady=4)
-            tk.Spinbox(body, from_=1, to=palette.CONVERT_SIZE_MAX, width=5,
-                       textvariable=var, font=(FONT, theme.fs(10)),
-                       justify="center").grid(row=r, column=1, padx=(10, 0))
-
-        foot = tk.Frame(self, bg=BG, padx=16, pady=12)
-        foot.pack(fill="x")
-        tk.Button(foot, text="저장", command=self._ok,
-                  font=(FONT, theme.fs(10), "bold"), bg=ACCENT, fg="white", bd=0,
-                  padx=16, pady=6, cursor="hand2").pack(side="right")
-        tk.Button(foot, text="기본값 (3×2)", command=self._reset,
-                  font=(FONT, theme.fs(9)), bg="#e8e8ed", fg=TEXT, bd=0,
-                  padx=12, pady=6, cursor="hand2").pack(side="left")
-
-        self.update_idletasks()
-        self.geometry(f"+{master.winfo_rootx()+60}+{master.winfo_rooty()+80}")
-        self.grab_set()
-        ui_fx.attach_all(self)   # 창 안 모든 버튼에 호버 보간
-
-    def _reset(self):
-        self.span_var.set(palette.DEFAULT_CONVERT_SIZE["span"])
-        self.rows_var.set(palette.DEFAULT_CONVERT_SIZE["rows"])
-
-    def _ok(self):
-        try:
-            palette.save_convert_size(self.span_var.get(), self.rows_var.get())
-        except (tk.TclError, ValueError):
-            # 칸에 숫자가 아닌 것이 들어간 경우 — 저장하지 않고 그냥 닫는다
-            applog.warn("변환 버튼 크기: 숫자가 아니어서 저장하지 않았습니다")
         self.destroy()
 
 

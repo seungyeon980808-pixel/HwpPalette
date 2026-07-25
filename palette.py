@@ -29,6 +29,10 @@ import builtin_actions
 TABS_KEY = "palette_tabs"
 DEFAULT_FORMAT_KEY = "default_format"
 DEFAULT_COLS = 15       # 격자 가로 칸 수. 칸 크기는 폭에 맞춰 정해진다(정사각형).
+# 칸 수의 최소값 (사용자 결정 2026-07-25). 메인 창이 어차피 8칸 폭을 확보하므로
+# (main._MIN_GRID_COLS), 그보다 줄여 봐야 오른쪽에 빈 공간만 남고 좁아지지 않는다
+# — 줄인 티가 안 나는 조작은 아예 못 하게 막는 게 덜 헷갈린다.
+MIN_COLS = 8
 
 # 블럭은 격자 위의 사각형이다: (row, col) 에서 span×rows 칸을 차지한다.
 #   span = 가로 칸 수, rows = 세로 줄 수
@@ -85,11 +89,55 @@ def _seed_main_tools(tabs):
     # 나란히 놓는다(있던 블럭은 그대로 둔다).
     cols = int(main.get("cols") or 8)
     for key in builtin_actions.DEFAULT_MAIN_KEYS:
-        row, col = find_free_spot(main["blocks"], cols, span=2, rows=1)
+        span, rows = builtin_actions.DEFAULT_SPANS.get(key, (2, 1))
+        row, col = find_free_spot(main["blocks"], cols, span=span, rows=rows)
         main["blocks"].append({"type": "builtin", "key": key,
                                "name": builtin_actions.name_of(key),
-                               "span": 2, "rows": 1, "row": row, "col": col})
+                               "span": span, "rows": rows,
+                               "row": row, "col": col})
     return True
+
+
+def count_protected(blocks, key):
+    """그 탭에 있는 보호 대상(변환 등) 블럭 수 — 마지막 하나는 못 지운다."""
+    return sum(1 for b in blocks
+               if b.get("type") == "builtin" and b.get("key") == key)
+
+
+def protected_key_of(block):
+    """이 블럭이 보호 대상이면 그 key, 아니면 None."""
+    if block.get("type") != "builtin":
+        return None
+    key = block.get("key")
+    return key if key in builtin_actions.PROTECTED_KEYS else None
+
+
+def _ensure_protected_blocks(tabs):
+    r"""'변환' 같은 보호 대상 도구가 메인 탭에 **하나는 있게** 한다 (2026-07-25).
+
+    변환 버튼이 화면에 고정 위젯으로 박혀 있다가 도구 블럭으로 옮겨졌다.
+    이미 쓰던 사람의 메인 탭에는 그 블럭이 없으므로 여기서 한 번 넣어 준다.
+    _seed_main_tools 와 달리 **매번 확인**한다 — 어쩌다 사라져도 되살아나야
+    한다(삭제는 UI 가 막지만, 옛 설정 파일이나 손편집까지 막을 수는 없다).
+
+    반환: 무언가 넣었으면 True.
+    """
+    main = next((t for t in tabs if t.get("name") == MAIN_TAB), None)
+    if main is None:
+        return False
+    changed = False
+    cols = int(main.get("cols") or 8)
+    for key in builtin_actions.PROTECTED_KEYS:
+        if count_protected(main.get("blocks", []), key):
+            continue
+        span, rows = builtin_actions.DEFAULT_SPANS.get(key, (2, 1))
+        row, col = find_free_spot(main["blocks"], cols, span=span, rows=rows)
+        main["blocks"].append({"type": "builtin", "key": key,
+                               "name": builtin_actions.name_of(key),
+                               "span": span, "rows": rows,
+                               "row": row, "col": col})
+        changed = True
+    return changed
 
 
 def load_tabs():
@@ -105,8 +153,14 @@ def load_tabs():
         migrated = True
     if _seed_main_tools(tabs):
         migrated = True
+    if _ensure_protected_blocks(tabs):
+        migrated = True
     for t in tabs:
         t.setdefault("cols", DEFAULT_COLS)
+        # 최소 칸 수 도입(2026-07-25) 전에 만든 탭은 8칸 미만일 수 있다 — 올린다
+        if int(t.get("cols") or DEFAULT_COLS) < MIN_COLS:
+            t["cols"] = MIN_COLS
+            migrated = True
         t.setdefault("blocks", [])
         if _migrate_positions(t):
             migrated = True
@@ -296,7 +350,7 @@ def move_tab(index, delta):
 def set_tab_cols(index, cols):
     tabs = load_tabs()
     if 0 <= index < len(tabs):
-        tabs[index]["cols"] = max(1, int(cols))
+        tabs[index]["cols"] = max(MIN_COLS, int(cols))
         save_tabs(tabs)
 
 
@@ -396,29 +450,6 @@ def save_default_format(fmt):
     settings.set_config_value(DEFAULT_FORMAT_KEY, fmt)
 
 
-# ── 변환 버튼 크기 (2026-07-25) ────────────────────────
-# 블럭 격자와 **같은 칸 단위**로 잰다 — 옆 블럭들과 줄이 맞아야 하기 때문이다.
-# 창 폭에 직접 영향을 주므로 사용자가 고칠 수 있어야 한다.
-CONVERT_SIZE_KEY = "convert_button_size"
-DEFAULT_CONVERT_SIZE = {"span": 3, "rows": 2}   # 가로 3칸 · 세로 2줄
-CONVERT_SIZE_MAX = 12                            # 실수로 창이 화면을 넘지 않게
-
-
-def get_convert_size():
-    """(가로 칸, 세로 줄). 저장값이 이상하면 기본값으로 되돌린다."""
-    saved = settings.get_config_value(CONVERT_SIZE_KEY, None) or {}
-    out = []
-    for key in ("span", "rows"):
-        try:
-            v = int(saved.get(key, DEFAULT_CONVERT_SIZE[key]))
-        except (TypeError, ValueError):
-            v = DEFAULT_CONVERT_SIZE[key]
-        out.append(max(1, min(CONVERT_SIZE_MAX, v)))
-    return tuple(out)
-
-
-def save_convert_size(span, rows):
-    span = max(1, min(CONVERT_SIZE_MAX, int(span)))
-    rows = max(1, min(CONVERT_SIZE_MAX, int(rows)))
-    settings.set_config_value(CONVERT_SIZE_KEY, {"span": span, "rows": rows})
-    return span, rows
+# 변환 버튼 크기 설정(get/save_convert_size)은 없앴다 (2026-07-25).
+# 변환 버튼이 메인 탭의 도구 블럭이 되어, 다른 블럭처럼 끌어서 크기를 바꾼다.
+# 크기는 그 블럭의 span/rows 에 들어 있다.

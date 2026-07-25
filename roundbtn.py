@@ -58,6 +58,25 @@ class RoundButton(tk.Canvas):
         self.bind("<Return>", lambda e: self._invoke())
         self.bind("<space>", lambda e: self._invoke())
 
+    # ── 크기 ────────────────────────────────────────
+    def fit(self, pad_x=12, pad_y=6, min_w=0):
+        r"""글자에 맞춰 캔버스 크기를 정한다.
+
+        Canvas 는 기본 크기(378×265)가 있어 그냥 두면 버튼이 터무니없이 커진다.
+        tk.Button 을 바꿔 끼울 때마다 크기를 손으로 재는 대신 여기서 잰다.
+        줄바꿈이 있으면 가장 긴 줄을 재고 줄 수만큼 높이를 잡는다.
+        """
+        import tkinter.font as tkfont
+        try:
+            f = tkfont.Font(font=self._font) if self._font else tkfont.Font()
+            lines = (self._text or " ").split("\n")
+            w = max((f.measure(ln) for ln in lines), default=0) + pad_x * 2
+            h = f.metrics("linespace") * len(lines) + pad_y * 2
+            self.config(width=max(w, min_w), height=h)
+        except Exception:
+            self.config(width=max(80, min_w), height=28)
+        return self
+
     # ── 그리기 ──────────────────────────────────────
     @staticmethod
     def _round_points(x1, y1, x2, y2, r):
@@ -155,6 +174,16 @@ class RoundButton(tk.Canvas):
         self._redraw()
 
     # ── 겉모습 갱신 (탭 활성 전환 등) ───────────────
+    def set_text(self, text, pad_x=12, pad_y=6):
+        """글자를 바꾸고 **폭도 다시 잰다** — 팔레트 고르개처럼 이름이 바뀌는 버튼용.
+
+        itemconfig 만 하면 캔버스 크기는 예전 글자에 맞춰져 있어, 이름이 길어지면
+        잘리고 짧아지면 오른쪽이 텅 빈다.
+        """
+        self._text = text
+        self.fit(pad_x=pad_x, pad_y=pad_y)
+        self._redraw()
+
     def retint(self, bg=None, fg=None):
         if bg:
             self._base = bg

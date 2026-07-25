@@ -21,6 +21,7 @@ import library
 import builtin_chars
 import settings
 
+import appinfo
 import theme                       # 색은 theme.py 한 곳에서 (밝게/어둡게)
 import ui_fx                       # 호버 보간 (애플 A안)
 
@@ -418,13 +419,13 @@ class LibraryManager(tk.Toplevel):
     def __init__(self, master, on_saved=None):
         super().__init__(master)
         self.on_saved = on_saved
-        self.title("내 라이브러리")
+        self.title(appinfo.WINDOW_TITLE)
         self.configure(bg=BG)
         self.resizable(False, False)
         self.attributes("-topmost", True)
         self.current_cat = "서식"
 
-        tk.Label(self, text="내 라이브러리", font=(FONT, theme.fs(12), "bold"),
+        tk.Label(self, text="물감 설정", font=(FONT, theme.fs(12), "bold"),
                  bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(14, 2))
 
         # 탭 버튼
