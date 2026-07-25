@@ -72,6 +72,7 @@ import builtin_actions               # 팔레트에 놓는 '도구' 블럭 카�
 import hotkey                        # 한글에서도 먹는 전역 단축키
 import ui_fx                         # 호버 보간·누름 피드백 (애플 A안)
 from roundbtn import RoundButton     # 둥근 모서리 버튼
+from popover import Popover          # 앱과 같은 얼굴의 팝업 메뉴
 
 # 설정 파일 입출력은 settings 모듈로 통합
 load_config = settings.load_config
@@ -483,6 +484,7 @@ GREEN  = _C["green"]
 YELLOW = _C["yellow"]
 TEXT   = _C["text"]
 MUTED  = _C["muted"]
+FAINT  = _C["faint"]              # MUTED 보다 흐림 (저작권 등 '있는 글'용)
 BORDER = _C["border"]
 ACCENT_SOFT = _C["accent_soft"]   # 강조색의 옅은 판 ('지금 켜져 있음' 표시)
 SUBBG  = _C["subbg"]
@@ -555,20 +557,16 @@ misc_row.pack(fill="x")
 # 버튼 한 개만 보이고 관계도 분명해진다.
 #   팔레트 설정 = 버튼(물감)을 어디에 놓을지     (palette_ui)
 #   물감 설정   = 무엇을 넣어 둘지 (서식·문자·템플릿·양식)  (library_ui)
+# 메뉴는 윈도우 기본 tk.Menu 가 아니라 자체 팝오버(popover.py)로 그린다
+# (사용자 지적 2026-07-25: 기본 메뉴가 프로그램의 나머지와 따로 놀았다).
+# 버튼은 메뉴가 떠 있는 동안 켜져 있다가(on_close 로) 닫힐 때 꺼진다.
 def _settings_menu(anchor_widget):
-    m = tk.Menu(root, tearoff=0)
-    m.add_command(label="팔레트 설정", command=fn_open_palette_settings)
-    m.add_command(label="물감 설정", command=lambda: fn_open_library())
-    # 메뉴가 떠 있는 동안 버튼을 켜 둔다 — 지금 열려 있는 것이 어느 버튼에서
-    # 나왔는지 보인다. 윈도우의 tk_popup 은 메뉴가 닫힐 때까지 돌아오지 않으므로,
-    # finally 에서 끄면 곧 '닫힐 때 원래대로'다.
     _bar_active(anchor_widget, True)
-    try:    # 버튼 바로 아래에 펼친다 — 어디서 나온 메뉴인지 보이게
-        m.tk_popup(anchor_widget.winfo_rootx(),
-                   anchor_widget.winfo_rooty() + anchor_widget.winfo_height())
-    finally:
-        m.grab_release()
-        _bar_active(anchor_widget, False)
+    (Popover(root, anchor_widget,
+             on_close=lambda: _bar_active(anchor_widget, False))
+     .add("팔레트 설정", fn_open_palette_settings)
+     .add("물감 설정", lambda: fn_open_library())
+     .show())
 
 
 # 이 줄의 생김새 (사용자 결정 2026-07-25 — "심플하게").
@@ -850,27 +848,22 @@ def _sync_pal_pick(tabs=None, cur=None):
 
 
 def _pal_menu():
-    """팔레트 고르개 — 지금 것에 표시가 붙고, 맨 아래에서 관리 창으로 간다."""
+    """팔레트 고르개 — 지금 것에 ✓ 가 붙고, 맨 아래에서 관리 창으로 간다.
+
+    윈도우 기본 메뉴 대신 자체 팝오버(popover.py) — 블럭과 같은 글꼴·색·호버.
+    """
     tabs = _pal_tabs()
-    m = tk.Menu(root, tearoff=0)
-    # 라디오 표시를 쓰면 '지금 어느 것인지'를 Tk 가 직접 그려 준다.
-    # 변수를 들고 있어야 한다 — 지역 변수로 두면 메뉴가 뜬 사이에 사라진다.
-    var = _pal_state.setdefault("menu_var", tk.IntVar())
-    var.set(_pal_state["tab"])
-    for i, t in enumerate(tabs):
-        m.add_radiobutton(label=t["name"], variable=var, value=i,
-                          command=lambda idx=i: _select_pal_tab(idx))
-    if tabs:
-        m.add_separator()
-    # 팔레트를 새로 만들려고 설정을 뒤지던 것을 여기서 바로 갈 수 있게 한다
-    m.add_command(label="팔레트 관리…", command=fn_open_palette_settings)
     pal_pick.retint(bg=ACCENT_SOFT, fg=ACCENT)      # 열려 있는 동안 켜 둔다
-    try:
-        m.tk_popup(pal_pick.winfo_rootx(),
-                   pal_pick.winfo_rooty() + pal_pick.winfo_height())
-    finally:
-        m.grab_release()
-        pal_pick.retint(bg=CARD, fg=TEXT)
+    pop = Popover(root, pal_pick,
+                  on_close=lambda: pal_pick.retint(bg=CARD, fg=TEXT))
+    for i, t in enumerate(tabs):
+        pop.add_check(t["name"], lambda idx=i: _select_pal_tab(idx),
+                      checked=(i == _pal_state["tab"]))
+    if tabs:
+        pop.separator()
+    # 팔레트를 새로 만들려고 설정을 뒤지던 것을 여기서 바로 갈 수 있게 한다
+    pop.add("팔레트 관리…", fn_open_palette_settings, indent=True)
+    pop.show()
 
 
 def _select_pal_tab(i):
@@ -1216,13 +1209,17 @@ def _make_block_button(parent, blk, span=1):
     full = _block_label(blk)
     label = _fit_label(full, span)
     bg = theme.block_color(blk)     # 사용자 지정 > 도구 강조(변환) > 종류별 기본
+    # 두 줄 이상이면 글자를 한 단계 줄인다 (사용자 결정 2026-07-25) —
+    # 9pt 두 줄은 42px 칸에 빈틈없이 꽉 차 답답했다. 칸 크기는 그대로 두고
+    # 글자만 줄이면 위아래 숨이 트인다.
+    size = 8 if "\n" in label else 9
     # RoundButton (A안): 곡률 8px + 호버 보간 + 누름 침하.
     # 글자색을 TEXT 로 고정하면 사용자가 남색·빨강을 고르거나 어두운 모드로
     # 바꿨을 때 글자가 배경에 묻힌다 (UI 제안 18) — text_on 이 밝기를 재서 정한다.
     # 초점 테두리(키보드 Tab 이동)는 RoundButton 이 자체로 그린다.
     btn = RoundButton(parent, text=label,
                       command=lambda b=blk: run_palette_block(b),
-                      bg=bg, fg=theme.text_on(bg), radius=8, font=_font(9),
+                      bg=bg, fg=theme.text_on(bg), radius=8, font=_font(size),
                       outline=BORDER, focus_color=ACCENT,
                       zone_bg=parent.cget("bg"))
     # 이름이 안 잘려도 '무엇이 들었는지'를 보여주므로 늘 붙인다 (UI 제안 6)
@@ -1244,15 +1241,18 @@ render_palette()
 # 줘도 눈에는 위가 더 넓었다.
 # 높이를 고정한 띠를 만들고 그 안에서 expand 로 띄우면, 위에 무엇이 있든
 # 글자는 띠의 정중앙에 온다.
-_FOOTER_H = int(round(theme.fs(7) * 2.6))
+# 띠 높이 2.6배→1.9배 (사용자 결정 2026-07-25: "위아래 2mm 더 줄여라").
+# 글자색도 MUTED 보다 한 단계 흐린 FAINT — 저작권은 읽으라고 있는 글이
+# 아니라 '있다'는 것만 알면 되는 글이다.
+_FOOTER_H = int(round(theme.fs(7) * 1.9))
 _footer = tk.Frame(root, bg=BG, height=_FOOTER_H)
 _footer.pack(fill="x")
 _footer.pack_propagate(False)        # 안의 라벨이 높이를 바꾸지 못하게
 # 산술 중앙(expand)으로도 눈에는 아래로 처져 보였다 (사용자 확인 2026-07-25) —
 # 글자의 시각 무게가 베이스라인 쪽에 쏠려서다. 아래에만 여백을 더해 약 1mm(4px)
 # 올린다: pack 은 '라벨+아래 4px' 묶음을 중앙에 놓으므로 글자는 그만큼 위로 간다.
-tk.Label(_footer, text=appinfo.COPYRIGHT, font=_font(7), fg=MUTED, bg=BG,
-         anchor="center").pack(expand=True, pady=(0, 8))
+tk.Label(_footer, text=appinfo.COPYRIGHT, font=_font(7), fg=FAINT, bg=BG,
+         anchor="center").pack(expand=True, pady=(0, 4))
 
 def _pos_on_screen(x, y):
     """그 위치가 지금 화면 안인가 — 모니터를 뺐을 때 창이 사라지는 것 방지."""
