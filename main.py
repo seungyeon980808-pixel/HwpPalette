@@ -260,22 +260,22 @@ def _plan_summary(ops, warns):
 
 
 def _confirm_plan(ops, warns):
-    """되돌리기 어려운 변환 전에 무엇이 일어날지 보여주고 확인받는다.
+    r"""문법에 문제가 있을 때만 묻는다 (사용자 결정 2026-07-26).
 
-    변환은 선택 영역을 지우고 시작하므로, 잘못 누르면 한글에서 Ctrl+Z 를 여러 번
-    눌러야 한다. 파서가 이미 계획(ops)을 다 계산해 두므로 보여주는 비용은 0이다.
-    주의가 있거나 문서를 크게 바꿀 때만 묻는다 — 매번 물으면 성가시다.
+    예전에는 템플릿·양식·표가 끼면 잘 쓴 문법이어도 매번 '이렇게 바꿉니다'
+    창이 떴다. 되돌리기가 번거로우니 알려 주자는 뜻이었는데, 제대로 쓴 사람에게
+    한 단계를 더 밟게 하는 값이 더 컸다 — "문제가 없으면 그냥 나오게" 가 맞다.
+    문제(warns)가 있을 때만 무엇이 잘못됐는지 보여주고 확인받는다.
     """
-    heavy = sum(1 for o in ops if o[0] in ("template", "form", "table"))
-    if not warns and heavy == 0:
-        return True                     # 글자만 바꾸는 가벼운 변환은 그냥 진행
-    lines = ["이렇게 바꿉니다:", "", "  " + _plan_summary(ops, warns)]
-    if warns:
-        lines += ["", "주의:"] + [f"  · {w}" for w in warns[:6]]
-        if len(warns) > 6:
-            lines.append(f"  … 외 {len(warns) - 6}건")
-    lines += ["", "진행할까요?"]
-    return messagebox.askokcancel("변환 미리보기", "\n".join(lines))
+    if not warns:
+        return True                     # 문법에 문제 없음 — 바로 변환
+    lines = ["문법에 걸리는 곳이 있습니다:", ""]
+    lines += [f"  · {w}" for w in warns[:6]]
+    if len(warns) > 6:
+        lines.append(f"  … 외 {len(warns) - 6}건")
+    lines += ["", "이렇게 바꿉니다:", "  " + _plan_summary(ops, warns),
+              "", "그대로 진행할까요?"]
+    return messagebox.askokcancel("변환 확인", "\n".join(lines))
 
 
 def fn_convert():

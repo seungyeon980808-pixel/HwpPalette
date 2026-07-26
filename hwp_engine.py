@@ -256,11 +256,37 @@ def copy_selection():
     hwp.HAction.Run("Copy")
 
 
-def read_selection_text(retries=10, delay=0.08):
-    """선택 영역을 Copy 후 윈도우 클립보드에서 직접 읽는다.
+def read_selection_direct():
+    r"""선택 영역을 **클립보드를 거치지 않고** 한글에서 바로 읽는다.
 
-    Tk 클립보드(clipboard_get)는 한글의 Copy 완료와 타이밍이 어긋나
-    빈 값을 돌려주는 일이 잦다(실측 2026-07-15) — win32clipboard가 안정적.
+    GetTextFile("TEXT", "saveblock") = 지금 선택된 부분만 글자로 돌려준다.
+    클립보드를 안 건드리므로 사용자가 복사해 둔 것을 지우지도 않고, 다른
+    프로그램이 클립보드를 점유해도 영향을 받지 않는다.
+    선택이 없으면 빈 문자열.
+    """
+    try:
+        if hwp.SelectionMode == 0:
+            return ""
+        return hwp.GetTextFile("TEXT", "saveblock") or ""
+    except Exception as e:
+        applog.exc("선택 영역 직접 읽기 실패 — 클립보드로 넘어감", e)
+        return ""
+
+
+def read_selection_text(retries=10, delay=0.08):
+    r"""선택 영역의 글자를 읽는다.
+
+    두 갈래를 쓴다 (2026-07-26):
+      1) 클립보드 경유 (Copy → win32clipboard) — 지금까지 쓰던 길이고,
+         표·여러 줄의 줄바꿈 모양이 변환기가 기대하는 그대로다.
+      2) 실패하면 **한글에서 직접**(read_selection_direct).
+    2번을 덧붙인 이유: 선택이 멀쩡히 있는데도 "선택 없음" 이라며 변환이
+    거부되는 일이 있었다 (사용자 지적 2026-07-26 — 실측하니 한글 쪽
+    SelectionMode 는 1, 선택 글자도 정상인데 클립보드만 비어 있었다).
+    클립보드는 다른 프로그램이 잠깐만 잡고 있어도 통째로 실패한다.
+
+    Tk 클립보드(clipboard_get)를 안 쓰는 이유는 그대로다 — 한글의 Copy 완료와
+    타이밍이 어긋나 빈 값이 잦았다(실측 2026-07-15).
     """
     import win32clipboard        # 플랫폼 의존 — 없을 수 있어 지역 import
     copy_selection()
@@ -282,7 +308,11 @@ def read_selection_text(retries=10, delay=0.08):
         time.sleep(delay)
     if last_error is not None:
         applog.exc(f"클립보드 읽기 {retries}회 모두 실패", last_error)
-    return ""
+    direct = read_selection_direct()
+    if direct:
+        applog.warn("클립보드가 비어 한글에서 직접 읽었습니다 "
+                    "(변환은 정상 진행됩니다)")
+    return direct
 
 
 def delete_selection():
