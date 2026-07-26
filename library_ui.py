@@ -11,7 +11,7 @@ r"""개인 라이브러리(물감 설정) 창 — 2026-07-25 재구축.
   · 스크롤이 없어 항목 20개면 창이 화면 밖으로 나가던 것 → Canvas 스크롤.
   · 분류(그룹)별로 묶어 접기 — 자산이 늘어도 목록이 안 길어진다.
   · 사진 폴더 지정이 메인에 상시 노출되던 것 → '사진' 탭 안으로.
-  · 내보내기/가져오기 → 메인 창 설정(⚙) 메뉴의 공유 대화상자로 (open_share).
+  · 물감 나누기(구 내보내기/가져오기) → 설정(⚙) 메뉴의 대화상자로 (open_share).
   · 탭의 저장 키(key)와 표시 이름(label)을 분리 — '문자'는 화면에서만
     '특수기호'로 보인다. 저장 데이터(library.json)의 키는 영원히 그대로다.
 """
@@ -569,9 +569,61 @@ class LibraryManager(tk.Toplevel):
         self.act_edit.pack(side="right", padx=(6, 0))
         self.act_del.pack(side="right", padx=(6, 0))
 
+        # Esc 로 닫기 · 화살표로 항목 이동 (사용자 결정 2026-07-26).
+        # 물감 설정은 '고르고 실행하는' 창이라 목록 조작이 키보드로 돼야 한다.
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.bind("<Up>", lambda e: self._move_sel(-1))
+        self.bind("<Down>", lambda e: self._move_sel(1))
+        self.bind("<Left>", lambda e: self._move_sel(-1, horizontal=True))
+        self.bind("<Right>", lambda e: self._move_sel(1, horizontal=True))
+        self.bind("<Return>", lambda e: self._act_selected())
+
         self._switch_tab("서식")
         self.update_idletasks()
         self.geometry(f"+{master.winfo_rootx()-320}+{master.winfo_rooty()}")
+
+    # ── 키보드로 목록 이동 ───────────────────────────
+    def _move_sel(self, delta, horizontal=False):
+        r"""화살표로 다음/이전 항목 선택. 격자에서는 위아래가 '한 줄'만큼 뛴다.
+
+        검색칸에 글자를 치는 중이면 가로 화살표는 커서 이동이어야 하므로
+        건드리지 않는다 (Tk 는 포커스가 Entry 면 그쪽이 먼저 받는다).
+        """
+        nav = getattr(self, "_nav", [])
+        if not nav:
+            return "break"
+        step = delta
+        if not horizontal and self._nav_cols > 1:
+            step = delta * self._nav_cols      # 격자: 위아래 = 한 줄
+        cur = -1
+        if self._sel is not None:
+            for i, e in enumerate(nav):
+                if e.get("row") is self._sel.get("row"):
+                    cur = i
+                    break
+        nxt = 0 if cur < 0 else max(0, min(len(nav) - 1, cur + step))
+        self._select(nav[nxt])
+        self._scroll_into_view(nav[nxt].get("row"))
+        return "break"                          # 창 기본 스크롤과 겹치지 않게
+
+    def _scroll_into_view(self, row):
+        """고른 줄이 화면 밖이면 그만큼만 스크롤한다."""
+        if row is None or not row.winfo_exists():
+            return
+        try:
+            self._canvas.update_idletasks()
+            top = row.winfo_rooty() - self._canvas.winfo_rooty()
+            bottom = top + row.winfo_height()
+            h = self._canvas.winfo_height()
+            total = max(1, self.list_area.winfo_height())
+            if top < 0:
+                self._canvas.yview_moveto(
+                    max(0.0, (self._canvas.canvasy(0) + top) / total))
+            elif bottom > h:
+                self._canvas.yview_moveto(
+                    max(0.0, (self._canvas.canvasy(0) + bottom - h) / total))
+        except Exception:
+            pass                                # 이동 편의 기능 — 실패해도 그만
 
     def _on_wheel(self, e):
         try:
@@ -732,6 +784,9 @@ class LibraryManager(tk.Toplevel):
     def _refresh(self, cat=None):
         cat = cat or self.current_cat
         self._select(None)
+        # 화살표 이동용 목록 — 그리면서 순서대로 쌓는다 (보이는 차례 그대로)
+        self._nav = []
+        self._nav_cols = 1
         for w in self.list_area.winfo_children():
             w.destroy()
         self._canvas.yview_moveto(0)
@@ -816,7 +871,8 @@ class LibraryManager(tk.Toplevel):
         return row
 
     def _wire_row(self, row, cat, item, kind):
-        """행(과 그 자식들)에 선택·더블클릭을 건다."""
+        """행(과 그 자식들)에 선택·더블클릭을 걸고, 화살표 이동 목록에 넣는다."""
+        self._nav.append({"cat": cat, "item": item, "row": row, "kind": kind})
         def all_widgets(w):
             yield w
             for c in w.winfo_children():
@@ -913,7 +969,9 @@ class LibraryManager(tk.Toplevel):
             tk.Label(f, text=shown, font=(FONT, theme.fs(size)), bg=ROWBG,
                      fg=TEXT).pack(expand=True)
             e["row"] = f
+            self._nav.append(e)
             self._wire_cell(f, e)
+        self._nav_cols = cols
         # 내가 등록한 것과 내장 기호가 섞이므로, 무엇이 무엇인지 아래 줄이 말한다
         tk.Label(self.list_area,
                  text=f"{len(entries)}개  ·  누르면 아래에 부르는 법이 나옵니다",
@@ -1091,17 +1149,16 @@ class LibraryManager(tk.Toplevel):
             messagebox.showinfo("수정 불가", self._readonly_msg(), parent=self)
             return
         cat, item = self._sel["cat"], self._sel["item"]
-        # 템플릿은 '무엇을 고치는가'가 세 갈래다 (사용자 결정 2026-07-26):
-        #   이름·라벨 / 내용(글자·표) / 양식(빈칸 자리)
-        # 한 버튼에 몰아넣으면 이름 고치러 들어갔다가 한글이 열려 당황한다.
+        # 템플릿은 두 갈래다 (사용자 결정 2026-07-26):
+        #   이름·라벨 / 내용 고치기
+        # 처음에는 '내용 수정'과 '양식(빈칸) 수정'을 나눴는데, 실제로 하는 일이
+        # 똑같았다 — 둘 다 한글에 펼쳐 고치고 덮어쓰는 것이고, 빈칸 \ 도 그
+        # 화면에서 함께 보인다. 갈래만 늘고 고르는 부담만 생겨 하나로 합쳤다.
         if cat == "템플릿":
             (Popover(self, self.act_edit)
              .add("이름·라벨 수정", lambda: self._edit(cat, item))
-             .separator()
-             .add("내용 수정  (글자·표를 고친다)",
-                  lambda: self._extract_edit("content"))
-             .add("양식 수정  (빈칸 \\ 자리를 고친다)",
-                  lambda: self._extract_edit("form"))
+             .add("내용 고치기  (한글에 펼쳐서 수정)",
+                  lambda: self._extract_edit())
              .show())
             return
         self._edit(cat, item)
@@ -1127,35 +1184,27 @@ class LibraryManager(tk.Toplevel):
         cat = self._sel["cat"]
         pop = Popover(self, self.act_more)
         if cat == "템플릿":
-            pop.add("내용 수정  (한글에 펼쳐서 고치기)",
-                    lambda: self._extract_edit("content"))
-            pop.add("양식 수정  (빈칸 \\ 자리 고치기)",
-                    lambda: self._extract_edit("form"))
+            pop.add("내용 고치기  (한글에 펼쳐서 수정)",
+                    lambda: self._extract_edit())
             pop.separator()
         pop.add("AI 프롬프트 복사  (빈칸을 AI 에게 채우게)",
                 self._copy_ai_prompt)
         pop.show()
 
     # 고치는 동안 한글 문서 맨 위에 붙는 안내 (mode 별로 말이 다르다)
-    _EDIT_NOTES = {
-        "content": [
-            "이 문서의 글자와 표를 원하는 대로 고치세요.",
-            "역슬래시(\\)는 나중에 내용이 채워질 '빈칸'입니다 — 지우지 마세요.",
-            "다 고쳤으면 HwpPalette 의 [이 내용으로 덮어쓰기]를 누르세요.",
-            "(이 안내 줄들은 저장할 때 자동으로 빠집니다)",
-        ],
-        "form": [
-            "빈칸 자리를 고치는 화면입니다. 지금 보이는 역슬래시(\\) 하나가",
-            "나중에 내용 한 줄이 들어갈 자리입니다 — 평소 삽입할 때는 안 보입니다.",
-            "빈칸을 늘리려면 \\ 를 더 넣고, 없애려면 지우면 됩니다.",
-            "채워지는 순서는 위에서 아래, 왼쪽에서 오른쪽입니다.",
-            "다 고쳤으면 HwpPalette 의 [이 내용으로 덮어쓰기]를 누르세요.",
-            "(이 안내 줄들은 저장할 때 자동으로 빠집니다)",
-        ],
-    }
+    # 고치는 동안 한글 문서 맨 위에 붙는 안내 (저장할 때 자동으로 빠진다)
+    _EDIT_NOTE = [
+        "이 문서를 원하는 대로 고치세요 — 글자·표·빈칸 모두 여기서 고칩니다.",
+        "역슬래시(\\) 하나가 나중에 내용 한 줄이 들어갈 '빈칸'입니다.",
+        "(평소 문서에 넣을 때는 안 보이고, 채울 내용으로 바뀝니다)",
+        "빈칸을 늘리려면 \\ 를 더 넣고, 없애려면 지우면 됩니다.",
+        "채워지는 순서는 위에서 아래, 왼쪽에서 오른쪽입니다.",
+        "다 고쳤으면 HwpPalette 의 [이 내용으로 덮어쓰기]를 누르세요.",
+        "(이 안내 줄들은 저장할 때 자동으로 빠집니다)",
+    ]
 
-    def _extract_edit(self, mode="content"):
-        r"""템플릿 꺼내서 고치기 (기획 15번) — 내용 수정 / 양식 수정.
+    def _extract_edit(self):
+        r"""템플릿 꺼내서 고치기 (기획 15번).
 
         조각을 한글 **새 탭**에 펼치고 문서 맨 위에 안내문을 붙인다. 다 고치면
         떠 있는 안내 창의 [덮어쓰기]가 안내문을 걷어낸 뒤 문서 전체를 다시
@@ -1166,13 +1215,13 @@ class LibraryManager(tk.Toplevel):
             return
         try:
             engine_library.open_template_copy(
-                library.template_path(item), self._EDIT_NOTES[mode])
+                library.template_path(item), self._EDIT_NOTE)
         except Exception as e:
             applog.exc("템플릿 꺼내기 실패", e)
             messagebox.showerror("꺼내기 실패", f"{type(e).__name__}: {e}",
                                  parent=self)
             return
-        _RecaptureCoach(self, item, mode)
+        _RecaptureCoach(self, item)
 
     def _copy_ai_prompt(self):
         r"""AI 프롬프트 복사 (기획 18번) — 양식 구조(표 포함)를 보여주고,
@@ -1408,25 +1457,24 @@ class _RecaptureCoach(tk.Toplevel):
     다른 문서로 갈아탔을 수도 있으므로 문구로 분명히 말해 둔다.
     """
 
-    def __init__(self, master, item, mode="content"):
+    def __init__(self, master, item):
         super().__init__(master)
         self._manager = master
         self._item = item
-        self._mode = mode
-        what = "양식(빈칸 자리)" if mode == "form" else "내용"
         self.title(appinfo.WINDOW_TITLE)
         self.configure(bg=BG)
         self.resizable(False, False)
         self.attributes("-topmost", True)
-        tk.Label(self, text=f"'{item['name']}' {what} 고치는 중",
+        self.bind("<Escape>", lambda e: self.destroy())
+        tk.Label(self, text=f"'{item['name']}' 고치는 중",
                  font=(FONT, theme.fs(11), "bold"), bg=BG, fg=TEXT).pack(
                  anchor="w", padx=16, pady=(14, 2))
         tk.Label(self,
                  text="한글 새 탭에 템플릿을 펼쳐 두었습니다 "
                       "(자세한 안내는 그 문서 맨 위에 있습니다).\n"
                       "고친 뒤 아래 [이 내용으로 덮어쓰기]를 누르세요.\n"
-                      "지금 한글에 보이는 문서 전체가 이 템플릿으로 저장됩니다.\n"
-                      "(고치던 탭은 저장하지 않고 닫아도 됩니다)",
+                      "지금 한글에 보이는 문서 전체가 이 템플릿으로 저장되고,\n"
+                      "고치던 탭은 저장이 끝나면 알아서 닫힙니다.",
                  font=(FONT, theme.fs(8)), bg=BG, fg=MUTED,
                  justify="left").pack(anchor="w", padx=16, pady=(0, 10))
         foot = tk.Frame(self, bg=BG, padx=16, pady=12)
@@ -1456,6 +1504,9 @@ class _RecaptureCoach(tk.Toplevel):
                                  parent=self)
             self.destroy()
             return
+        # 고치던 탭은 프로그램이 닫는다 (사용자 결정 2026-07-26) — 저장이
+        # 끝난 뒤에도 남아 있으면 "이건 저장된 건가?" 하고 헷갈린다.
+        closed = engine_library.close_active_doc()
         self.destroy()
         # 이 창은 관리 창의 자식이라, 여기가 살아 있으면 관리 창도 살아 있다
         try:
@@ -1463,14 +1514,16 @@ class _RecaptureCoach(tk.Toplevel):
             self._manager._notify()
         except Exception:
             pass
+        tail = ("" if closed else
+                "\n(고치던 한글 탭은 직접 닫아 주세요)")
         messagebox.showinfo("덮어쓰기 완료",
                             f"'{self._item['name']}' 을(를) 새 내용으로 "
-                            "저장했습니다.\n고치던 한글 탭은 닫으셔도 됩니다.",
+                            f"저장했습니다.{tail}",
                             parent=self._manager)
 
 
 class ShareDialog(tk.Toplevel):
-    r"""물감 내보내기/가져오기 — 메인 창 설정(⚙) 메뉴에서 연다 (사용자 결정
+    r"""물감 나누기 — 메인 창 설정(⚙) 메뉴에서 연다 (사용자 결정
     2026-07-25: "내가 만든 탭을 남에게 주는 일"이라 물감 설정 화면이 아니라
     설정의 하위 기능으로 뺐다).
 
@@ -1486,16 +1539,17 @@ class ShareDialog(tk.Toplevel):
         self.resizable(False, False)
         self.attributes("-topmost", True)
 
-        tk.Label(self, text="물감 내보내기 / 가져오기",
+        self.bind("<Escape>", lambda e: self.destroy())      # Esc 로 닫기
+        tk.Label(self, text="물감 나누기",
                  font=(FONT, theme.fs(12), "bold"), bg=BG, fg=TEXT).pack(
                  anchor="w", padx=16, pady=(14, 2))
-        tk.Label(self, text="내가 만든 물감을 zip 한 개로 묶어 동료와 주고받습니다.",
+        tk.Label(self, text="내가 만든 물감을 꾸러미(zip) 하나로 묶어 동료와 주고받습니다.",
                  font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(
                  anchor="w", padx=16, pady=(0, 10))
 
         row = tk.Frame(self, bg=BG, padx=16)
         row.pack(fill="x")
-        tk.Label(row, text="내보낼 물감", font=(FONT, theme.fs(9)), bg=BG,
+        tk.Label(row, text="보낼 물감", font=(FONT, theme.fs(9)), bg=BG,
                  fg=TEXT).pack(side="left")
         # 내장·사진은 파일/프로그램에 딸린 것이라 내보낼 게 없다
         self._exportable = [c for c in CATS
@@ -1505,15 +1559,17 @@ class ShareDialog(tk.Toplevel):
                      width=10, font=(FONT, theme.fs(9)),
                      values=[c["label"] for c in self._exportable]).pack(
                      side="left", padx=(8, 8))
-        _dialog_btn(row, "내보내기…", self._export, primary=True).pack(side="left")
+        _dialog_btn(row, "꾸러미로 내보내기…", self._export,
+                    primary=True).pack(side="left")
 
         tk.Frame(self, bg=BORDER, height=1).pack(fill="x", padx=16, pady=10)
 
         row2 = tk.Frame(self, bg=BG, padx=16)
         row2.pack(fill="x", pady=(0, 14))
-        tk.Label(row2, text="받은 zip 을", font=(FONT, theme.fs(9)), bg=BG,
+        tk.Label(row2, text="받은 꾸러미를", font=(FONT, theme.fs(9)), bg=BG,
                  fg=TEXT).pack(side="left")
-        _dialog_btn(row2, "가져오기…", self._import).pack(side="left", padx=(8, 0))
+        _dialog_btn(row2, "꾸러미 풀기…", self._import).pack(side="left",
+                                                          padx=(8, 0))
         tk.Label(row2, text="(기존 물감은 그대로, 추가만 합니다)",
                  font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(
                  side="left", padx=(8, 0))
@@ -1583,7 +1639,7 @@ class ShareDialog(tk.Toplevel):
 
 
 def open_share(master, on_saved=None):
-    """내보내기/가져오기 창 — 메인 창 설정(⚙) 메뉴가 부른다."""
+    """물감 나누기 창 — 메인 창 설정(⚙) 메뉴가 부른다."""
     return ShareDialog(master, on_saved=on_saved)
 
 

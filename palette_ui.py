@@ -354,6 +354,10 @@ class SettingsWindow(tk.Toplevel):
         #   변환 버튼 크기 — 이제 도구 블럭이라 끌어서 바꾼다
         # 버튼 줄이 사라지면서 아래 여백과 구분선도 함께 없앴다.
         self.protocol("WM_DELETE_WINDOW", self._close)   # ✕ 로 닫아도 저장 알림
+        # Esc 로도 닫는다 (사용자 결정 2026-07-26) — 설정 창은 '잠깐 들렀다
+        # 나오는 곳'이라 손이 마우스로 갈 필요가 없어야 한다.
+        # bind_all 이 아니라 이 창에만 건다 — 대화상자가 떠 있으면 그쪽이 먼저 받는다.
+        self.bind("<Escape>", lambda e: self._close())
 
         self._reload_tabs()
         self.update_idletasks()

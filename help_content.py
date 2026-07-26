@@ -104,4 +104,24 @@ Ctrl+1~9     지금 탭의 1~9번째 블럭 실행 (위→아래, 왼→오)""")
 
 자유 소프트웨어 (AGPL-3.0)
 {appinfo.COPYRIGHT}"""),
+
+    # 크레딧을 앱 안에도 두는 이유: 이 프로그램을 받아 쓰는 동료 교사는
+    # GitHub 를 안 본다. 감사는 쓰는 사람 눈에 닿는 곳에 있어야 한다.
+    ("만든 사람과 쓰인 것들", """\
+■ 만든 사람
+  박승연 (서울 대왕중학교)
+
+■ 도움 주신 분들
+  (준비 중)
+
+■ 이 프로그램이 서 있는 어깨
+  pyhwpx      한글 자동화 전부 — 표·서식·조각 삽입이 이 위에 있습니다
+              ilco · martiniifun.github.io/pyhwpx (MIT)
+  pywin32     한글과 COM 으로 대화하기, 전역 단축키
+              Mark Hammond 외 (PSF)
+  Pretendard  화면 글꼴 (설치돼 있으면 자동으로 씁니다)
+              orioncactus/pretendard (OFL)
+  Python·Tk   프로그램 본체와 화면
+
+자세한 목록은 저장소의 README 에 있습니다."""),
 ]

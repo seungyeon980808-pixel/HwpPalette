@@ -556,6 +556,24 @@ def select_all():
     _h().HAction.Run("SelectAll")
 
 
+def close_active_doc():
+    r"""지금 문서를 저장하지 않고 닫는다 — 고치기가 끝난 탭 정리용.
+
+    '다 됐으니 닫으셔도 됩니다' 라고 안내만 하던 것을 프로그램이 직접 한다
+    (사용자 결정 2026-07-26). 저장은 이미 조각 파일로 끝났으므로 이 탭에는
+    남길 것이 없다. 문서가 하나뿐이면 닫지 않는다 — 한글까지 비어 버린다.
+    """
+    hwp = _h()
+    try:
+        if hwp.XHwpDocuments.Count <= 1:
+            return False
+        hwp.XHwpDocuments.Active_XHwpDocument.Close(isDirty=False)
+        return True
+    except Exception as e:
+        applog.exc("고치던 탭 닫기 실패 — 사용자가 직접 닫아야 한다", e)
+        return False
+
+
 def read_file_structure(path):
     r"""파일을 새 탭에서 읽어 (HWPML2X XML, 순수 텍스트) 를 돌려준다.
 

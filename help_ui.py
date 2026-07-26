@@ -38,6 +38,7 @@ class HelpWindow(tk.Toplevel):
 
         tk.Label(self, text="도움말", font=(FONT, theme.fs(12), "bold"),
                  bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(14, 8))
+        self.bind("<Escape>", lambda e: self.destroy())      # Esc 로 닫기
 
         main = tk.Frame(self, bg=CARD, highlightbackground=BORDER,
                         highlightthickness=1)

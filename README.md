@@ -223,6 +223,29 @@ fragments/         템플릿 조각 .hwp (git 제외)
 
 ---
 
+## 감사한 분들 · 쓰인 것들
+
+### 이 프로그램이 서 있는 어깨
+
+| 무엇 | 어디에 쓰이나 | 만든 곳 |
+|---|---|---|
+| [pyhwpx](https://martiniifun.github.io/pyhwpx/) | 한글(HWP) 자동화 전부. 표 만들기·서식 적용·조각 삽입이 모두 이 위에 있습니다 | ilco (MIT) |
+| [pywin32](https://github.com/mhammond/pywin32) | 한글과 COM 으로 대화하기, 전역 단축키 | Mark Hammond 외 (PSF) |
+| [Pretendard](https://github.com/orioncactus/pretendard) | 화면 글꼴 (설치돼 있으면 자동으로 씁니다. 없으면 맑은 고딕) | orioncactus (OFL) |
+| Python · Tkinter | 프로그램 본체와 화면 | Python Software Foundation |
+
+### 도움 주신 분들
+
+<!-- 이름을 여기에 한 줄씩 적습니다. 무엇을 도와주셨는지 함께 적어두면
+     나중에 읽는 사람도 맥락을 압니다. 예:
+- **홍길동** — 시험지 양식 초안과 실사용 피드백
+- **아무개 선생님** — 가정통신문 템플릿 검증
+-->
+
+_(작성 예정)_
+
+---
+
 ## 라이선스
 
 **AGPL-3.0** — 자유 소프트웨어입니다. 누구나 무료로 쓰고 고치고 나눌 수 있으며,
