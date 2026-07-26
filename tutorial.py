@@ -60,6 +60,9 @@ class Tutorial:
         self._binds = []        # (위젯, 이벤트, funcid) — 끝낼 때 떼기 위해
         self._reflow_job = None
         self._done = False
+        self._busy = False      # 다시 그리는 중 (그동안 온 이벤트는 무시)
+        self._last_geo = None   # 마지막으로 그린 기준 창의 자리
+        self._root_topmost = None   # 튜토리얼 동안 잠시 내렸다가 되돌릴 값
 
     def start(self):
         global _active
@@ -69,13 +72,25 @@ class Tutorial:
         if not self.steps:
             self._finish()
             return
+        # 메인 창의 '항상 위' 를 잠시 내린다 (2026-07-26).
+        # 흐림 패널도 '항상 위' 라, 둘 다 켜져 있으면 윈도우가 z-순서를 두고
+        # 다투며 흐림이 나타났다 사라졌다 했다 — 깜빡임의 다른 한 축이다.
+        try:
+            self._root_topmost = bool(self.root.attributes("-topmost"))
+            if self._root_topmost:
+                self.root.attributes("-topmost", False)
+        except Exception:
+            self._root_topmost = None
         self._show(0)
 
     # ── 한 단계 ─────────────────────────────────────
     def _show(self, i):
         if self._done:
             return
-        self._clear()
+        # 단계를 넘길 때 **흐림 패널은 그대로 두고** 안내창만 지운다.
+        # 매번 다 부수고 다시 만들면 단계마다 화면이 한 번씩 번쩍인다
+        # (흐림은 _draw_dim 이 자리만 옮겨 준다, 2026-07-26).
+        self._close_coach()
         if i >= len(self.steps):
             self._finish(completed=True)
             return
@@ -111,6 +126,7 @@ class Tutorial:
             self._draw_halo(w)
         self._draw_coach(w, step["title"], step["text"],
                          last=(i == len(self.steps) - 1))
+        self._last_geo = self._geo()    # 이 자리를 기준으로 '움직였나' 를 잰다
         self._track()                   # 창이 움직이면 따라오게
 
     # ── 창을 따라다니기 (2026-07-26 사용자 지적) ────
@@ -119,6 +135,10 @@ class Tutorial:
     # 옮기면 제자리에 남아 회색 판이 엉뚱한 곳에 떠 있었다. 창이 움직이거나
     # 크기가 바뀌면 지금 단계를 그대로 다시 그린다.
     def _track(self):
+        # **먼저 떼고 다시 건다** — 단계마다 그냥 걸기만 하면 감시가 쌓여
+        # 창을 한 번 움직일 때마다 열 번씩 다시 그렸다 (깜빡임의 주범,
+        # 2026-07-26). 기준 창이 단계마다 바뀔 수 있어 매번 다시 건다.
+        self._untrack()
         for wdg in {self.root, self._base}:
             try:
                 fid = wdg.bind("<Configure>", self._on_move, add="+")
@@ -134,33 +154,42 @@ class Tutorial:
                 pass
         self._binds = []
 
+    def _geo(self):
+        """기준 창의 지금 자리·크기 — 진짜 움직였는지 재기 위한 값."""
+        try:
+            b = self._base if self._base.winfo_exists() else self.root
+            return (b.winfo_rootx(), b.winfo_rooty(),
+                    b.winfo_width(), b.winfo_height())
+        except Exception:
+            return None
+
     def _on_move(self, _e=None):
-        if self._done or self._reflow_job is not None:
+        if self._done or self._reflow_job is not None or self._busy:
             return
-        # 창을 끄는 동안 <Configure> 가 수십 번 온다 — 한 박자 몰아서 한 번만
-        self._reflow_job = self.root.after(60, self._reflow)
+        # 자리가 **실제로 바뀌었을 때만** 다시 그린다 (2026-07-26).
+        # 흐림 패널을 만들고 지우는 것 자체가 다시 <Configure> 를 불러,
+        # 그냥 반응하면 다시 그리기가 서로를 부르며 화면이 깜빡였다.
+        if self._geo() == self._last_geo:
+            return
+        self._reflow_job = self.root.after(120, self._reflow)
 
     def _reflow(self):
         self._reflow_job = None
         if self._done or self._coach is None:
             return
+        self._busy = True                   # 다시 그리는 동안 온 이벤트는 무시
         try:
             w = self._target
             if w is not None and not w.winfo_exists():
                 w = self._target = None
-            self._clear_dim()
-            for f in self._halo:
-                try:
-                    f.destroy()
-                except Exception:
-                    pass
-            self._halo = []
-            self._draw_dim(w)
-            if w is not None:
-                self._draw_halo(w)
+            self._draw_dim(w)               # 있는 패널을 **옮긴다** (재생성 아님)
+            self._draw_halo(w)
             self._place_coach(self._coach, w)
+            self._last_geo = self._geo()
         except Exception as e:
             applog.exc("튜토리얼 위치 갱신 실패 — 안내는 그대로 둔다", e)
+        finally:
+            self._busy = False
 
     def _draw_dim(self, w):
         r"""**눌러야 할 것만 남기고 나머지를 흐리게** (사용자 결정 2026-07-26).
@@ -173,7 +202,6 @@ class Tutorial:
         짚을 것이 없는 단계(한글에서 할 일)는 이 프로그램 창 전체를 덮어
         "지금은 여기가 아니라 한글을 보라"는 뜻이 되게 한다.
         """
-        self._clear_dim()
         base = self.root
         if w is not None:
             try:
@@ -196,19 +224,31 @@ class Tutorial:
                 (bx, ty, tx - bx, th),                          # 왼쪽
                 (tx + tw, ty, bx + bw - (tx + tw), th),         # 오른쪽
             ]
-        for x, y, ww, hh in rects:
-            if ww <= 0 or hh <= 0:
-                continue
+        rects = [r for r in rects if r[2] > 0 and r[3] > 0]
+        # 판을 **부수지 않고 옮긴다** — 매번 새로 만들면 창이 생겼다 사라지며
+        # 화면이 깜빡이고, 그 자체가 다시 그리기를 부른다 (2026-07-26).
+        while len(self._dim) > len(rects):
+            d = self._dim.pop()
+            try:
+                d.destroy()
+            except Exception:
+                pass
+        while len(self._dim) < len(rects):
             try:
                 d = tk.Toplevel(self.root)
                 d.wm_overrideredirect(True)
                 d.configure(bg="#000000")
                 d.attributes("-topmost", True)
                 d.attributes("-alpha", _DIM_ALPHA)
-                d.geometry(f"{int(ww)}x{int(hh)}+{int(x)}+{int(y)}")
                 self._dim.append(d)
             except Exception as e:
                 applog.exc("흐림 패널 생성 실패 — 강조 없이 계속", e)
+                break
+        for d, (x, y, ww, hh) in zip(self._dim, rects):
+            try:
+                d.geometry(f"{int(ww)}x{int(hh)}+{int(x)}+{int(y)}")
+            except Exception:
+                pass
 
     def _clear_dim(self):
         for d in self._dim:
@@ -224,6 +264,14 @@ class Tutorial:
         **대상이 있는 창** 위에 그린다 — 물감 설정 창의 버튼을 짚을 때도
         같은 코드로 동작해야 하므로 root 가 아니라 그 창을 기준으로 잡는다.
         """
+        for f in self._halo:                # 이전 띠는 걷어낸다
+            try:
+                f.destroy()
+            except Exception:
+                pass
+        self._halo = []
+        if w is None:
+            return
         base = w.winfo_toplevel()
         rx = w.winfo_rootx() - base.winfo_rootx()
         ry = w.winfo_rooty() - base.winfo_rooty()
@@ -303,6 +351,14 @@ class Tutorial:
             applog.exc("안내창 위치 잡기 실패 — 기본 자리에 둔다", e)
 
     # ── 정리 ────────────────────────────────────────
+    def _close_coach(self):
+        if self._coach is not None:
+            try:
+                self._coach.destroy()
+            except Exception:
+                pass
+            self._coach = None
+
     def _clear(self):
         self._clear_dim()
         for f in self._halo:
@@ -336,6 +392,11 @@ class Tutorial:
             self._reflow_job = None
         self._untrack()
         self._clear()
+        if self._root_topmost:              # 내려 뒀던 '항상 위' 를 되돌린다
+            try:
+                self.root.attributes("-topmost", True)
+            except Exception:
+                pass
         if _active is self:
             _active = None
         if completed and self.on_done:
