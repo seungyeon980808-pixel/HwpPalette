@@ -57,7 +57,61 @@ def cleanup_temp_fragments():
         pass
 
 
-DEFAULT_GROUP = "기본"
+# ── 태그 (2026-07-26, 사용자 결정 — 예전의 '분류'를 대체) ──
+#
+# 왜 분류를 버렸나:
+#   분류는 **배타적**이었다. '합답형1사진3선지' 를 수능·시험문제·사진문항 중
+#   하나만 고르라고 하니 아무도 고르지 않았고, 실제로 물감 15개가 전부 '기본'
+#   이었다. 게다가 팔레트 탭이 이미 서랍 노릇을 해서 서랍 체계가 두 벌이 됐다
+#   ("정리를 어디서 하는 거냐"는 혼란의 원인).
+#
+# 태그는 서랍이 아니라 꼬리표다:
+#   · 0개도 되고 여러 개도 된다 → '미분류' 라는 억지 이름이 필요 없다
+#   · 팔레트 탭(자리)과 하는 일이 달라 경쟁하지 않는다
+#   · 내보낼 때 빠진다 — 남의 정리 습관은 나에게 뜻이 없다 (export_items 참고)
+#
+# 옛 데이터의 group 값은 **버린다**. 전부 '기본' 이라 옮길 정보가 없었다.
+TAG_MAX_LEN = 20
+
+
+def normalize_tags(tags):
+    """태그 목록 정리 — 공백 제거, # 벗기기, 중복 제거, 순서 유지.
+
+    문자열 하나('수능 사진문항' 또는 '수능,사진문항')로 줘도 받는다 —
+    입력칸에서 그대로 넘어오기 때문이다.
+    """
+    if not tags:
+        return []
+    if isinstance(tags, str):
+        tags = tags.replace(",", " ").split()
+    out = []
+    for t in tags:
+        t = str(t).strip().lstrip("#").strip()[:TAG_MAX_LEN]
+        if t and t not in out:
+            out.append(t)
+    return out
+
+
+def list_tags():
+    """지금 쓰이는 태그 목록 — 많이 쓴 순, 같으면 이름 순 (자동완성용)."""
+    counts = {}
+    for cat in CATEGORIES:
+        for it in load()[cat]:
+            for t in it.get("tags") or []:
+                counts[t] = counts.get(t, 0) + 1
+    return sorted(counts, key=lambda t: (-counts[t], t))
+
+
+def set_tags(category, item_id, tags):
+    """항목의 태그를 통째로 갈아끼운다. 성공 여부 반환."""
+    data = load()
+    target = next((it for it in data.get(category, [])
+                   if it.get("id") == item_id), None)
+    if target is None:
+        return False
+    target["tags"] = normalize_tags(tags)
+    save(data)
+    return True
 
 
 def load():
@@ -70,14 +124,22 @@ def load():
     for cat in CATEGORIES:
         if isinstance(data.get(cat), list):
             out[cat] = data[cat]
-        # 하위호환: 예전 항목에 id/라벨/분류(/슬롯수) 기본값 채움
+        # 하위호환: 예전 항목에 id/라벨/태그(/슬롯수) 기본값 채움
         for it in out[cat]:
             # 고유 id — 팔레트 블럭이 이걸로 참조한다. 이름을 바꿔도 연결이 유지됨.
             if not it.get("id"):
                 it["id"] = uuid.uuid4().hex
                 migrated = True
             it.setdefault("label", it.get("name", ""))
-            it.setdefault("group", DEFAULT_GROUP)
+            # 분류(group) → 태그 이관. 옛 값은 버린다 — 전부 '기본' 이었고
+            # (실측 2026-07-26) '기본' 은 "아직 정리 안 함"이라 태그로 옮길
+            # 내용이 아니다. 직접 지은 분류가 있었다면 태그 하나로 살린다.
+            if "group" in it:
+                old = str(it.pop("group") or "").strip()
+                if old and old != "기본" and not it.get("tags"):
+                    it["tags"] = [old]
+                migrated = True
+            it["tags"] = normalize_tags(it.get("tags"))
             # 이미 \라벨\ 로 저장돼 있던 항목도 알맹이로 교정 (조회 실패 방지)
             it["label"] = normalize_label(it.get("label")) or it.get("name", "")
             if cat in _FILE_CATEGORIES:
@@ -157,29 +219,29 @@ def resolve_edited_label(old_name, old_label, new_name, new_label):
     return new_name if (untouched and was_auto) else new_label
 
 
-def _meta(name, label, group):
+def _meta(name, label, tags=None):
     lab = normalize_label(label) or normalize_label(name) or name.strip()
     return {"id": uuid.uuid4().hex,
             "name": name,
             "label": lab,
-            "group": (group or DEFAULT_GROUP).strip() or DEFAULT_GROUP}
+            "tags": normalize_tags(tags)}
 
 
-def add_style(name, fields, label=None, group=None):
+def add_style(name, fields, label=None, tags=None):
     """fields: {친화적필드명: 값} — 캡처 시 선택된 항목만 들어있는 델타.
     반환: 등록된 항목의 고유 id."""
     data = load()
-    item = _meta(_unique_name(data["서식"], name), label, group)
+    item = _meta(_unique_name(data["서식"], name), label, tags)
     item["fields"] = fields
     data["서식"].append(item)
     save(data)
     return item["id"]
 
 
-def add_char(name, text, label=None, group=None):
+def add_char(name, text, label=None, tags=None):
     """반환: 등록된 항목의 고유 id."""
     data = load()
-    item = _meta(_unique_name(data["문자"], name), label, group)
+    item = _meta(_unique_name(data["문자"], name), label, tags)
     item["text"] = text
     data["문자"].append(item)
     save(data)
@@ -213,7 +275,7 @@ def get_preview(item):
     return (item or {}).get("preview", "") or ""
 
 
-def add_template_from_capture(name, save_to, label=None, group=None,
+def add_template_from_capture(name, save_to, label=None, tags=None,
                               slot_count=0):
     r"""템플릿을 등록한다. 조각을 **최종 위치에 바로 저장**하는 방식.
 
@@ -232,7 +294,7 @@ def add_template_from_capture(name, save_to, label=None, group=None,
     """
     _ensure_dirs()
     data = load()
-    item = _meta(_unique_name(data["템플릿"], name), label, group)
+    item = _meta(_unique_name(data["템플릿"], name), label, tags)
     fname = f"{uuid.uuid4().hex}.hwp"
     dest = FRAGMENTS_DIR / fname
     preview = save_to(dest)         # capture_fragment 는 본문 글자를 돌려준다
@@ -246,7 +308,7 @@ def add_template_from_capture(name, save_to, label=None, group=None,
     return item["id"]
 
 
-def add_form_from_file(name, src_path, label=None, group=None, slot_count=0):
+def add_form_from_file(name, src_path, label=None, tags=None, slot_count=0):
     r"""양식(.hwp 파일 통째)을 등록한다.
 
     템플릿과의 차이:
@@ -257,7 +319,7 @@ def add_form_from_file(name, src_path, label=None, group=None, slot_count=0):
     """
     _ensure_dirs()
     data = load()
-    item = _meta(_unique_name(data["양식"], name), label, group)
+    item = _meta(_unique_name(data["양식"], name), label, tags)
     fname = f"{uuid.uuid4().hex}.hwp"
     shutil.copy2(str(src_path), str(FRAGMENTS_DIR / fname))
     item["file"] = fname
@@ -268,8 +330,8 @@ def add_form_from_file(name, src_path, label=None, group=None, slot_count=0):
     return item["id"]
 
 
-def update_item(category, item_id, name=None, label=None, group=None):
-    """등록된 항목의 이름·라벨·분류를 수정한다 (id는 유지 → 팔레트 연결 안 깨짐)."""
+def update_item(category, item_id, name=None, label=None, tags=None):
+    """등록된 항목의 이름·라벨·태그를 수정한다 (id는 유지 → 팔레트 연결 안 깨짐)."""
     data = load()
     items = data.get(category, [])
     target = next((it for it in items if it.get("id") == item_id), None)
@@ -280,8 +342,9 @@ def update_item(category, item_id, name=None, label=None, group=None):
         target["name"] = _unique_name(others, name.strip())
     if label is not None:
         target["label"] = normalize_label(label) or target["name"]
-    if group is not None and group.strip():
-        target["group"] = group.strip()
+    if tags is not None:
+        # 빈 목록도 뜻이 있다 (태그를 다 뗀 것) — None 일 때만 안 건드린다
+        target["tags"] = normalize_tags(tags)
     save(data)
     return True
 
@@ -443,48 +506,52 @@ def label_lookup():
     return out
 
 
-def list_groups():
-    """등록된 분류 이름 목록 (기본 분류 포함, 등록 순서 유지)."""
-    data = load()
-    seen = []
-    for cat in CATEGORIES:
-        for it in data[cat]:
-            g = it.get("group") or DEFAULT_GROUP
-            if g not in seen:
-                seen.append(g)
-    if DEFAULT_GROUP not in seen:
-        seen.insert(0, DEFAULT_GROUP)
-    return seen
+def rename_tag(old, new):
+    """태그 이름 바꾸기 — 모든 분류에서. 바뀐 항목 수를 반환.
 
-
-def rename_group(old, new):
-    """분류 이름 바꾸기 — 모든 카테고리에서. 바뀐 항목 수를 반환.
-
-    분류는 항목마다 붙은 문자열일 뿐이라(별도 목록 없음), 이름을 바꾸려면
-    그 이름을 단 항목을 전부 고쳐야 한다 (2026-07-25, 분류 관리 UI).
+    태그는 항목마다 붙은 문자열일 뿐이라(별도 목록 없음), 이름을 바꾸려면
+    그 태그를 단 항목을 전부 고쳐야 한다. 오타를 고칠 때 쓴다
+    (#수능문제 → #수능). 새 이름이 이미 달려 있으면 중복되지 않게 합친다.
     """
-    old = (old or "").strip()
-    new = (new or "").strip()
-    if not old or not new or old == new:
+    old = normalize_tags(old)
+    new = normalize_tags(new)
+    if len(old) != 1 or len(new) != 1 or old == new:
         return 0
+    old, new = old[0], new[0]
     data = load()
     n = 0
     for cat in CATEGORIES:
         for it in data[cat]:
-            if (it.get("group") or DEFAULT_GROUP) == old:
-                it["group"] = new
+            tags = it.get("tags") or []
+            if old in tags:
+                it["tags"] = normalize_tags(
+                    [new if t == old else t for t in tags])
                 n += 1
     if n:
         save(data)
     return n
 
 
-def delete_group(name):
-    """분류 삭제 = 그 분류의 항목을 '기본'으로 옮긴다 (항목은 지우지 않는다).
+def delete_tag(name):
+    """태그 떼기 — 그 태그를 단 항목에서 태그만 뗀다 (항목은 그대로).
 
-    분류를 지운다고 안의 자산까지 지우면 실수 한 번이 재앙이 된다 — 이동만 한다.
+    태그를 지운다고 안의 자산까지 지우면 실수 한 번이 재앙이 된다.
     """
-    return rename_group(name, DEFAULT_GROUP)
+    name = normalize_tags(name)
+    if len(name) != 1:
+        return 0
+    name = name[0]
+    data = load()
+    n = 0
+    for cat in CATEGORIES:
+        for it in data[cat]:
+            tags = it.get("tags") or []
+            if name in tags:
+                it["tags"] = [t for t in tags if t != name]
+                n += 1
+    if n:
+        save(data)
+    return n
 
 
 def template_path(item):
@@ -550,12 +617,17 @@ def export_items(pairs, dest_path):
 
     id 는 일부러 함께 넣지 않는다 — 받는 쪽에서 새로 발급해야 기존 항목과
     충돌하지 않는다(같은 id 가 두 개 있으면 팔레트 참조가 엉킨다).
+
+    **태그도 빼고 보낸다** (사용자 결정 2026-07-26). 태그는 '내가 찾기 위한
+    표시'라 남에게는 뜻이 없다 — 받는 쪽 태그 목록에 남의 습관(#급할때)이
+    섞이면 자동완성이 못 쓰게 된다. 받는 쪽은 태그 없이 시작해 자기 식으로 단다.
     """
     import zipfile
     items = []
+    _DROP = ("id", "origin", "tags")
     with zipfile.ZipFile(dest_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for cat, it in pairs:
-            rec = {k: v for k, v in it.items() if k not in ("id", "origin")}
+            rec = {k: v for k, v in it.items() if k not in _DROP}
             rec["category"] = cat
             if cat in _FILE_CATEGORIES:
                 src = FRAGMENTS_DIR / it["file"]
@@ -611,6 +683,10 @@ def import_archive(src_path):
                 continue
             item = dict(rec)
             item["id"] = uuid.uuid4().hex
+            # 받은 물감은 태그 없이 시작한다 (export_items 머리말 참조).
+            # 옛 꾸러미에 group/tags 가 들어 있어도 여기서 떨군다.
+            item.pop("group", None)
+            item["tags"] = []
 
             # 조각 파일 확인을 **이름·라벨을 정하기 전에** 한다. 건너뛸 항목이
             # 이름/라벨을 선점하면, 뒤따르는 멀쩡한 항목이 있지도 않은 충돌

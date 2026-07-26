@@ -202,7 +202,7 @@ class StyleFieldDialog(tk.Toplevel):
 
 
 class MetaDialog(tk.Toplevel):
-    """이름 / 마크다운 라벨 / 분류를 한 창에서 입력."""
+    """이름 / 마크다운 라벨 / 태그를 한 창에서 입력."""
 
     def __init__(self, master, title="등록 정보", name="", label="", extra_note="",
                  exclude_id=None):
@@ -217,7 +217,7 @@ class MetaDialog(tk.Toplevel):
         body = tk.Frame(self, bg=BG, padx=16, pady=12)
         body.pack(fill="x")
 
-        # ── 이름만 물어본다. 라벨·분류는 대부분 기본값이면 충분하므로 접어둠 ──
+        # ── 이름만 물어본다. 라벨·태그는 대부분 기본값이면 충분하므로 접어둠 ──
         tk.Label(body, text="이름", font=(FONT, theme.fs(9)), bg=BG, fg=TEXT).grid(
             row=0, column=0, sticky="w", pady=3)
         self.name_var = tk.StringVar(value=name)
@@ -234,7 +234,7 @@ class MetaDialog(tk.Toplevel):
         name_entry.bind("<FocusOut>", lambda e: self._update_preview())
 
         self.label_var = tk.StringVar(value=label)
-        self.group_var = tk.StringVar(value=library.DEFAULT_GROUP)
+        self.tags_var = tk.StringVar(value="")
         self._preview = tk.Label(body, text="", font=(FONT, theme.fs(8)), bg=BG, fg=ACCENT)
         self._preview.grid(row=1, column=1, sticky="w", padx=(8, 0))
         self.name_var.trace_add("write", lambda *a: self._update_preview())
@@ -245,7 +245,7 @@ class MetaDialog(tk.Toplevel):
                      wraplength=320, justify="left").grid(
                 row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
-        # ── 자세히 (라벨·분류) — 필요할 때만 펼침 ──
+        # ── 자세히 (라벨·태그) — 필요할 때만 펼침 ──
         self._adv_open = False
         self._adv = tk.Frame(self, bg=BG, padx=16)
         tk.Label(self._adv, text="마크다운 라벨", font=(FONT, theme.fs(9)), bg=BG,
@@ -257,13 +257,31 @@ class MetaDialog(tk.Toplevel):
         tk.Label(self._adv, text="비우면 이름을 그대로 씁니다.",
                  font=(FONT, theme.fs(7)), bg=BG, fg=MUTED).grid(
             row=1, column=1, sticky="w", padx=(8, 0))
-        tk.Label(self._adv, text="분류", font=(FONT, theme.fs(9)), bg=BG, fg=TEXT).grid(
+        # 태그 — 여러 개를 띄어쓰기로 (예전의 '분류'는 하나만 고를 수 있어
+        # 아무도 안 골랐다, 2026-07-26 사용자 결정)
+        tk.Label(self._adv, text="태그", font=(FONT, theme.fs(9)), bg=BG, fg=TEXT).grid(
             row=2, column=0, sticky="w", pady=3)
-        ttk.Combobox(self._adv, textvariable=self.group_var, width=21,
-                     values=library.list_groups(), font=(FONT, theme.fs(10))).grid(
+        tk.Entry(self._adv, textvariable=self.tags_var, width=24,
+                 font=(FONT, theme.fs(10)), relief="solid", bd=1).grid(
             row=2, column=1, pady=3, padx=(8, 0))
+        tk.Label(self._adv, text="띄어쓰기로 여러 개. 안 달아도 됩니다.",
+                 font=(FONT, theme.fs(7)), bg=BG, fg=MUTED).grid(
+            row=3, column=1, sticky="w", padx=(8, 0))
+        # 이미 쓰고 있는 태그는 눌러서 담는다 — **오타로 태그가 번식하는 것을
+        # 막는 장치**다(#수능 / #수능문제 / #수능_문제 가 따로 생기면 안 쓰느니만
+        # 못하다). 자동완성 대신 이 방식을 쓰는 이유: 목록이 눈에 보여야
+        # "아, 저 이름으로 통일하자"가 된다.
+        known = library.list_tags()[:8]
+        if known:
+            chips = tk.Frame(self._adv, bg=BG)
+            chips.grid(row=4, column=1, sticky="w", padx=(8, 0), pady=(4, 0))
+            for t in known:
+                c = tk.Label(chips, text=f"#{t}", font=(FONT, theme.fs(8)),
+                             bg=SOFT, fg=ACCENT, padx=6, pady=2, cursor="hand2")
+                c.pack(side="left", padx=(0, 4))
+                c.bind("<Button-1>", lambda e, tag=t: self._add_tag(tag))
 
-        self._adv_btn = tk.Button(self, text="▸ 자세히 (라벨·분류)",
+        self._adv_btn = tk.Button(self, text="▸ 자세히 (라벨·태그)",
                                   command=self._toggle_adv, font=(FONT, theme.fs(8)),
                                   fg=MUTED, bg=BG, activebackground=BG,
                                   bd=0, cursor="hand2", anchor="w")
@@ -284,11 +302,18 @@ class MetaDialog(tk.Toplevel):
     def _toggle_adv(self):
         if self._adv_open:
             self._adv.pack_forget()
-            self._adv_btn.config(text="▸ 자세히 (라벨·분류)")
+            self._adv_btn.config(text="▸ 자세히 (라벨·태그)")
         else:
             self._adv.pack(fill="x", before=self._adv_btn)
-            self._adv_btn.config(text="▾ 자세히 (라벨·분류)")
+            self._adv_btn.config(text="▾ 자세히 (라벨·태그)")
         self._adv_open = not self._adv_open
+
+    def _add_tag(self, tag):
+        """이미 쓰는 태그 칩을 눌렀을 때 — 입력칸에 더한다 (중복은 무시)."""
+        cur = library.normalize_tags(self.tags_var.get())
+        if tag not in cur:
+            cur.append(tag)
+        self.tags_var.set(" ".join(cur))
 
     def _live_value(self, var, entry):
         """위젯 값 + 그 칸에서 지금 조합 중인 IME 글자. 미리보기 전용."""
@@ -328,8 +353,7 @@ class MetaDialog(tk.Toplevel):
         label = self.label_var.get().strip() or name
         if not self._confirm_label(label):
             return
-        self.result = (name, label,
-                       self.group_var.get().strip() or library.DEFAULT_GROUP)
+        self.result = (name, label, library.normalize_tags(self.tags_var.get()))
         self.destroy()
 
     def _confirm_label(self, label):
@@ -389,14 +413,14 @@ def capture_template_dialog(parent):
     parent.wait_window(meta)
     if not meta.result:
         return None
-    name, label, group = meta.result
+    name, label, tags = meta.result
     # add_template_from_capture 의 두 번째 인자는 **함수**다 (목적지를 받아 거기
     # 저장하는 함수). 조각을 최종 이름으로 바로 저장하므로 이름 바꾸기가 없고,
     # 한글이 파일을 물고 있어 나던 WinError 32 도 생기지 않는다 (2026-07-19).
     try:
         item_id = library.add_template_from_capture(
             name, engine_library.capture_fragment, label=label,
-            group=group, slot_count=slot_count)
+            tags=tags, slot_count=slot_count)
     except Exception as e:
         applog.exc("템플릿 캡처 실패", e)
         messagebox.showerror("캡처 실패", str(e), parent=parent)
@@ -456,7 +480,6 @@ class LibraryManager(tk.Toplevel):
         self.attributes("-topmost", True)
         self.current_cat = "서식"
         self._sel = None                # 지금 선택된 행 {"cat","item","row"}
-        self._collapsed = set()         # 접힌 분류 {(cat, group), ...}
         self._builtin_group = "전체"     # 특수기호 탭의 묶음 칩 선택
 
         tk.Label(self, text="물감 설정", font=(FONT, theme.fs(12), "bold"),
@@ -480,32 +503,24 @@ class LibraryManager(tk.Toplevel):
                                     justify="left", wraplength=440)
         self.desc_label.pack(anchor="w", padx=16, pady=(6, 8))
 
-        # 검색 + 분류 필터 (+ 분류 관리)
+        # 검색칸 하나로 끝낸다 (2026-07-26 — 분류 콤보·분류 관리 버튼을 걷어냈다).
+        #
+        # 예전에는 [검색] + [분류 콤보] + [분류 관리 ⋯] 세 개가 한 줄에 있었다.
+        # 분류가 태그로 바뀌면서 '하나만 고르는 콤보'는 뜻이 없어졌고, 태그
+        # 필터를 따로 만들면 화면이 다시 늘어난다. 그래서 **검색칸이 둘 다 한다**:
+        #     사진      → 이름·라벨에 '사진' 이 든 물감
+        #     #수능     → '수능' 태그가 달린 물감
+        #     #수능 사진 → 둘 다 만족하는 물감
         filter_row = tk.Frame(self, bg=BG, padx=16)
         filter_row.pack(fill="x")
         tk.Label(filter_row, text="검색", font=(FONT, theme.fs(8)), fg=MUTED, bg=BG).pack(side="left")
         self.search_var = tk.StringVar(value="")
-        se = tk.Entry(filter_row, textvariable=self.search_var, width=14,
+        se = tk.Entry(filter_row, textvariable=self.search_var, width=20,
                       font=(FONT, theme.fs(9)), relief="solid", bd=1)
-        se.pack(side="left", padx=(6, 12))
+        se.pack(side="left", padx=(6, 8))
         self.search_var.trace_add("write", lambda *a: self._refresh())
-        self.group_lbl = tk.Label(filter_row, text="분류", font=(FONT, theme.fs(8)),
-                                   fg=MUTED, bg=BG)
-        self.group_lbl.pack(side="left")
-        self.group_filter = tk.StringVar(value="전체")
-        self.group_combo = ttk.Combobox(filter_row, textvariable=self.group_filter,
-                                        width=12, state="readonly", font=(FONT, theme.fs(9)))
-        self.group_combo.pack(side="left", padx=(6, 0))
-        self.group_combo.bind("<<ComboboxSelected>>",
-                              lambda e: self._refresh())
-        # 분류 관리 (이름 바꾸기·삭제) — 분류는 사용자가 만들고 지울 수 있어야 한다
-        self.group_manage = RoundButton(filter_row, text="⋯",
-                                        command=self._group_menu, bg=CARD,
-                                        fg=MUTED, radius=6,
-                                        font=(FONT, theme.fs(9)),
-                                        outline=BORDER, zone_bg=BG)
-        self.group_manage.fit(pad_x=7, pad_y=3)
-        self.group_manage.pack(side="left", padx=(4, 0))
+        tk.Label(filter_row, text="#태그 로 태그만 골라 볼 수 있습니다",
+                 font=(FONT, theme.fs(7)), fg=MUTED, bg=BG).pack(side="left")
 
         # 특수기호 탭은 칩 대신 **왼쪽 분류 목록**을 쓴다 (사용자 결정 2026-07-26).
         # 기호가 200개를 넘으면서 칩 줄이 여러 줄로 접혔다 — 한글 문자표처럼
@@ -658,17 +673,6 @@ class LibraryManager(tk.Toplevel):
         else:
             self.add_btn.pack_forget()
 
-        # 분류 필터 — 서식·템플릿·양식에서만.
-        # 특수기호는 칩(내가 등록 / 원문자·숫자 …)이 그 일을 하고, 사진은 없음
-        show_group = cat not in ("문자", "사진")
-        if show_group:
-            self.group_lbl.pack(side="left")
-            self.group_combo.pack(side="left", padx=(6, 0))
-            self.group_manage.pack(side="left", padx=(4, 0))
-        else:
-            self.group_lbl.pack_forget()
-            self.group_combo.pack_forget()
-            self.group_manage.pack_forget()
         # 왼쪽 분류 목록은 특수기호 탭에서만 (다른 탭은 분류가 적어 필요 없다)
         if cat == "문자":
             self.side.pack(side="left", fill="y", padx=(0, 8))
@@ -737,52 +741,6 @@ class LibraryManager(tk.Toplevel):
             b.retint(bg=ACCENT if on else CARD, fg="white" if on else TEXT)
         self._refresh()
 
-    # ── 분류 관리 (이름 바꾸기 / 삭제) ────────────────
-    def _group_menu(self):
-        cur = self.group_filter.get()
-        pop = Popover(self, self.group_manage)
-        if cur in ("전체", library.DEFAULT_GROUP):
-            pop.add("분류를 먼저 골라주세요 (위 목록에서)", lambda: None)
-            pop.add(f"'{library.DEFAULT_GROUP}' 분류는 바꿀 수 없습니다",
-                    lambda: None)
-        else:
-            pop.add(f"'{cur}' 이름 바꾸기…", lambda: self._rename_group(cur))
-            pop.add(f"'{cur}' 삭제 (항목은 '{library.DEFAULT_GROUP}'으로)",
-                    lambda: self._delete_group(cur))
-        pop.separator()
-        pop.add("새 분류는 항목을 등록·수정할 때 '자세히'에서 만듭니다",
-                lambda: None)
-        pop.show()
-
-    def _rename_group(self, old):
-        dlg = _AskTextDialog(self, title="분류 이름 바꾸기",
-                             prompt=f"'{old}' 의 새 이름", value=old)
-        self.wait_window(dlg)
-        new = (dlg.result or "").strip()
-        if not new or new == old:
-            return
-        n = library.rename_group(old, new)
-        self.group_filter.set(new)
-        self._refresh()
-        self._notify()
-        messagebox.showinfo("분류 이름 바꾸기",
-                            f"{n}개 항목의 분류를 '{new}' 로 바꿨습니다.",
-                            parent=self)
-
-    def _delete_group(self, name):
-        if not messagebox.askyesno(
-                "분류 삭제",
-                f"'{name}' 분류를 삭제할까요?\n\n항목은 지워지지 않고 "
-                f"'{library.DEFAULT_GROUP}' 분류로 옮겨집니다.", parent=self):
-            return
-        n = library.delete_group(name)
-        self.group_filter.set("전체")
-        self._refresh()
-        self._notify()
-        messagebox.showinfo("분류 삭제",
-                            f"{n}개 항목을 '{library.DEFAULT_GROUP}' 으로 옮겼습니다.",
-                            parent=self)
-
     def _refresh(self, cat=None):
         cat = cat or self.current_cat
         self._select(None)
@@ -802,68 +760,52 @@ class LibraryManager(tk.Toplevel):
             self._render_photo_list(query)
             return
 
-        # 분류 콤보 갱신 (선택 유지)
-        groups = ["전체"] + library.list_groups()
-        cur = self.group_filter.get()
-        self.group_combo["values"] = groups
-        if cur not in groups:
-            self.group_filter.set("전체")
-            cur = "전체"
-        items = library.list_items(cat)
-        if cur != "전체":
-            items = [it for it in items
-                     if (it.get("group") or library.DEFAULT_GROUP) == cur]
-        if query:
-            ql = query.lower()
-            items = [it for it in items if ql in self._search_blob(cat, it)]
+        items = self._filter(cat, library.list_items(cat), query)
         if not items:
             self._empty_note("해당하는 항목이 없습니다.")
             return
-
-        # ── 분류별로 묶어서, 접을 수 있는 머리글 아래에 그린다 ──
-        by_group = {}
-        for it in items:
-            by_group.setdefault(it.get("group") or library.DEFAULT_GROUP,
-                                []).append(it)
-        one_group = len(by_group) == 1
-        for group, group_items in by_group.items():
-            # 분류가 하나뿐이면 머리글이 정보를 안 보태므로 생략
-            if not one_group:
-                self._render_group_header(cat, group, len(group_items))
-                if (cat, group) in self._collapsed:
-                    continue
-            for item in group_items:
-                self._render_row(cat, item)
+        for item in items:
+            self._render_row(cat, item)
 
     def _empty_note(self, text):
         tk.Label(self.list_area, text=text, font=(FONT, theme.fs(9)),
                  bg=BG, fg=MUTED).pack(anchor="w", pady=8)
 
     def _search_blob(self, cat, item):
-        parts = [item.get("name", ""), item.get("label", ""),
-                 item.get("group", "")]
+        parts = [item.get("name", ""), item.get("label", "")]
+        parts += item.get("tags") or []
         if cat == "문자":
             parts.append(item.get("text", ""))
         return " ".join(parts).lower()
 
-    # ── 행 그리기 ────────────────────────────────────
-    def _render_group_header(self, cat, group, count):
-        """분류 머리글 — 누르면 접었다 편다. ▾/▸ 로 상태를 보여준다."""
-        closed = (cat, group) in self._collapsed
-        head = tk.Label(self.list_area,
-                        text=f"{'▸' if closed else '▾'} {group} ({count})",
-                        font=(FONT, theme.fs(8), "bold"), bg=BG, fg=MUTED,
-                        anchor="w", cursor="hand2", pady=3)
-        head.pack(fill="x", pady=(6, 1))
-        head.bind("<Button-1>",
-                  lambda e, key=(cat, group): self._toggle_group(key))
+    @staticmethod
+    def split_query(query):
+        r"""검색어를 (태그 조건, 글자 조건) 으로 가른다.
 
-    def _toggle_group(self, key):
-        if key in self._collapsed:
-            self._collapsed.discard(key)
-        else:
-            self._collapsed.add(key)
-        self._refresh()
+        '#수능 사진' → (['수능'], '사진')
+        태그는 **모두** 만족해야 하고(#수능 #사진 = 둘 다 달린 것),
+        글자는 이름·라벨·태그 어디에든 들어 있으면 된다.
+        """
+        tags, words = [], []
+        for tok in (query or "").split():
+            if tok.startswith("#") and len(tok) > 1:
+                tags.append(tok[1:].strip())
+            elif tok:
+                words.append(tok)
+        return tags, " ".join(words)
+
+    def _filter(self, cat, items, query):
+        """검색칸 하나로 태그 필터 + 글자 검색을 함께 건다."""
+        tags, words = self.split_query(query)
+        if tags:
+            items = [it for it in items
+                     if all(t in (it.get("tags") or []) for t in tags)]
+        if words:
+            wl = words.lower()
+            items = [it for it in items if wl in self._search_blob(cat, it)]
+        return items
+
+    # ── 행 그리기 ────────────────────────────────────
 
     def _make_row(self, cat, item, kind="item"):
         """행 한 줄의 껍데기 — 클릭=선택, 더블클릭=주 동작/수정."""
@@ -911,12 +853,25 @@ class LibraryManager(tk.Toplevel):
             tk.Label(info, text=summary, font=(FONT, theme.fs(8)),
                      bg=ROWBG, fg=MUTED, anchor="w").pack(side="left",
                                                           padx=(8, 0))
-        # 라벨은 오른쪽 끝에 — 반복되는 '\라벨\ · 분류' 꼬리표를 없앤 대신
-        # 호출 이름만 조용히 보여준다 (분류는 위 머리글이 말한다)
+        # 라벨은 오른쪽 끝에 — 반복되는 꼬리표 대신 호출 이름만 조용히 보여준다
         lab = item.get("label") or item.get("name", "")
         tk.Label(row, text=f"\\{lab}\\", font=(FONT, theme.fs(8)), bg=ROWBG,
                  fg=MUTED, padx=10).pack(side="right")
+        # 태그 칩 — **누르면 그 태그로 걸러진다** (2026-07-26).
+        # 태그를 보여주기만 하면 "그래서 어쩌라고"가 된다. 누르는 순간
+        # 검색칸에 #태그 가 들어가므로, 따로 태그 목록 화면을 만들지 않아도
+        # 태그가 눈에 띄고 바로 쓰인다.
+        for t in (item.get("tags") or [])[:3]:
+            chip = tk.Label(row, text=f"#{t}", font=(FONT, theme.fs(7)),
+                            bg=ROWBG, fg=ACCENT, padx=4, cursor="hand2")
+            chip.pack(side="right")
+            chip.bind("<Button-1>", lambda e, tag=t: self._filter_by_tag(tag))
         self._wire_row(row, cat, item, "item")
+
+    def _filter_by_tag(self, tag):
+        """태그 칩 클릭 — 검색칸에 넣으면 _refresh 가 알아서 걸러 준다."""
+        self.search_var.set(f"#{tag}")
+        return "break"          # 행 선택으로 번지지 않게
 
     # ── 특수기호: 한글 문자표처럼 격자로 (사용자 결정 2026-07-26) ──
     #
@@ -935,7 +890,9 @@ class LibraryManager(tk.Toplevel):
                 out.append({"kind": "item", "cat": "문자", "item": it,
                             "text": it.get("text", ""),
                             "label": it.get("label") or it["name"],
-                            "group": it.get("group") or library.DEFAULT_GROUP})
+                            # 내가 등록한 것은 내장 기호의 묶음(원문자·수학…)에
+                            # 속하지 않는다 — 칩에서는 '내가 등록'으로만 걸린다
+                            "group": MY_GROUP_CHIP})
         if chip != MY_GROUP_CHIP:
             for label, text, group in builtin_chars.search(query):
                 if chip not in ("전체", group):
@@ -1281,8 +1238,8 @@ class LibraryManager(tk.Toplevel):
         self.wait_window(meta)
         if not meta.result:
             return
-        name, label, group = meta.result
-        library.add_style(name, delta, label=label, group=group)
+        name, label, tags = meta.result
+        library.add_style(name, delta, label=label, tags=tags)
         self._refresh("서식")
         self._notify()
 
@@ -1304,8 +1261,8 @@ class LibraryManager(tk.Toplevel):
         self.wait_window(meta)
         if not meta.result:
             return
-        name, label, group = meta.result
-        library.add_char(name, content, label=label, group=group)
+        name, label, tags = meta.result
+        library.add_char(name, content, label=label, tags=tags)
         self._refresh("문자")
         self._notify()
 
@@ -1355,9 +1312,9 @@ class LibraryManager(tk.Toplevel):
         self.wait_window(meta)
         if not meta.result:
             return
-        name, label, group = meta.result
+        name, label, tags = meta.result
         try:
-            library.add_form_from_file(name, path, label=label, group=group,
+            library.add_form_from_file(name, path, label=label, tags=tags,
                                        slot_count=slot_count)
         except Exception as e:
             messagebox.showerror("등록 실패", str(e), parent=self)
@@ -1395,62 +1352,29 @@ class LibraryManager(tk.Toplevel):
         self._notify()
 
     def _edit(self, cat, item):
-        """등록된 항목의 이름·라벨·분류 수정 (id 유지 → 팔레트 연결 안 깨짐)."""
+        """등록된 항목의 이름·라벨·태그 수정 (id 유지 → 팔레트 연결 안 깨짐)."""
         meta = MetaDialog(self, title=f"{CAT_LABEL.get(cat, cat)} 수정",
                           name=item["name"],
                           label=item.get("label", ""), exclude_id=item["id"])
         try:
-            meta.group_var.set(item.get("group", library.DEFAULT_GROUP))
+            meta.tags_var.set(" ".join(item.get("tags") or []))
         except Exception:
             pass
         self.wait_window(meta)
         if not meta.result:
             return
-        name, label, group = meta.result
+        name, label, tags = meta.result
         # 이름만 고쳤을 때 라벨이 옛 이름으로 남는 것을 막는다 (라벨 칸이 '자세히'
         # 안에 접혀 있어 사용자 눈에 안 보인다). 규칙은 resolve_edited_label 참고.
         label = library.resolve_edited_label(
             item["name"], item.get("label", ""), name, label)
-        library.update_item(cat, item["id"], name=name, label=label, group=group)
+        library.update_item(cat, item["id"], name=name, label=label, tags=tags)
         self._refresh(cat)
         self._notify()
 
     def _notify(self):
         if self.on_saved:
             self.on_saved()
-
-
-class _AskTextDialog(tk.Toplevel):
-    """짧은 문자열 하나를 묻는 작은 창 (분류 이름 바꾸기 등)."""
-
-    def __init__(self, master, title="입력", prompt="", value=""):
-        super().__init__(master)
-        self.result = None
-        self.title(title)
-        self.configure(bg=BG)
-        self.resizable(False, False)
-        self.attributes("-topmost", True)
-        tk.Label(self, text=prompt, font=(FONT, theme.fs(9)), bg=BG,
-                 fg=TEXT).pack(anchor="w", padx=16, pady=(14, 4))
-        self.var = tk.StringVar(value=value)
-        ent = tk.Entry(self, textvariable=self.var, width=24,
-                       font=(FONT, theme.fs(10)), relief="solid", bd=1)
-        ent.pack(padx=16)
-        ent.focus_set()
-        ent.select_range(0, "end")
-        ent.bind("<Return>", lambda e: self._ok())
-        foot = tk.Frame(self, bg=BG, padx=16, pady=12)
-        foot.pack(fill="x")
-        _dialog_btn(foot, "확인", self._ok, primary=True).pack(side="right")
-        _dialog_btn(foot, "취소", self.destroy).pack(side="right", padx=(0, 6))
-        self.update_idletasks()
-        self.geometry(f"+{master.winfo_rootx()+60}+{master.winfo_rooty()+60}")
-        self.grab_set()
-
-    def _ok(self):
-        commit_ime(self)
-        self.result = self.var.get()
-        self.destroy()
 
 
 class _RecaptureCoach(tk.Toplevel):
