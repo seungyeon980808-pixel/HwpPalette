@@ -22,6 +22,7 @@ r"""앱과 같은 얼굴을 한 팝업 메뉴 (2026-07-25).
 
 import tkinter as tk
 
+import screens                   # 여러 모니터를 합친 좌표 (팝업이 딴 화면으로 안 가게)
 import theme
 
 _C = theme.colors()
@@ -90,10 +91,12 @@ class Popover(tk.Toplevel):
         h = self.winfo_reqheight()
         x = self._anchor.winfo_rootx()
         y = self._anchor.winfo_rooty() + self._anchor.winfo_height() + 2
-        # 화면 밖으로 나가면 안으로 민다
-        x = max(0, min(x, self.winfo_screenwidth() - w))
-        if y + h > self.winfo_screenheight():
+        # 화면 밖으로 나가면 안으로 민다 — 기준은 **모든 모니터를 합친 범위**다.
+        # 주 모니터 크기로 자르면, 주 모니터 밖(예: 왼쪽 모니터라 x 가 음수)에
+        # 떠 있는 창의 메뉴가 다른 화면으로 순간이동한다 (2026-07-26 버그).
+        if not screens.fits_below(self, y, h):
             y = self._anchor.winfo_rooty() - h - 2      # 자리가 없으면 위로
+        x, y = screens.clamp_window(self, x, y, w, h)
         self.geometry(f"{w}x{h}+{x}+{y}")
         self.deiconify()
         self.lift()
@@ -106,18 +109,21 @@ class Popover(tk.Toplevel):
         self._grab()
         return self
 
-    def _grab(self):
+    def _grab(self, tries=0):
         """바깥 클릭 감지용 grab — 창이 아직 안 떴으면 잠깐 뒤 다시 시도.
 
         deiconify 직후에는 창이 화면에 실리기 전이라 grab_set 이
         'window not viewable' 로 실패할 수 있다 (Tk 의 타이밍 문제).
+        열 번(≈0.3초) 안 되면 포기한다 — grab 없이도 메뉴는 쓸 수 있고,
+        영원히 재시도하면 타이머만 계속 돈다.
         """
         if self._closed or not self.winfo_exists():
             return
         try:
             self.grab_set()
         except Exception:
-            self.after(30, self._grab)
+            if tries < 10:
+                self.after(30, lambda: self._grab(tries + 1))
 
     def _maybe_close_outside(self, e):
         # grab 중에는 창 밖 클릭도 이 창의 이벤트로 온다 — 좌표로 구분

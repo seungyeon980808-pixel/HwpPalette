@@ -13,6 +13,7 @@ steps: [(위젯을 돌려주는 함수, 제목, 설명), ...]
 import tkinter as tk
 
 import applog
+import screens                  # 여러 모니터를 합친 좌표
 import theme
 
 _C = theme.colors()
@@ -98,15 +99,17 @@ class Tutorial:
                          bg=CARD, fg=MUTED, cursor="hand2")
         quit_.pack(side="right", padx=(0, 12))
         quit_.bind("<Button-1>", lambda e: self._finish())
-        # 대상 오른쪽 옆, 화면을 벗어나면 왼쪽/아래로 밀어 놓는다
+        # 대상 오른쪽 옆. 그 모니터를 벗어나면 왼쪽으로 넘긴다.
+        # 기준은 **모든 모니터를 합친 범위** — 주 모니터 크기로만 재면 왼쪽
+        # 모니터(x 가 음수)에서 안내가 딴 화면으로 튄다 (2026-07-26).
         c.update_idletasks()
         cw, ch = c.winfo_reqwidth(), c.winfo_reqheight()
+        dx, _dy, dw, _dh = screens.desktop_bounds(c)
         x = w.winfo_rootx() + w.winfo_width() + 12
         y = w.winfo_rooty()
-        if x + cw > c.winfo_screenwidth():
-            x = max(0, w.winfo_rootx() - cw - 12)
-        if y + ch > c.winfo_screenheight():
-            y = max(0, c.winfo_screenheight() - ch - 12)
+        if x + cw > dx + dw:
+            x = w.winfo_rootx() - cw - 12
+        x, y = screens.clamp_window(c, x, y, cw, ch)
         c.geometry(f"+{x}+{y}")
 
     # ── 정리 ────────────────────────────────────────

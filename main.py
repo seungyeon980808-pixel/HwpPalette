@@ -71,6 +71,7 @@ import palette_ui
 import builtin_actions               # 팔레트에 놓는 '도구' 블럭 카탈로그
 import hotkey                        # 한글에서도 먹는 전역 단축키
 import ui_fx                         # 호버 보간·누름 피드백 (애플 A안)
+import screens                       # 여러 모니터를 합친 좌표
 import help_ui                       # 도움말 창 (기능별 사전)
 import tutorial                      # 따라하기 (화면 위 안내)
 from roundbtn import RoundButton     # 둥근 모서리 버튼
@@ -1344,9 +1345,13 @@ tk.Label(_footer, text=appinfo.COPYRIGHT, font=_font(7), fg=FAINT, bg=BG,
          anchor="center").pack(expand=True, pady=(0, 4))
 
 def _pos_on_screen(x, y):
-    """그 위치가 지금 화면 안인가 — 모니터를 뺐을 때 창이 사라지는 것 방지."""
-    return (-50 <= x <= root.winfo_screenwidth() - 100
-            and -20 <= y <= root.winfo_screenheight() - 80)
+    """그 위치가 지금 화면 안인가 — 모니터를 뺐을 때 창이 사라지는 것 방지.
+
+    기준은 **모든 모니터를 합친 범위**다 (2026-07-26). 주 모니터 크기로만
+    재면, 주 모니터 왼쪽에 있는 모니터(x 가 음수)에 창을 놓고 껐을 때
+    "화면 밖"으로 판정돼 다음 실행 때 창이 주 모니터로 되돌아갔다.
+    """
+    return screens.is_on_desktop(root, x, y)
 
 
 def _reading_order(blocks):
@@ -1541,6 +1546,7 @@ _saved_pos = settings.get_window_pos()
 if _saved_pos and _pos_on_screen(*_saved_pos):
     root.geometry(f"+{_saved_pos[0]}+{_saved_pos[1]}")
 else:
+    # 처음 실행 — 주 모니터 오른쪽 위 (한글 창을 가리지 않는 자리)
     root.geometry(f"+{root.winfo_screenwidth() - root.winfo_width() - 20}+80")
 
 
