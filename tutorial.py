@@ -255,10 +255,12 @@ class Tutorial:
                 x, y, w, h = self._dim_geo[i]
                 self._dim_geo[i] = (x + dx, y + dy, w, h)
                 d.geometry(f"{w}x{h}+{x + dx}+{y + dy}")
+                d.update_idletasks()        # 위와 같은 이유 (위치 즉시 반영)
             if self._coach is not None and self._coach_geo is not None:
                 x, y = self._coach_geo
                 self._coach_geo = (x + dx, y + dy)
                 self._coach.geometry(f"+{x + dx}+{y + dy}")
+                self._coach.update_idletasks()
         except Exception:
             pass            # 창이 사라지는 중 — 다음 갱신에서 정리된다
         finally:
@@ -341,6 +343,11 @@ class Tutorial:
             self._dim_geo.append(g)
             try:
                 d.geometry(f"{g[2]}x{g[3]}+{g[0]}+{g[1]}")
+                # **바로 반영시킨다** (2026-07-26 실측). 테두리 없는 창
+                # (overrideredirect)을 이미 띄운 뒤 옮기면, 크기는 적용되는데
+                # 위치는 이전 값에 머무는 일이 있다 — 흐림이 엉뚱한 자리를
+                # 덮던 원인. update_idletasks 로 요청을 즉시 흘려보내면 맞는다.
+                d.update_idletasks()
                 d.lift()            # 대상 창 위로 — 안 그러면 회색이 안 보인다
             except Exception:
                 pass
