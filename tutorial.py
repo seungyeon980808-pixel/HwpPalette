@@ -90,7 +90,7 @@ class Tutorial:
         self._show(0)
 
     # ── 한 단계 ─────────────────────────────────────
-    def _show(self, i):
+    def _show(self, i, run_action=True):
         if self._done:
             return
         # 단계를 넘길 때 **흐림 패널은 그대로 두고** 안내창만 지운다.
@@ -104,7 +104,7 @@ class Tutorial:
         step = self.steps[i]
         if isinstance(step, tuple):         # 옛 형식 (위젯, 제목, 설명)
             step = {"widget": step[0], "title": step[1], "text": step[2]}
-        if step.get("action"):
+        if run_action and step.get("action"):
             try:
                 if step["action"]() is False:   # 준비 실패 — 여기서 멈춘다
                     self._finish()
@@ -149,6 +149,37 @@ class Tutorial:
             return
         self._last_geo = None           # 자리가 바뀐 것으로 보고 다시 그린다
         self._reflow()
+
+    def _back(self):
+        r"""[뒤로] — 앞 단계로 돌아간다 (사용자 요청 2026-07-26).
+
+        돌아갈 때는 그 단계의 **준비(action)를 다시 하지 않는다** — 연습용 표를
+        만드는 단계로 돌아갔다고 표를 또 만들면 한글에 빈 문서가 쌓인다.
+        이미 벌어진 일을 다시 설명해 주는 것이 '뒤로'의 뜻이다.
+        """
+        if self.i <= 0:
+            return
+        prev = self.i - 1
+        step = self.steps[prev]
+        # 돌아갈 단계가 짚던 것이 사라졌으면(그 사이 설정 창을 닫았다면)
+        # 그 창을 열어 주던 일을 다시 해 준다 — 안 그러면 '이 버튼을 누르세요'
+        # 라고 하면서 아무 데도 안 짚는 안내가 된다.
+        if isinstance(step, dict) and step.get("widget"):
+            try:
+                if step["widget"]() is None:
+                    if step.get("restore"):         # 그 단계가 스스로 아는 길
+                        step["restore"]()
+                    elif prev > 0:                  # 아니면 앞 단계가 열던 것을
+                        before = self.steps[prev - 1]
+                        if isinstance(before, dict) and before.get("next_action"):
+                            before["next_action"]()
+                    self.root.update_idletasks()
+            except Exception as e:
+                applog.exc("뒤로 가며 창 되살리기 실패 — 안내만 보여준다", e)
+        self._show(prev, run_action=False)
+        # 창을 되살렸다면 그 자리가 한 박자 뒤에 잡힌다 — 그때 다시 맞춘다
+        # (앞으로 갈 때의 settle 과 같은 이유)
+        self.root.after(150, self._resettle)
 
     def _next(self):
         """[다음] — 이 단계에 걸어 둔 뒷일(next_action)을 하고 넘어간다.
@@ -424,6 +455,13 @@ class Tutorial:
                          bg=CARD, fg=MUTED, cursor="hand2")
         quit_.pack(side="right", padx=(0, 12))
         quit_.bind("<Button-1>", lambda e=None: self._finish())
+        # 뒤로 — 첫 단계에는 돌아갈 곳이 없으므로 안 보인다 (사용자 요청 2026-07-26).
+        # 왼쪽에 두는 이유: '앞으로 가는 것'과 눈으로 갈라 놓아야 잘못 누르지 않는다.
+        if self.i > 0:
+            back = tk.Label(foot, text="← 뒤로", font=(FONT, theme.fs(8)),
+                            bg=CARD, fg=MUTED, cursor="hand2")
+            back.pack(side="left")
+            back.bind("<Button-1>", lambda e=None: self._back())
         c.bind("<Escape>", lambda e=None: self._finish())
         self._place_coach(c, w)
         # 한 박자 뒤 한 번 더 — 창을 막 만든 순간에는 크기·자리가 아직

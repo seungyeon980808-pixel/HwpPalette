@@ -18,6 +18,8 @@ step = {"title", "text", "widget"(선택), "code"(선택),
   next_action  [다음]을 **누르는 순간** 실행 (창 열기처럼 예고한 일)
                — 안내가 "다음을 누르면 열어 드릴게요" 라고 말하는 동안 이미
                  열려 있으면 안 되므로 창 열기는 전부 이쪽이다 (사용자 지적)
+  restore      [뒤로]로 이 단계에 돌아왔는데 짚을 창이 닫혀 있으면 다시 여는 일
+               (설정 창을 닫고 지나간 뒤 되돌아오는 단계에 붙인다)
 """
 
 
@@ -40,8 +42,9 @@ def build(ctx):
              {"widget": ctx.convert_btn,
               "title": "가장 쉬운 것부터 — 기호 넣기",
               "text": "아래 문법을 복사해 한글에 붙여넣고,\n"
-                      "그 줄을 드래그로 선택한 뒤 이 버튼(또는 Ctrl+Alt+T)을\n"
-                      "누르면 ① ℃ → 로 바뀝니다. 등록 없이 425개가 들어 있습니다.",
+                      "그 줄을 드래그로 선택한 뒤 이 '마크다운 변환' 버튼을\n"
+                      "누르세요. ① ℃ → 로 바뀝니다.\n"
+                      "등록 없이 쓸 수 있는 기호가 425개 들어 있습니다.",
               "code": "\\원1\\ \\섭씨\\ \\오른쪽화살표\\"},
              {"widget": ctx.pal_pick, "title": "팔레트 갈아끼우기",
               "text": "만드는 문서 종류(수능·학교 시험문제 …)에 따라\n"
@@ -62,7 +65,7 @@ def build(ctx):
                       "짝이 헷갈리지 않습니다."},
              {"widget": ctx.convert_btn, "title": "서식 입혀 보기",
               "text": "복사해서 한글에 붙여넣고, 그 줄을 선택한 뒤\n"
-                      "Ctrl+Alt+T. 감싼 부분만 굵어집니다.",
+                      "이 버튼을 누르세요. 감싼 부분만 굵어집니다.",
               "code": "다음 중 \\굵게{옳지 않은} 것은?"},
              {"widget": ctx.convert_btn, "title": "겹쳐 쓰기",
               "text": "명령은 원하는 만큼 쌓을 수 있습니다.\n"
@@ -100,11 +103,12 @@ def build(ctx):
               "text": "이 버튼을 누르면 방금 고른 표가 템플릿이 됩니다.\n"
                       "이름은 '가정통신문머리'처럼 알아볼 수 있게 지으세요.\n\n"
                       "저장했으면 다음으로 — 설정 창은 닫아 드릴게요.",
-              "next_action": ctx.close_opened},
+              "next_action": ctx.close_opened,
+              "restore": ctx.open_library_template},
              {"widget": ctx.convert_btn, "title": "꺼내 쓰기",
               "text": "이름을 '가정통신문머리'로 지었다면, 한글에 이렇게 쓰고\n"
-                      "선택 → Ctrl+Alt+T. 표가 들어가면서 빈칸이 위에서부터\n"
-                      "채워집니다.",
+                      "그 부분을 선택한 뒤 이 버튼을 누르세요.\n"
+                      "표가 들어가면서 빈칸이 위에서부터 채워집니다.",
               "code": "\\가정통신문머리\\\n3학년 2반\n박승연"},
              {"widget": ctx.convert_btn, "title": "비울 칸과 여러 줄",
               "text": "비울 칸에는 - 한 줄만 씁니다.\n"
@@ -148,7 +152,8 @@ def build(ctx):
                       "연결하세요. 여러 개 연결할 수 있고, 먼저 연결한 폴더가\n"
                       "우선입니다. 문서에서는 \\파일이름\\ 으로 부릅니다.\n\n"
                       "다음으로 넘어가면 설정 창은 닫아 드릴게요.",
-              "next_action": ctx.close_opened},
+              "next_action": ctx.close_opened,
+              "restore": ctx.open_library_photo},
              {"widget": ctx.photo_btn, "title": "사진 버튼",
               "text": "'사진' 블럭을 누르면 연결한 폴더 목록이 뜨고,\n"
                       "고르면 그 폴더에서 그림을 골라 넣습니다."},
@@ -190,19 +195,21 @@ def build(ctx):
                       "다음을 누르면 양식 탭을 열어 드릴게요.",
               "next_action": ctx.open_library_form},
              {"widget": ctx.library_add_btn, "title": "양식 등록",
+              "restore": ctx.open_library_form,
               "text": "이 버튼으로 hwp 파일을 고르면 등록됩니다.\n"
                       "파일에서 내용이 들어갈 자리에 역슬래시(\\)를 넣어 두면\n"
                       "나중에 그 자리들이 순서대로 채워지고,\n"
                       "본문이 이어질 자리에는 \\본문\\ 을 적습니다."},
              {"widget": ctx.library_more_btn, "title": "AI 프롬프트 복사",
+              "restore": ctx.open_library_form,
               "text": "양식을 고르고 [⋯] → 'AI 프롬프트 복사'를 누르면\n"
                       "표 구조까지 풀어 쓴 프롬프트가 클립보드에 담깁니다.\n\n"
                       "복사했으면 다음으로 — 설정 창은 닫아 드릴게요.",
               "next_action": ctx.close_opened},
              {"widget": ctx.convert_btn, "title": "AI 에게 받아서 붙여넣기",
               "text": "ChatGPT·Claude 등에 붙여넣고 답을 받으세요.\n"
-                      "답 전체를 복사해 한글에 붙여넣고 드래그 → Ctrl+Alt+T.\n"
-                      "진짜 양식이 열리면서 빈칸이 채워집니다."},
+                      "답 전체를 복사해 한글에 붙여넣고, 드래그로 선택한 뒤\n"
+                      "이 버튼을 누르면 진짜 양식이 열리면서 빈칸이 채워집니다."},
              {"widget": ctx.gear, "title": "동료와 나누기",
               "text": "⚙ → 물감 나누기 → [꾸러미로 내보내기].\n"
                       "내가 만든 템플릿·양식을 zip 하나로 묶어 건네고,\n"
