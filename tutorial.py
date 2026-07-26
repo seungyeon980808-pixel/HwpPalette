@@ -320,14 +320,21 @@ class Tutorial:
         quit_.bind("<Button-1>", lambda e: self._finish())
         c.bind("<Escape>", lambda e: self._finish())
         self._place_coach(c, w)
+        # 한 박자 뒤 한 번 더 — 창을 막 만든 순간에는 크기·자리가 아직
+        # 확정되지 않아 첫 계산이 빗나갈 때가 있다(첫 단계에서 안내가 화면
+        # 왼쪽 위로 튀던 원인, 2026-07-26). 같은 계산이라 두 번 해도 무해하다.
+        c.after(60, lambda: (self._place_coach(c, w)
+                             if (not self._done and c.winfo_exists()) else None))
 
     def _place_coach(self, c, w):
-        r"""안내창은 **창 바깥 위쪽**에 띄운다 (사용자 결정 2026-07-26).
+        r"""안내창은 **창 바깥 오른쪽**에 띄운다 (사용자 결정 2026-07-26).
 
-        대상 옆에 붙였더니 안내창이 프로그램 화면을 덮어, 정작 짚어 준 곳을
-        가리는 일이 잦았다. 창 위쪽 바깥에 두면 화면은 하나도 안 가리면서
-        시선은 '위 안내 → 아래 강조'로 자연스럽게 흐른다.
-        위에 자리가 없으면(창이 화면 맨 위) 아래쪽 바깥으로 내린다.
+        화면을 하나도 가리지 않는 것이 첫째 조건이라 창 바깥에 둔다.
+        그중 오른쪽인 이유: 이 프로그램 창은 세로로 길어서 위쪽에 두면
+        안내가 한글 문서 위를 덮고, 짚은 곳(아래)과 눈이 멀어진다.
+        오른쪽에 자리가 없으면 왼쪽 바깥, 그것도 없으면 위쪽으로 물러난다.
+
+        세로 위치는 **짚은 것과 같은 높이** — 안내와 강조가 한눈에 들어온다.
         """
         try:
             c.update_idletasks()
@@ -335,15 +342,21 @@ class Tutorial:
             base = self._base if self._base.winfo_exists() else self.root
             bx, by = base.winfo_rootx(), base.winfo_rooty()
             bw, bh = base.winfo_width(), base.winfo_height()
-            # 가로: 짚은 것과 같은 줄에 오도록 대상 중심에 맞추되 창 폭 안에서
-            anchor_cx = (w.winfo_rootx() + w.winfo_width() // 2
-                         if w is not None else bx + bw // 2)
-            x = anchor_cx - cw // 2
-            x = max(bx - 40, min(x, bx + bw + 40 - cw))
             dx, dy, dw, dh = screens.desktop_bounds(c)
-            y = by - ch - 10                    # 창 위쪽 바깥
-            if y < dy + 4:                      # 위에 자리가 없으면 아래로
-                y = by + bh + 10
+
+            x = bx + bw + 12                        # 창 오른쪽 바깥
+            if x + cw > dx + dw:                    # 오른쪽에 자리가 없으면
+                x = bx - cw - 12                    # 왼쪽 바깥
+            top_room = by - ch - 10 >= dy + 4
+            if x < dx and top_room:                 # 좌우 둘 다 안 되면 위로
+                x = max(dx + 4, min(bx, dx + dw - cw))
+                y = by - ch - 10
+            else:
+                # 짚은 것과 같은 높이로. 창 범위를 크게 벗어나지 않게 잡는다.
+                anchor_cy = (w.winfo_rooty() + w.winfo_height() // 2
+                             if w is not None else by + bh // 3)
+                y = anchor_cy - ch // 3
+                y = max(by - 40, min(y, by + bh + 40 - ch))
             x, y = screens.clamp_window(c, x, y, cw, ch)
             c.geometry(f"+{x}+{y}")
             c.lift()
