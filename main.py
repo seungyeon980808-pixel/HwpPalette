@@ -776,11 +776,25 @@ class _TutorialCtx:
     open_library_form = staticmethod(lambda: bool(fn_open_library(cat="양식")))
     open_palette_settings = staticmethod(
         lambda: bool(fn_open_palette_settings()))
+    palette_grid = staticmethod(
+        lambda: getattr(_open_windows.get("settings"), "block_area", None))
+
+    @staticmethod
+    def close_opened():
+        """튜토리얼이 열어 둔 창을 닫는다 — 끝난 뒤 화면에 남지 않게."""
+        for key in ("library", "settings"):
+            win = _open_windows.get(key)
+            try:
+                if win is not None and win.winfo_exists():
+                    win.destroy()
+            except Exception:
+                pass
 
 
 def _start_tutorial():
     """튜토리얼 목록을 연다 — 주제별 코스를 골라 시작한다."""
-    tutorial.open_picker(root, tutorials.build(_TutorialCtx))
+    tutorial.open_picker(root, tutorials.build(_TutorialCtx),
+                         on_cleanup=_TutorialCtx.close_opened)
 
 
 

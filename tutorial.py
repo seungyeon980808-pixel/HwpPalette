@@ -46,10 +46,12 @@ _active = None
 
 class Tutorial:
 
-    def __init__(self, root, steps, on_done=None, title=""):
+    def __init__(self, root, steps, on_done=None, title="", on_cleanup=None):
         self.root = root
         self.steps = steps
         self.on_done = on_done
+        # 튜토리얼이 열어 둔 창(물감·팔레트 설정)을 끝나면 닫는 일
+        self.on_cleanup = on_cleanup
         self.title = title      # 코스 이름 — 코치 창 머리에 함께 보인다
         self.i = 0
         self._halo = []         # 테두리 조각 4개
@@ -65,6 +67,8 @@ class Tutorial:
         self._dim_geo = []      # 흐림 판들의 자리 (밀기용 캐시)
         self._coach_geo = None  # 안내창 자리 (밀기용 캐시)
         self._root_topmost = None   # 튜토리얼 동안 잠시 내렸다가 되돌릴 값
+        self._lowered = {}      # 잠시 '항상 위'를 내린 창들 (끝나면 되돌린다)
+        self._place_job = None  # 안내창 자리 재계산 예약 (닫을 때 취소)
 
     def start(self):
         global _active
@@ -109,6 +113,9 @@ class Tutorial:
                 applog.exc(f"튜토리얼 {i}단계 준비 실패 — 중단", e)
                 self._finish()
                 return
+            settle = True                   # 창이 열렸을 수 있다 — 자리가 잡힐 때까지
+        else:
+            settle = False
         w = None
         if step.get("widget"):
             try:
@@ -123,6 +130,7 @@ class Tutorial:
             self._base = w.winfo_toplevel() if w is not None else self.root
         except Exception:
             self._base = self.root
+        self._raise_over(self._base)    # 흐림이 그 창 위에 오도록 z-순서 정리
         self._draw_dim(w)               # 대상만 남기고 나머지를 흐리게
         if w is not None:
             self._draw_halo(w)
@@ -130,6 +138,54 @@ class Tutorial:
                          last=(i == len(self.steps) - 1))
         self._last_geo = self._geo()    # 이 자리를 기준으로 '움직였나' 를 잰다
         self._track()                   # 창이 움직이면 따라오게
+        if settle:
+            # 방금 연 창은 자리·크기가 한 박자 뒤에 잡힌다. 그때 다시 재지
+            # 않으면 흐림·테두리가 엉뚱한 곳에 그려진다 (사용자 지적 2026-07-26).
+            self.root.after(150, self._resettle)
+
+    def _resettle(self):
+        """방금 연 창이 자리를 잡은 뒤 한 번 더 맞춘다."""
+        if self._done or self._coach is None:
+            return
+        self._last_geo = None           # 자리가 바뀐 것으로 보고 다시 그린다
+        self._reflow()
+
+    def _next(self):
+        """[다음] — 이 단계에 걸어 둔 뒷일(next_action)을 하고 넘어간다.
+
+        창을 여는 일을 다음 단계의 '들어올 때'에 두었더니, 안내가 '다음을
+        누르면 열어 드릴게요' 라고 말하는 동안 이미 열려 있었다
+        (사용자 지적 2026-07-26). 여는 시점을 **누른 순간**으로 옮긴다.
+        """
+        step = self.steps[self.i]
+        if isinstance(step, dict) and step.get("next_action"):
+            try:
+                if step["next_action"]() is False:
+                    self._finish()
+                    return
+                self.root.update_idletasks()
+            except Exception as e:
+                applog.exc("튜토리얼 다음 단계 준비 실패 — 중단", e)
+                self._finish()
+                return
+        self._show(self.i + 1)
+
+    def _raise_over(self, base):
+        r"""흐림이 그 창 **위**에 오게 z-순서를 정리한다.
+
+        물감 설정 같은 창도 '항상 위'라, 흐림 판(역시 항상 위)과 순서를 다투다
+        창이 흐림을 덮어 회색이 아예 안 보였다 (사용자 지적 2026-07-26).
+        튜토리얼이 도는 동안만 그 창의 '항상 위'를 내리고, 끝나면 되돌린다.
+        """
+        try:
+            if base is self.root or base in self._lowered:
+                return
+            was = bool(base.attributes("-topmost"))
+            self._lowered[base] = was
+            if was:
+                base.attributes("-topmost", False)
+        except Exception:
+            pass
 
     # ── 창을 따라다니기 (2026-07-26 사용자 지적) ────
     #
@@ -285,6 +341,7 @@ class Tutorial:
             self._dim_geo.append(g)
             try:
                 d.geometry(f"{g[2]}x{g[3]}+{g[0]}+{g[1]}")
+                d.lift()            # 대상 창 위로 — 안 그러면 회색이 안 보인다
             except Exception:
                 pass
 
@@ -345,24 +402,62 @@ class Tutorial:
                  justify="left", wraplength=270).pack(fill="x", pady=(2, 4))
         tk.Label(body, text=text, font=(FONT, theme.fs(9)), bg=CARD, fg=TEXT,
                  justify="left", wraplength=270, padx=12).pack(anchor="w")
+        code = self.steps[self.i].get("code") if isinstance(
+            self.steps[self.i], dict) else None
+        if code:
+            self._code_box(body, code)
         foot = tk.Frame(body, bg=CARD, padx=12, pady=8)
         foot.pack(fill="x")
         nxt = tk.Label(foot, text="완료 ✓" if last else "다음 →",
                        font=(FONT, theme.fs(9), "bold"), bg=CARD, fg=ACCENT,
                        cursor="hand2")
         nxt.pack(side="right")
-        nxt.bind("<Button-1>", lambda e: self._show(self.i + 1))
+        nxt.bind("<Button-1>", lambda e=None: self._next())
         quit_ = tk.Label(foot, text="그만", font=(FONT, theme.fs(8)),
                          bg=CARD, fg=MUTED, cursor="hand2")
         quit_.pack(side="right", padx=(0, 12))
-        quit_.bind("<Button-1>", lambda e: self._finish())
-        c.bind("<Escape>", lambda e: self._finish())
+        quit_.bind("<Button-1>", lambda e=None: self._finish())
+        c.bind("<Escape>", lambda e=None: self._finish())
         self._place_coach(c, w)
         # 한 박자 뒤 한 번 더 — 창을 막 만든 순간에는 크기·자리가 아직
         # 확정되지 않아 첫 계산이 빗나갈 때가 있다(첫 단계에서 안내가 화면
         # 왼쪽 위로 튀던 원인, 2026-07-26). 같은 계산이라 두 번 해도 무해하다.
-        c.after(60, lambda: (self._place_coach(c, w)
-                             if (not self._done and c.winfo_exists()) else None))
+        # 타이머는 **root 에** 건다 — 안내창에 걸면 그 창이 먼저 사라졌을 때
+        # Tk 가 "invalid command name" 을 뱉고, 그 뒤 콜백 사슬이 끊긴다
+        # (실측 2026-07-26: 다음 단계의 안내창이 아예 안 뜨던 원인).
+        self._place_job = self.root.after(
+            60, lambda: (self._place_coach(c, w)
+                         if (not self._done and c.winfo_exists()) else None))
+
+    def _code_box(self, body, code):
+        r"""쳐 봐야 하는 문법을 **눈에 띄는 상자**에 담고 복사 버튼을 붙인다.
+
+        안내문 속에 섞어 두면 어디부터 어디까지를 쳐야 하는지 알기 어렵고,
+        한글 문법은 역슬래시·중괄호가 많아 손으로 옮겨 치다 틀리기 쉽다
+        (사용자 요청 2026-07-26). 눌러서 복사한 뒤 한글에 붙여넣으면 된다.
+        """
+        box = tk.Frame(body, bg=ROWBG, highlightbackground=ACCENT,
+                       highlightthickness=1)
+        box.pack(fill="x", padx=12, pady=(8, 2))
+        tk.Label(box, text=code, font=("Consolas", theme.fs(9)), bg=ROWBG,
+                 fg=TEXT, justify="left", anchor="w").pack(
+                 side="left", fill="x", expand=True, padx=(8, 4), pady=6)
+        btn = tk.Label(box, text="복사", font=(FONT, theme.fs(8), "bold"),
+                       bg=ACCENT_SOFT, fg=ACCENT, padx=8, pady=3,
+                       cursor="hand2")
+        btn.pack(side="right", padx=6, pady=6)
+
+        def copy(_e=None):
+            try:
+                self.root.clipboard_clear()
+                self.root.clipboard_append(code)
+                btn.config(text="복사됨 ✓")
+                self.root.after(1500, lambda: btn.winfo_exists()
+                                and btn.config(text="복사"))
+            except Exception as e:
+                applog.exc("문법 복사 실패", e)
+
+        btn.bind("<Button-1>", copy)
 
     def _place_coach(self, c, w):
         r"""안내창은 **창 바깥 오른쪽**에 띄운다 (사용자 결정 2026-07-26).
@@ -404,6 +499,12 @@ class Tutorial:
 
     # ── 정리 ────────────────────────────────────────
     def _close_coach(self):
+        if self._place_job is not None:
+            try:
+                self.root.after_cancel(self._place_job)
+            except Exception:
+                pass
+            self._place_job = None
         if self._coach is not None:
             try:
                 self._coach.destroy()
@@ -449,6 +550,18 @@ class Tutorial:
                 self.root.attributes("-topmost", True)
             except Exception:
                 pass
+        for win, was in self._lowered.items():      # 다른 창들도 되돌린다
+            try:
+                if was and win.winfo_exists():
+                    win.attributes("-topmost", True)
+            except Exception:
+                pass
+        self._lowered = {}
+        if self.on_cleanup:
+            try:
+                self.on_cleanup()       # 튜토리얼이 연 창은 여기서 닫는다
+            except Exception as e:
+                applog.exc("튜토리얼이 연 창 닫기 실패 (무해)", e)
         if _active is self:
             _active = None
         if completed and self.on_done:
@@ -462,10 +575,11 @@ class Picker(tk.Toplevel):
     나눠 놓으면 오늘 필요한 것(예: 표 만들기)만 5분 안에 짚고 갈 수 있다.
     """
 
-    def __init__(self, master, courses, title="튜토리얼"):
+    def __init__(self, master, courses, title="튜토리얼", on_cleanup=None):
         super().__init__(master)
         self.master_win = master
         self.courses = courses
+        self.on_cleanup = on_cleanup
         self.title(title)
         self.configure(bg=BG)
         self.resizable(False, False)
@@ -517,10 +631,12 @@ class Picker(tk.Toplevel):
         self.destroy()          # 목록은 비켜 준다 — 화면을 가리면 안 된다
         # 코스가 끝나면 목록으로 돌아온다 — 이어서 다음 코스를 하기 쉽게
         Tutorial(self.master_win, course["steps"], title=course["title"],
+                 on_cleanup=self.on_cleanup,
                  on_done=lambda: self.master_win.after(
-                     300, lambda: open_picker(self.master_win, self.courses))
+                     300, lambda: open_picker(self.master_win, self.courses,
+                                              on_cleanup=self.on_cleanup))
                  ).start()
 
 
-def open_picker(master, courses):
-    return Picker(master, courses)
+def open_picker(master, courses, on_cleanup=None):
+    return Picker(master, courses, on_cleanup=on_cleanup)
