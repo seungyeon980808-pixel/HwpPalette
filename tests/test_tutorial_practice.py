@@ -97,6 +97,22 @@ class ExampleDocWiringTest(unittest.TestCase):
                       if s.get("code") and s.get("action")]
             self.assertEqual(opener[0], code_at[0], course["key"])
 
+    def test_코스끼리_같은_예문을_쓰지_않는다(self):
+        r"""'처음 시작하기'와 '마크다운 변환 익히기'가 같은 것을 가르치던 문제
+        (사용자 지적 2026-07-26). 처음은 훑어보기, 마크다운 코스는 손에 익히기."""
+        seen = {}
+        for course in self.courses:
+            for code in self._codes(course):
+                key = code.strip()
+                self.assertNotIn(key, seen,
+                                 f"{course['key']} 와 {seen.get(key)} 의 예문이 같다")
+                seen[key] = course["key"]
+
+    def test_처음_시작하기는_짧게_끝난다(self):
+        """훑어보기 코스이므로 실습이 두 개를 넘지 않는다."""
+        start = next(c for c in self.courses if c["key"] == "start")
+        self.assertLessEqual(len(self._codes(start)), 2)
+
     def test_이미_준비가_있는_단계는_덮어쓰지_않는다(self):
         """템플릿 코스 1단계의 '연습용 표 만들기'가 살아 있어야 한다."""
         template = next(c for c in self.courses if c["key"] == "template")

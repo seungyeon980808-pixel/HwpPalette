@@ -19,8 +19,7 @@ steps: [step, ...]  — step 은 dict:
 import tkinter as tk
 
 import applog
-import clipboard                # 윈도우 클립보드 (Tk 클립보드 금지 — 머리말 참조)
-import screens                  # 여러 모니터를 합친 좌표
+import screens                  # 모니터별 좌표 (여러 대를 쓸 때)
 import theme
 
 _C = theme.colors()
@@ -551,37 +550,18 @@ class Tutorial:
                          if (not self._done and c.winfo_exists()) else None))
 
     def _code_box(self, body, code):
-        r"""쳐 봐야 하는 문법을 **눈에 띄는 상자**에 담고 복사 버튼을 붙인다.
+        r"""이번에 해 볼 문법을 **눈에 띄는 상자**로 보여준다 (강조만).
 
-        안내문 속에 섞어 두면 어디부터 어디까지를 쳐야 하는지 알기 어렵고,
-        한글 문법은 역슬래시·중괄호가 많아 손으로 옮겨 치다 틀리기 쉽다
-        (사용자 요청 2026-07-26). 눌러서 복사한 뒤 한글에 붙여넣으면 된다.
+        복사 버튼은 뺐다 (사용자 지적 2026-07-26): 실습 예문은 이미 연습용
+        한글 문서에 다 적혀 있으니 클립보드로 옮길 일이 없다. 여기 상자는
+        "연습 문서에서 **이것**을 찾아 선택하라"고 알려 주는 표지판이다.
         """
         box = tk.Frame(body, bg=ROWBG, highlightbackground=ACCENT,
                        highlightthickness=1)
-        box.pack(fill="x", padx=12, pady=(8, 2))
+        box.pack(fill="x", padx=12, pady=(6, 2))
         tk.Label(box, text=code, font=("Consolas", theme.fs(9)), bg=ROWBG,
                  fg=TEXT, justify="left", anchor="w").pack(
-                 side="left", fill="x", expand=True, padx=(8, 4), pady=6)
-        btn = tk.Label(box, text="복사", font=(FONT, theme.fs(8), "bold"),
-                       bg=ACCENT_SOFT, fg=ACCENT, padx=8, pady=3,
-                       cursor="hand2")
-        btn.pack(side="right", padx=6, pady=6)
-
-        def copy(_e=None):
-            # **Tk 클립보드를 쓰지 않는다** (2026-07-26 실측).
-            # clipboard_append 는 '내가 주인' 등록이라, 그 뒤 우리가 한글의
-            # Copy 결과를 읽으려 하면 클립보드가 잠겨 '선택 없음' 이 됐다.
-            # 자세한 내용은 clipboard.py 머리말.
-            try:
-                clipboard.set_text(code, widget=self.root)
-                btn.config(text="복사됨 ✓")
-                self.root.after(1500, lambda: btn.winfo_exists()
-                                and btn.config(text="복사"))
-            except Exception as e:
-                applog.exc("문법 복사 실패", e)
-
-        btn.bind("<Button-1>", copy)
+                 fill="x", expand=True, padx=8, pady=6)
 
     def _place_coach(self, c, w):
         r"""안내창은 **창 바깥 오른쪽**에 띄운다 (사용자 결정 2026-07-26).
@@ -592,6 +572,11 @@ class Tutorial:
         오른쪽에 자리가 없으면 왼쪽 바깥, 그것도 없으면 위쪽으로 물러난다.
 
         세로 위치는 **짚은 것과 같은 높이** — 안내와 강조가 한눈에 들어온다.
+
+        자리는 **짚는 창이 있는 모니터 안에서만** 잰다 (사용자 지적 2026-07-26:
+        안내가 엉뚱한 곳으로 튀었다). 합친 바탕 화면으로 재면, 이 PC 처럼
+        모니터 사이에 빈 구간이 있는 배치에서는 아무 모니터에도 없는 좌표를
+        "자리가 있다"고 골라 버린다 (screens.monitor_bounds 머리말).
         """
         try:
             c.update_idletasks()
@@ -599,7 +584,7 @@ class Tutorial:
             base = self._base if self._base.winfo_exists() else self.root
             bx, by = base.winfo_rootx(), base.winfo_rooty()
             bw, bh = base.winfo_width(), base.winfo_height()
-            dx, dy, dw, dh = screens.desktop_bounds(c)
+            dx, dy, dw, dh = screens.monitor_bounds(base)
 
             x = bx + bw + 12                        # 창 오른쪽 바깥
             if x + cw > dx + dw:                    # 오른쪽에 자리가 없으면
@@ -615,12 +600,23 @@ class Tutorial:
                              else by + bh // 3)
                 y = anchor_cy - ch // 3
                 y = max(by - 40, min(y, by + bh + 40 - ch))
-            x, y = screens.clamp_window(c, x, y, cw, ch)
+            # 모니터 안으로 밀어 넣는다 (합친 바탕 화면이 아니라 이 모니터)
+            x = max(dx, min(int(x), dx + dw - cw))
+            y = max(dy, min(int(y), dy + dh - ch))
             c.geometry(f"+{x}+{y}")
             self._coach_geo = (x, y)    # 밀기(_shift)가 기준으로 삼는 자리
             c.lift()
         except Exception as e:
-            applog.exc("안내창 위치 잡기 실패 — 기본 자리에 둔다", e)
+            # **자리를 안 잡고 두면 안 된다** (사용자 지적 2026-07-26).
+            # 예전에는 여기서 로그만 남기고 넘어갔는데, 자리를 못 받은
+            # overrideredirect 창은 화면 왼쪽 위에 떠서 "안내가 엉뚱한 곳으로
+            # 튀었다"가 됐다. 계산이 실패하면 최소한 창 옆에는 붙인다.
+            applog.exc("안내창 위치 계산 실패 — 창 옆에 붙인다", e)
+            try:
+                screens.place_beside(c, self.root, follow=False)
+                self._coach_geo = (c.winfo_rootx(), c.winfo_rooty())
+            except Exception as e2:
+                applog.exc("안내창 대체 자리도 실패", e2)
 
     # ── 정리 ────────────────────────────────────────
     def _close_coach(self):

@@ -728,6 +728,37 @@ def _help_menu(anchor_widget):
 # 끝은 '내 손에 맞게 바꾸는 법'을 준다.
 _PRACTICE_TITLE = "[연습] 가정통신문 머리"
 
+# 튜토리얼이 만든 연습 문서들 (코스가 끝나면 닫는다 — 사용자 지적 2026-07-26:
+# "실습이 끝났는데 예제 문서가 열려 있습니다"). 한글 문서 객체를 그대로 들고
+# 있다가 그것만 닫는다 — '지금 활성 문서'를 닫으면 사용자가 그새 옮겨 간
+# 다른 문서를 닫을 수 있다.
+_practice_docs = []
+
+
+def _remember_practice_doc():
+    """방금 만든 문서를 '연습용'으로 기억한다."""
+    try:
+        _practice_docs.append(
+            hwp_engine.hwp.XHwpDocuments.Active_XHwpDocument)
+    except Exception as e:
+        applog.exc("연습 문서 기억 실패 — 코스가 끝나도 안 닫힐 수 있다", e)
+
+
+def _close_practice_docs():
+    """연습 문서를 닫는다 — 저장 여부를 묻지 않는다(연습용이므로).
+
+    단, 사용자가 그 문서를 **저장했다면 남긴다**(FullName 이 생긴다) —
+    쓸 만해서 저장한 것을 우리가 지우면 안 된다.
+    """
+    while _practice_docs:
+        doc = _practice_docs.pop()
+        try:
+            if doc.FullName:            # 저장된 문서 = 사용자의 것
+                continue
+            doc.Close(isDirty=False)
+        except Exception as e:
+            applog.exc("연습 문서 닫기 실패 (사용자가 닫으면 된다)", e)
+
 
 def _make_practice_doc():
     """한글에 연습용 표를 만들어 준다. 실패하면 False (튜토리얼 중단)."""
@@ -735,6 +766,7 @@ def _make_practice_doc():
         return False
     try:
         hwp_engine.hwp.FileNew()
+        _remember_practice_doc()
         hwp_engine.insert_plain(_PRACTICE_TITLE)
         hwp_engine.hwp.HAction.Run("BreakPara")
         hwp_engine.create_table_autofit(2, 2)
@@ -773,6 +805,7 @@ def _make_example_doc(examples, course_title=""):
         return False
     try:
         hwp_engine.hwp.FileNew()
+        _remember_practice_doc()        # 코스가 끝나면 이 문서를 닫는다
         lines = [f"[연습] {course_title}".strip(),
                  "안내창이 말하는 예문을 아래에서 찾아 드래그로 선택한 뒤,",
                  "팔레트의 버튼을 누르세요. 아래로 내려가며 하나씩 해 보면 됩니다.",
@@ -868,11 +901,22 @@ class _TutorialCtx:
                 pass
         return True
 
+    @staticmethod
+    def finish_cleanup():
+        """코스가 끝날 때 — 설정 창도, 한글의 연습 문서도 남기지 않는다.
+
+        연습 문서를 닫는 일은 **여기에만** 둔다. close_opened 는 코스 중간에도
+        불리므로(설정 창 정리) 거기서 문서를 닫으면 실습이 끊긴다.
+        """
+        _TutorialCtx.close_opened()
+        _close_practice_docs()
+        return True
+
 
 def _start_tutorial():
     """튜토리얼 목록을 연다 — 주제별 코스를 골라 시작한다."""
     tutorial.open_picker(root, tutorials.build(_TutorialCtx),
-                         on_cleanup=_TutorialCtx.close_opened)
+                         on_cleanup=_TutorialCtx.finish_cleanup)
 
 
 

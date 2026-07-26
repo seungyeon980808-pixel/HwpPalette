@@ -73,6 +73,53 @@ class RectTest(unittest.TestCase):
                          "창")
 
 
+class MonitorBoundsTest(unittest.TestCase):
+    r"""안내창이 '모니터 한 대' 안에서만 자리를 잡는지 (사용자 지적 2026-07-26:
+    안내가 엉뚱한 곳으로 튀었다 — 모니터 사이 빈 구간에 놓였다)."""
+
+    def setUp(self):
+        import screens
+        self.screens = screens
+
+    def test_한_모니터는_합친_바탕화면_안에_있다(self):
+        widget = _FakeRoot()
+        dx, dy, dw, dh = self.screens.desktop_bounds(widget)
+        mx, my, mw, mh = self.screens.monitor_bounds(widget, dx + 10, dy + 10)
+        self.assertGreater(mw, 0)
+        self.assertGreater(mh, 0)
+        self.assertGreaterEqual(mx, dx)
+        self.assertLessEqual(mx + mw, dx + dw)
+
+    def test_한_모니터는_합친_것보다_넓지_않다(self):
+        widget = _FakeRoot()
+        _dx, _dy, dw, dh = self.screens.desktop_bounds(widget)
+        _mx, _my, mw, mh = self.screens.monitor_bounds(widget, 0, 0)
+        self.assertLessEqual(mw, dw)
+        self.assertLessEqual(mh, dh)
+
+
+class _FakeRoot:
+    """screens 가 쓰는 것만 흉내 (Tk 창을 띄우지 않는다)."""
+
+    def winfo_screenwidth(self):
+        return 1920
+
+    def winfo_screenheight(self):
+        return 1080
+
+    def winfo_rootx(self):
+        return 0
+
+    def winfo_rooty(self):
+        return 0
+
+    def winfo_width(self):
+        return 100
+
+    def winfo_height(self):
+        return 100
+
+
 class CourseWindowTest(unittest.TestCase):
     """코스가 짚는 대상·닫는 창."""
 
