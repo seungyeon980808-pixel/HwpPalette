@@ -753,6 +753,48 @@ def _make_practice_doc():
         return False
 
 
+def _make_example_doc(codes, course_title=""):
+    r"""연습용 문서를 새로 열고 그 코스의 예문을 **모두 적어 준다**.
+
+    왜 (사용자 요청 2026-07-26): 실습 단계에서 "복사해 한글에 붙여넣고 선택해
+    누르세요" 는 손이 세 번 간다. 한글이 빈 문서가 아니면 남의 문서에 예문을
+    붙이게 되고, 붙여넣기가 잘못되면 그다음 실습이 전부 막힌다.
+    예문이 이미 적힌 새 문서를 열어 주면 **드래그해서 누르기 한 번**만 남고,
+    같은 화면에서 예문이 무엇으로 바뀌는지 위아래로 비교하며 볼 수 있다.
+
+    코스마다 처음 실습 단계에 걸린다(tutorials.py 의 _with_example_doc).
+    실패하면 False — 튜토리얼은 거기서 멈춘다(한글이 없으면 나머지도 못 한다).
+    """
+    if not ensure_hwp():
+        return False
+    try:
+        hwp_engine.hwp.FileNew()
+        lines = [f"[연습] {course_title}".strip(),
+                 "예문을 한 덩어리씩 드래그로 선택한 뒤 팔레트 버튼을 누르세요.",
+                 # 줄표(—)는 한글 TEXT 내보내기에서 &#8212; 로 새는 것을 봤으므로
+                 # 연습 문서에는 쓰지 않는다 (실측 2026-07-26)
+                 "마음껏 고쳐도 됩니다. 이 문서는 연습용이라 저장하지 않습니다.",
+                 ""]
+        for i, code in enumerate(codes, 1):
+            lines.append(f"-- 예문 {i} --")
+            lines.extend(str(code).split("\n"))
+            lines.append("")
+        for n, text in enumerate(lines):
+            if n:
+                hwp_engine.hwp.HAction.Run("BreakPara")
+            if text:
+                hwp_engine.insert_plain(text)
+        try:
+            hwp_engine.hwp.MoveDocBegin()       # 첫 예문이 보이는 자리에서 시작
+        except Exception as e:
+            applog.exc("연습 문서 커서 되돌리기 실패 (무해)", e)
+        notify("ok", f"연습용 예문 {len(codes)}개를 한글에 적어 두었습니다")
+        return True
+    except Exception as e:
+        report_error("연습용 예문 문서 만들기 실패", e)
+        return False
+
+
 def _library_widget(name):
     """물감 설정 창의 위젯 하나 — 튜토리얼이 짚을 대상 (없으면 None)."""
     win = _open_windows.get("library")
@@ -785,6 +827,8 @@ class _TutorialCtx:
     library_list = staticmethod(lambda: _library_widget("_canvas"))
     ensure_hwp = staticmethod(lambda: ensure_hwp())
     make_practice_doc = staticmethod(lambda: _make_practice_doc())
+    make_example_doc = staticmethod(
+        lambda codes, title="": _make_example_doc(codes, title))
     open_library_template = staticmethod(
         lambda: bool(fn_open_library(cat="템플릿")))
     open_library_char = staticmethod(lambda: bool(fn_open_library(cat="문자")))

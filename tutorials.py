@@ -23,9 +23,32 @@ step = {"title", "text", "widget"(선택), "code"(선택),
 """
 
 
+def _with_example_doc(ctx, courses):
+    r"""실습(code)이 있는 코스는 **첫 실습 단계에서 연습 문서를 열어 준다**.
+
+    사용자 요청 2026-07-26: "실습형 예제가 나오면 예제가 들어가 있는 한글 창을
+    띄워 달라 — 한글창에 예제가 가득하면 어떻게 변하는지도 직관적으로 보인다."
+
+    코스가 가진 code 를 그대로 모아 넘기므로 예문을 두 곳에 적어 둘 필요가 없다.
+    첫 실습 단계에만 걸어, 코스 하나에 연습 문서 하나가 생긴다.
+    (이미 action 이 있는 단계는 건드리지 않는다 — 템플릿 코스의 '연습용 표'처럼
+     그 단계가 해야 할 준비가 이미 있다.)
+    """
+    for course in courses:
+        codes = [s["code"] for s in course["steps"] if s.get("code")]
+        if not codes:
+            continue
+        for step in course["steps"]:
+            if step.get("code") and not step.get("action"):
+                step["action"] = (
+                    lambda c=codes, t=course["title"]: ctx.make_example_doc(c, t))
+                break
+    return courses
+
+
 def build(ctx):
     """ctx: main.py 가 준 위젯·동작 모음. 코스 목록을 만들어 돌려준다."""
-    return [
+    return _with_example_doc(ctx, [
         # ── 1. 처음 시작하기 ──────────────────────────
         {"key": "start", "title": "처음 시작하기",
          "desc": "화면이 어떻게 생겼고 무엇부터 눌러야 하는지 — 5분",
@@ -41,7 +64,7 @@ def build(ctx):
               "action": ctx.ensure_hwp},
              {"widget": ctx.convert_btn,
               "title": "가장 쉬운 것부터 — 기호 넣기",
-              "text": "아래 문법을 복사해 한글에 붙여넣고,\n"
+              "text": "한글에 연습용 문서를 열고 예문을 적어 두었습니다.\n"
                       "그 줄을 드래그로 선택한 뒤 이 '마크다운 변환' 버튼을\n"
                       "누르세요. ① ℃ → 로 바뀝니다.\n"
                       "등록 없이 쓸 수 있는 기호가 425개 들어 있습니다.",
@@ -64,8 +87,10 @@ def build(ctx):
                       "여는 것과 닫는 것이 달라서, 안에 또 문법을 넣어도\n"
                       "짝이 헷갈리지 않습니다."},
              {"widget": ctx.convert_btn, "title": "서식 입혀 보기",
-              "text": "복사해서 한글에 붙여넣고, 그 줄을 선택한 뒤\n"
-                      "이 버튼을 누르세요. 감싼 부분만 굵어집니다.",
+              "text": "이 코스의 예문을 한글 연습 문서에 모두 적어 두었습니다.\n"
+                      "'예문 1' 줄을 드래그로 선택한 뒤 이 버튼을 누르세요 —\n"
+                      "감싼 부분만 굵어집니다. (다음 단계 예문도 같은 문서에\n"
+                      "있으니 위아래로 비교해 보며 하면 됩니다)",
               "code": "다음 중 \\굵게{옳지 않은} 것은?"},
              {"widget": ctx.convert_btn, "title": "겹쳐 쓰기",
               "text": "명령은 원하는 만큼 쌓을 수 있습니다.\n"
@@ -106,8 +131,9 @@ def build(ctx):
               "next_action": ctx.close_opened,
               "restore": ctx.open_library_template},
              {"widget": ctx.convert_btn, "title": "꺼내 쓰기",
-              "text": "이름을 '가정통신문머리'로 지었다면, 한글에 이렇게 쓰고\n"
-                      "그 부분을 선택한 뒤 이 버튼을 누르세요.\n"
+              "text": "이름을 '가정통신문머리'로 지었다면 아래처럼 씁니다.\n"
+                      "연습 문서를 새로 열어 예문을 적어 두었으니, 이름이\n"
+                      "다르면 그 줄만 고친 뒤 세 줄을 함께 선택하고 누르세요.\n"
                       "표가 들어가면서 빈칸이 위에서부터 채워집니다.",
               "code": "\\가정통신문머리\\\n3학년 2반\n박승연"},
              {"widget": ctx.convert_btn, "title": "비울 칸과 여러 줄",
@@ -215,4 +241,4 @@ def build(ctx):
                       "내가 만든 템플릿·양식을 zip 하나로 묶어 건네고,\n"
                       "받은 쪽은 [꾸러미 풀기]로 자기 물감에 더합니다."},
          ]},
-    ]
+    ])

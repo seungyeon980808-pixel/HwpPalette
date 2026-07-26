@@ -19,6 +19,7 @@ steps: [step, ...]  — step 은 dict:
 import tkinter as tk
 
 import applog
+import clipboard                # 윈도우 클립보드 (Tk 클립보드 금지 — 머리말 참조)
 import screens                  # 여러 모니터를 합친 좌표
 import theme
 
@@ -493,9 +494,12 @@ class Tutorial:
         btn.pack(side="right", padx=6, pady=6)
 
         def copy(_e=None):
+            # **Tk 클립보드를 쓰지 않는다** (2026-07-26 실측).
+            # clipboard_append 는 '내가 주인' 등록이라, 그 뒤 우리가 한글의
+            # Copy 결과를 읽으려 하면 클립보드가 잠겨 '선택 없음' 이 됐다.
+            # 자세한 내용은 clipboard.py 머리말.
             try:
-                self.root.clipboard_clear()
-                self.root.clipboard_append(code)
+                clipboard.set_text(code, widget=self.root)
                 btn.config(text="복사됨 ✓")
                 self.root.after(1500, lambda: btn.winfo_exists()
                                 and btn.config(text="복사"))

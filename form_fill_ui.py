@@ -16,6 +16,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 
 import applog
+import clipboard                  # 윈도우 클립보드 (Tk 클립보드 금지)
 import engine_library
 import form_fill
 import hwp_engine
@@ -155,8 +156,9 @@ class FormFillWindow(tk.Toplevel):
             return
         self.out_box.delete("1.0", "end")
         self.out_box.insert("1.0", sheet)
-        self.clipboard_clear()
-        self.clipboard_append(sheet)
+        # Tk 클립보드로 담으면 그 뒤 한글 선택 읽기가 막힌다
+        # (clipboard.py 머리말) — 윈도우 클립보드로 담는다
+        clipboard.set_text(sheet, widget=self)
         self.status.set(f"채울 자리 {count}개 — 클립보드에 복사했습니다. "
                         "AI에 붙여넣고 채워서 오른쪽에 붙여넣으세요.")
 

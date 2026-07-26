@@ -21,6 +21,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 import applog
+import clipboard                  # 윈도우 클립보드 (Tk 클립보드 금지)
 import hwp_engine
 import engine_library
 import library
@@ -1249,8 +1250,9 @@ class LibraryManager(tk.Toplevel):
             return
         label = item.get("label") or item["name"]
         prompt = form_markdown.build_prompt(item["name"], label, md, slots)
-        self.clipboard_clear()
-        self.clipboard_append(prompt)
+        # Tk 클립보드가 아니라 윈도우 클립보드로 담는다 — Tk 로 담으면 그 뒤
+        # 우리가 한글의 선택 내용을 읽지 못한다 (clipboard.py 머리말)
+        clipboard.set_text(prompt, widget=self)
         messagebox.showinfo(
             "프롬프트 복사 완료",
             f"빈칸 {slots}개짜리 프롬프트를 복사했습니다.\n\n"

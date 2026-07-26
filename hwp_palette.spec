@@ -32,6 +32,9 @@ a = Analysis(
         "win32com", "win32com.client", "win32com.client.gencache",
         "win32com.client.dynamic", "win32timezone",
         "pythoncom", "pywintypes", "win32gui", "win32api", "win32con",
+        # 클립보드는 clipboard.py 가 함수 안에서 import 한다 — 정적 분석이
+        # 놓치면 exe 에서만 복사·붙여넣기가 조용히 실패한다
+        "win32clipboard",
         "pyhwpx",
     ],
     hookspath=[],

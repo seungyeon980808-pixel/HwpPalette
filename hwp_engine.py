@@ -27,6 +27,7 @@ import time
 from pyhwpx import Hwp
 import pyhwpx.core as pyhwpx_core     # __init__ 우회 시 필요한 기본값(fonts)
 import applog
+import clipboard                        # 윈도우 클립보드 (Tk 클립보드 금지)
 import settings
 
 hwp = None
@@ -245,11 +246,21 @@ def save_document():
 
 
 def has_selection():
+    r"""지금 한글에 블록(선택)이 잡혀 있는가.
+
+    SelectionMode 만 믿지 않는다 (2026-07-26): 이 값이 0 이어도 선택 내용은
+    멀쩡히 읽히는 경우가 있어, "선택하세요" 만 반복하며 막히는 일이 있었다.
+    그래서 0 일 때는 **선택 내용을 한 번 더 물어본다** — 선택이 없으면 한글이
+    빈손을 주므로 판정이 틀리지 않는다. 읽는 쪽(read_selection_text)과 같은
+    기준을 쓰게 되어, '변환은 되는데 다른 버튼은 선택이 없다고 한다' 같은
+    엇갈림도 생기지 않는다.
+    """
     try:
-        return hwp.SelectionMode != 0
+        if hwp.SelectionMode != 0:
+            return True
     except Exception as e:
         applog.exc("선택 상태 조회 실패", e)
-        return False
+    return bool(read_selection_direct())
 
 
 def copy_selection():
@@ -260,13 +271,13 @@ def read_selection_direct():
     r"""선택 영역을 **클립보드를 거치지 않고** 한글에서 바로 읽는다.
 
     GetTextFile("TEXT", "saveblock") = 지금 선택된 부분만 글자로 돌려준다.
+    선택이 없으면 한글이 None 을 주므로 **이것 자체가 선택 여부 판정**이다 —
+    SelectionMode 를 먼저 물어보지 않는다(실측 2026-07-26: 한 번 더 물어보는
+    관문이 늘 뿐, 없어도 결과가 같다).
     클립보드를 안 건드리므로 사용자가 복사해 둔 것을 지우지도 않고, 다른
     프로그램이 클립보드를 점유해도 영향을 받지 않는다.
-    선택이 없으면 빈 문자열.
     """
     try:
-        if hwp.SelectionMode == 0:
-            return ""
         return hwp.GetTextFile("TEXT", "saveblock") or ""
     except Exception as e:
         applog.exc("선택 영역 직접 읽기 실패 — 클립보드로 넘어감", e)
@@ -276,52 +287,48 @@ def read_selection_direct():
 def read_selection_text(retries=10, delay=0.08):
     r"""선택 영역의 글자를 읽는다.
 
-    두 갈래를 쓴다 (2026-07-26):
-      1) 클립보드 경유 (Copy → win32clipboard) — 지금까지 쓰던 길이고,
-         표·여러 줄의 줄바꿈 모양이 변환기가 기대하는 그대로다.
-      2) 실패하면 **한글에서 직접**(read_selection_direct).
-    2번을 덧붙인 이유: 선택이 멀쩡히 있는데도 "선택 없음" 이라며 변환이
-    거부되는 일이 있었다 (사용자 지적 2026-07-26 — 실측하니 한글 쪽
-    SelectionMode 는 1, 선택 글자도 정상인데 클립보드만 비어 있었다).
-    클립보드는 다른 프로그램이 잠깐만 잡고 있어도 통째로 실패한다.
+    순서가 **뒤집혔다** (2026-07-26 — 원인을 실측으로 잡은 뒤):
+      1) 한글에서 직접 (GetTextFile saveblock) — 클립보드를 아예 안 건드린다
+      2) 그게 빈손일 때만 클립보드 경유 (Copy → 윈도우 클립보드)
 
-    Tk 클립보드(clipboard_get)를 안 쓰는 이유는 그대로다 — 한글의 Copy 완료와
-    타이밍이 어긋나 빈 값이 잦았다(실측 2026-07-15).
+    예전에는 1·2 가 반대였다. 그런데 클립보드는 **우리 자신이 잠글 수 있다**:
+    Tk 의 clipboard_append 는 값을 넣는 게 아니라 '주인 등록'(지연 렌더링)이라,
+    그 뒤 같은 프로세스의 OpenClipboard 가 '액세스가 거부되었습니다' 로 막힌다
+    (실측). 튜토리얼 [복사] 를 누른 뒤 변환이 "선택 없음" 이 되던 바로 그 길이다.
+    담는 쪽은 clipboard.py 로 고쳤지만, **읽는 쪽도 클립보드에 의존하지 않는
+    것이 근본 해결**이다 — 선택 내용은 한글이 직접 준다.
+
+    2번을 남겨 두는 이유: 표처럼 saveblock 이 빈손인 선택이 있을 수 있어서다.
+    이때 '선택이 없으면 클립보드를 읽지 않는' 관문은 그대로 지킨다 —
+    Copy 는 선택이 없으면 아무 일도 안 하는데 그 뒤 클립보드를 읽으면
+    **직전에 복사해 둔 남의 글**이 선택 내용으로 둔갑했다(실측 로그의
+    "바꿀 자리를 찾지 못해 건너뜀" 반복).
     """
-    import win32clipboard        # 플랫폼 의존 — 없을 수 있어 지역 import
-    # **선택이 없으면 클립보드를 아예 읽지 않는다** (2026-07-26 버그).
-    #
-    # Copy 는 선택이 없으면 아무 일도 안 하는데, 그 뒤 클립보드를 읽으면
-    # **직전에 복사해 둔 남의 글**이 선택 내용으로 둔갑했다. 튜토리얼의
-    # [복사] 로 예문을 담아 둔 상태에서 변환을 누르면, 그 예문을 문서에서
-    # 찾아 바꾸려다 "바꿀 자리를 찾지 못해 건너뜀" 만 반복했다(실측 로그).
-    # 최악의 경우 엉뚱한 글이 문서에 삽입될 수도 있었다.
-    if not has_selection():
-        return ""
-    copy_selection()
-    last_error = None
-    for _ in range(retries):
-        try:
-            win32clipboard.OpenClipboard()
-            try:
-                if win32clipboard.IsClipboardFormatAvailable(
-                        win32clipboard.CF_UNICODETEXT):
-                    text = win32clipboard.GetClipboardData(
-                        win32clipboard.CF_UNICODETEXT)
-                    if text:
-                        return text
-            finally:
-                win32clipboard.CloseClipboard()
-        except Exception as e:
-            last_error = e          # 클립보드는 다른 앱이 잠깐 점유하면 실패한다
-        time.sleep(delay)
-    if last_error is not None:
-        applog.exc(f"클립보드 읽기 {retries}회 모두 실패", last_error)
     direct = read_selection_direct()
     if direct:
-        applog.warn("클립보드가 비어 한글에서 직접 읽었습니다 "
+        return direct
+    # 여기서 has_selection() 을 부르면 방금 한 직접 읽기를 또 한다 —
+    # 이 자리에서는 SelectionMode 만 보는 것으로 충분하다.
+    try:
+        if hwp.SelectionMode == 0:
+            return ""
+    except Exception as e:
+        applog.exc("선택 상태 조회 실패", e)
+        return ""
+    copy_selection()
+    text = clipboard.get_text(retries=retries, delay=delay)
+    if text:
+        applog.warn("한글이 선택 내용을 직접 주지 않아 클립보드로 읽었습니다 "
                     "(변환은 정상 진행됩니다)")
-    return direct
+        return text
+    # 여기까지 왔으면 두 길이 모두 막혔다. 다음에 또 겪을 때 원인을 알 수 있게
+    # 그때의 한글 상태를 남긴다 (예전엔 아무 기록 없이 "선택 없음" 만 떴다).
+    try:
+        applog.warn(f"선택을 읽지 못했습니다 — SelectionMode="
+                    f"{hwp.SelectionMode}, 문서 수={hwp.XHwpDocuments.Count}")
+    except Exception:
+        pass
+    return ""
 
 
 def delete_selection():
