@@ -66,10 +66,33 @@ class NormalizeTest(unittest.TestCase):
         for v in (None, "", "   ", [], ["", "  "]):
             self.assertEqual(library.normalize_tags(v), [])
 
-    def test_너무_긴_태그는_자른다(self):
-        long = "가" * 40
-        self.assertEqual(len(library.normalize_tags(long)[0]),
-                         library.TAG_MAX_LEN)
+    def test_다섯_글자까지만_받는다(self):
+        """규칙: 한글 5글자 이내 (사용자 결정 2026-07-26).
+
+        자르지 않고 **버린다** — 자르면 '가나다라마바사' 가 '가나다라마' 로
+        조용히 바뀌어, 사용자가 지은 것과 다른 태그가 생긴다.
+        """
+        self.assertEqual(library.normalize_tags("가나다라마"), ["가나다라마"])
+        self.assertEqual(library.normalize_tags("가나다라마바"), [])
+
+    def test_한글이_아니면_버린다(self):
+        for bad in ("sooneung", "수능2026", "3학년", "수능!", "수능_문제",
+                    "고1수능"):
+            self.assertEqual(library.normalize_tags(bad), [], bad)
+
+    def test_한글이면_받는다(self):
+        for good in ("수능", "가", "가나다라마", "ㄱ"):
+            self.assertEqual(library.normalize_tags(good), [good], good)
+
+    def test_섞여_있으면_맞는_것만_남는다(self):
+        """가져오기·옛 데이터처럼 화면을 안 거치는 경로의 마지막 관문."""
+        self.assertEqual(library.normalize_tags("수능 abc 사진"),
+                         ["수능", "사진"])
+
+    def test_입력_가르기는_검사_전이라_그대로_돌려준다(self):
+        """화면이 '무엇이 걸렸는지' 를 말하려면 잘못된 것도 봐야 한다."""
+        self.assertEqual(library.split_tag_input("#수능 abc, 사진"),
+                         ["수능", "abc", "사진"])
 
 
 class MigrationTest(TempLibrary):

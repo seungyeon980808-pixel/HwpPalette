@@ -14,6 +14,7 @@ library.json에는 그 파일명만 참조로 남긴다.
 import copy
 import json
 import pathlib
+import re
 import shutil
 import uuid
 
@@ -71,23 +72,50 @@ def cleanup_temp_fragments():
 #   · 내보낼 때 빠진다 — 남의 정리 습관은 나에게 뜻이 없다 (export_items 참고)
 #
 # 옛 데이터의 group 값은 **버린다**. 전부 '기본' 이라 옮길 정보가 없었다.
-TAG_MAX_LEN = 20
+#
+# 태그 규칙 (사용자 결정 2026-07-26): **한글만, 5글자 이내, 띄어쓰기 없음.**
+# 왜 이렇게 좁히나 — 태그의 유일한 실패 모드는 같은 뜻이 여러 이름으로
+# 번식하는 것이다(#수능 / #수능문제 / #수능_문제 / #sooneung). 형태를 하나로
+# 강제하면 애초에 갈라질 자리가 줄고, 짧아서 칩으로 늘어놓기도 좋다.
+# 띄어쓰기는 규칙 이전에 **구분자**라 태그 안에 들어올 수 없다.
+TAG_MAX_LEN = 5
+_TAG_RE = re.compile(r"^[가-힣ㄱ-ㅎㅏ-ㅣ]{1,%d}$" % TAG_MAX_LEN)
+
+
+def is_valid_tag(tag):
+    """한글 1~5글자인가. 숫자·영문·기호·공백이 섞이면 태그가 아니다."""
+    return bool(_TAG_RE.match(str(tag or "").strip()))
+
+
+def split_tag_input(text):
+    """입력칸 글자를 토막으로 가른다 (검사 전 — 잘못된 것도 그대로 돌려준다).
+
+    띄어쓰기와 쉼표 둘 다 구분자로 본다. `#` 는 표시용이라 벗긴다.
+    """
+    if not text:
+        return []
+    return [t for t in
+            (s.strip().lstrip("#").strip()
+             for s in str(text).replace(",", " ").split()) if t]
 
 
 def normalize_tags(tags):
-    """태그 목록 정리 — 공백 제거, # 벗기기, 중복 제거, 순서 유지.
+    """태그 목록 정리 — # 벗기기, 중복 제거, 순서 유지, **규칙 위반은 버림**.
 
-    문자열 하나('수능 사진문항' 또는 '수능,사진문항')로 줘도 받는다 —
-    입력칸에서 그대로 넘어오기 때문이다.
+    문자열 하나('수능 사진문항')로 줘도 받는다 — 입력칸에서 그대로 넘어온다.
+    버리기 전에 사용자에게 알리는 일은 화면(MetaDialog)이 한다. 여기서
+    조용히 버리는 것은 '어떤 경로로 들어오든 저장된 태그는 규칙을 지킨다'를
+    보장하기 위한 마지막 관문이다(가져오기·옛 데이터 등).
     """
-    if not tags:
-        return []
     if isinstance(tags, str):
-        tags = tags.replace(",", " ").split()
+        tags = split_tag_input(tags)
+    elif tags:
+        tags = [str(t).strip().lstrip("#").strip() for t in tags]
+    else:
+        return []
     out = []
     for t in tags:
-        t = str(t).strip().lstrip("#").strip()[:TAG_MAX_LEN]
-        if t and t not in out:
+        if t and t not in out and is_valid_tag(t):
             out.append(t)
     return out
 

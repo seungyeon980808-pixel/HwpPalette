@@ -264,7 +264,7 @@ class MetaDialog(tk.Toplevel):
         tk.Entry(self._adv, textvariable=self.tags_var, width=24,
                  font=(FONT, theme.fs(10)), relief="solid", bd=1).grid(
             row=2, column=1, pady=3, padx=(8, 0))
-        tk.Label(self._adv, text="띄어쓰기로 여러 개. 안 달아도 됩니다.",
+        tk.Label(self._adv, text="한글 5글자 이내. 띄어쓰기로 여러 개.",
                  font=(FONT, theme.fs(7)), bg=BG, fg=MUTED).grid(
             row=3, column=1, sticky="w", padx=(8, 0))
         # 이미 쓰고 있는 태그는 눌러서 담는다 — **오타로 태그가 번식하는 것을
@@ -353,8 +353,30 @@ class MetaDialog(tk.Toplevel):
         label = self.label_var.get().strip() or name
         if not self._confirm_label(label):
             return
-        self.result = (name, label, library.normalize_tags(self.tags_var.get()))
+        tags = self._checked_tags()
+        if tags is None:            # 규칙에 어긋난 태그 — 고칠 기회를 준다
+            return
+        self.result = (name, label, tags)
         self.destroy()
+
+    def _checked_tags(self):
+        r"""입력칸의 태그를 검사한다. 통과하면 목록, 아니면 None(저장 중단).
+
+        **조용히 버리지 않는다** — 규칙(한글 5글자)에 어긋난 것을 말없이
+        떨구면 사용자는 "분명히 달았는데 없다"를 겪는다. 무엇이 왜 걸렸는지
+        말하고 창을 열어 둔 채 고치게 한다.
+        """
+        raw = library.split_tag_input(self.tags_var.get())
+        bad = [t for t in raw if not library.is_valid_tag(t)]
+        if bad:
+            messagebox.showwarning(
+                "태그 규칙",
+                "태그는 **한글 5글자 이내**여야 합니다.\n"
+                "(띄어쓰기는 태그를 나누는 구분자입니다)\n\n"
+                "쓸 수 없는 태그: " + ", ".join(bad[:5]),
+                parent=self)
+            return None
+        return library.normalize_tags(raw)
 
     def _confirm_label(self, label):
         r"""라벨이 이미 쓰이고 있으면 물어본다. 계속할지 여부를 반환.
