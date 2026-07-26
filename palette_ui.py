@@ -23,6 +23,7 @@ import hwp_engine
 import library_ui                  # commit_ime · capture_template_dialog 공용
 
 import appinfo
+import screens                     # 창 자리 규칙 (메인 창 옆)
 import theme                       # 색은 theme.py 한 곳에서 (밝게/어둡게)
 import ui_fx                       # 호버 보간 (애플 A안)
 from roundbtn import RoundButton   # 둥근 모서리 버튼
@@ -366,7 +367,7 @@ class SettingsWindow(tk.Toplevel):
         # **내용이 최소 크기**다 — 팔레트 격자가 넓어지면 창도 따라 넓어진다.
         self.minsize(self.winfo_reqwidth(), self.winfo_reqheight())
         # 크기는 지정하지 않는다 — _fit_window 가 내용에 맞춰 잡는다(줄이 늘면 커짐)
-        self.geometry(f"+{max(20, master.winfo_rootx()-660)}+{master.winfo_rooty()}")
+        screens.place_beside(self, master)
 
     # ── 탭 목록 ──
     def _say(self, msg=None):

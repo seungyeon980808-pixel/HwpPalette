@@ -53,6 +53,43 @@ def fits_below(widget, y, h):
     return y + h <= dy + dh
 
 
+def place_beside(win, master, gap=10, follow=True):
+    r"""새 창을 **메인 창 바로 옆**에 붙여 연다 (사용자 결정 2026-07-26).
+
+    창마다 +40+30, -320, -660 처럼 제각각 자리를 잡고 있었다. 그러면 어떤
+    창은 화면 왼쪽 끝에, 어떤 창은 메인 창 위에 겹쳐 떠서 "방금 뭐가 열렸지"를
+    눈으로 찾아야 했다. 규칙을 하나로 한다 —
+      · 기본은 메인 창 **오른쪽 바로 옆**, 위쪽 줄을 맞춰서
+      · 오른쪽에 자리가 없으면 왼쪽 옆
+      · 그것도 없으면 화면 안으로 밀어 넣는다
+    follow=True 면 부모를 따라 최소화되고 늘 부모 위에 뜬다(transient).
+    """
+    try:
+        win.update_idletasks()
+        w, h = win.winfo_reqwidth(), win.winfo_reqheight()
+        # **창틀 기준**으로 계산한다 (2026-07-26).
+        # winfo_rootx/y 는 제목표시줄·테두리를 뺀 '내용의 왼쪽 위'라, 그 값으로
+        # 자리를 잡으면 새 창이 부모보다 30px 쯤 내려가 어긋나 보인다.
+        # geometry() 가 돌려주는 좌표가 창틀 기준이므로 그것을 쓴다.
+        mgeo = master.geometry()                     # 예: "660x600+40+120"
+        pos = mgeo.split("+")
+        mfx, mfy = int(pos[1]), int(pos[2])
+        border = max(0, master.winfo_rootx() - mfx)  # 좌우 테두리 두께
+        dx, dy, dw, dh = desktop_bounds(win)
+        x = mfx + master.winfo_width() + 2 * border + gap
+        if x + w > dx + dw:                 # 오른쪽에 자리가 없으면 왼쪽으로
+            x = mfx - w - gap
+        x, y = clamp_window(win, x, mfy, w, h)
+        win.geometry(f"+{x}+{y}")
+        if follow:
+            try:
+                win.transient(master)
+            except Exception:
+                pass
+    except Exception as e:
+        applog.exc("창 자리 잡기 실패 — 시스템 기본 자리에 둔다", e)
+
+
 def is_on_desktop(widget, x, y, margin=100):
     """그 위치가 지금 붙어 있는 모니터들 안인가 (모니터를 뺐을 때 창 실종 방지)."""
     dx, dy, dw, dh = desktop_bounds(widget)

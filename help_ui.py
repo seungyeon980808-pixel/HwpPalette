@@ -9,6 +9,7 @@ import tkinter as tk
 
 import appinfo
 import help_content
+import screens                     # 창 자리 규칙 (메인 창 옆)
 import theme
 from roundbtn import RoundButton
 
@@ -70,7 +71,7 @@ class HelpWindow(tk.Toplevel):
 
         self._show(0)
         self.update_idletasks()
-        self.geometry(f"+{master.winfo_rootx()+30}+{master.winfo_rooty()+30}")
+        screens.place_beside(self, master)
 
     def _show(self, idx):
         self._cur = idx

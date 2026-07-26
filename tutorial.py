@@ -62,6 +62,8 @@ class Tutorial:
         self._done = False
         self._busy = False      # 다시 그리는 중 (그동안 온 이벤트는 무시)
         self._last_geo = None   # 마지막으로 그린 기준 창의 자리
+        self._dim_geo = []      # 흐림 판들의 자리 (밀기용 캐시)
+        self._coach_geo = None  # 안내창 자리 (밀기용 캐시)
         self._root_topmost = None   # 튜토리얼 동안 잠시 내렸다가 되돌릴 값
 
     def start(self):
@@ -164,14 +166,47 @@ class Tutorial:
             return None
 
     def _on_move(self, _e=None):
-        if self._done or self._reflow_job is not None or self._busy:
+        r"""창이 움직였다 — **자리만 바뀌었으면 그 차이만큼 밀어 준다**.
+
+        예전에는 120ms 기다렸다가 위젯 좌표를 다시 재서 통째로 그렸다.
+        끄는 동안 초당 여덟 번쯤만 갱신되니 흐림 판이 창을 뚝뚝 끊겨 따라왔다
+        (사용자 지적 2026-07-26).
+        지금은 이벤트가 올 때마다 곧바로, 계산 없이 **이동량만큼 geometry 를
+        옮긴다** — 위젯 좌표 조회도, 레이아웃 계산도 없어 부드럽게 붙어 온다.
+        크기가 바뀌었을 때만(창을 늘렸을 때) 예전처럼 다시 잰다.
+        """
+        if self._done or self._busy or self._coach is None:
             return
-        # 자리가 **실제로 바뀌었을 때만** 다시 그린다 (2026-07-26).
-        # 흐림 패널을 만들고 지우는 것 자체가 다시 <Configure> 를 불러,
-        # 그냥 반응하면 다시 그리기가 서로를 부르며 화면이 깜빡였다.
-        if self._geo() == self._last_geo:
+        geo = self._geo()
+        if geo is None or geo == self._last_geo:
             return
-        self._reflow_job = self.root.after(120, self._reflow)
+        old = self._last_geo
+        if old is not None and (geo[2], geo[3]) == (old[2], old[3]):
+            self._shift(geo[0] - old[0], geo[1] - old[1])
+            self._last_geo = geo
+            return
+        # 크기가 달라졌다 = 구멍 모양이 달라진다 → 한 박자 뒤 다시 잰다
+        if self._reflow_job is None:
+            self._reflow_job = self.root.after(80, self._reflow)
+
+    def _shift(self, dx, dy):
+        """흐림 판과 안내창을 그만큼 밀기만 한다 (가장 싼 갱신)."""
+        if not dx and not dy:
+            return
+        self._busy = True
+        try:
+            for i, d in enumerate(self._dim):
+                x, y, w, h = self._dim_geo[i]
+                self._dim_geo[i] = (x + dx, y + dy, w, h)
+                d.geometry(f"{w}x{h}+{x + dx}+{y + dy}")
+            if self._coach is not None and self._coach_geo is not None:
+                x, y = self._coach_geo
+                self._coach_geo = (x + dx, y + dy)
+                self._coach.geometry(f"+{x + dx}+{y + dy}")
+        except Exception:
+            pass            # 창이 사라지는 중 — 다음 갱신에서 정리된다
+        finally:
+            self._busy = False
 
     def _reflow(self):
         self._reflow_job = None
@@ -244,9 +279,12 @@ class Tutorial:
             except Exception as e:
                 applog.exc("흐림 패널 생성 실패 — 강조 없이 계속", e)
                 break
+        self._dim_geo = []
         for d, (x, y, ww, hh) in zip(self._dim, rects):
+            g = (int(x), int(y), int(ww), int(hh))
+            self._dim_geo.append(g)
             try:
-                d.geometry(f"{int(ww)}x{int(hh)}+{int(x)}+{int(y)}")
+                d.geometry(f"{g[2]}x{g[3]}+{g[0]}+{g[1]}")
             except Exception:
                 pass
 
@@ -359,6 +397,7 @@ class Tutorial:
                 y = max(by - 40, min(y, by + bh + 40 - ch))
             x, y = screens.clamp_window(c, x, y, cw, ch)
             c.geometry(f"+{x}+{y}")
+            self._coach_geo = (x, y)    # 밀기(_shift)가 기준으로 삼는 자리
             c.lift()
         except Exception as e:
             applog.exc("안내창 위치 잡기 실패 — 기본 자리에 둔다", e)
@@ -444,7 +483,7 @@ class Picker(tk.Toplevel):
             self._row(c)
         tk.Frame(self, bg=BG, height=8).pack()
         self.update_idletasks()
-        self.geometry(f"+{master.winfo_rootx() + 40}+{master.winfo_rooty() + 40}")
+        screens.place_beside(self, master)
 
     def _row(self, course):
         row = tk.Frame(self, bg=ROWBG, highlightbackground=BORDER,

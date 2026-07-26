@@ -29,6 +29,7 @@ import settings
 
 import appinfo
 import form_markdown               # 양식→AI 프롬프트 (기획 18번)
+import screens                     # 창 자리 규칙 (메인 창 옆)
 import theme                       # 색은 theme.py 한 곳에서 (밝게/어둡게)
 import ui_fx                       # 호버 보간 (애플 A안)
 from roundbtn import RoundButton   # 둥근 모서리 버튼 (애플 A안)
@@ -580,7 +581,7 @@ class LibraryManager(tk.Toplevel):
 
         self._switch_tab("서식")
         self.update_idletasks()
-        self.geometry(f"+{master.winfo_rootx()-320}+{master.winfo_rooty()}")
+        screens.place_beside(self, master)
 
     # ── 키보드로 목록 이동 ───────────────────────────
     def _move_sel(self, delta, horizontal=False):
@@ -1575,7 +1576,7 @@ class ShareDialog(tk.Toplevel):
                  side="left", padx=(8, 0))
 
         self.update_idletasks()
-        self.geometry(f"+{master.winfo_rootx()+30}+{master.winfo_rooty()+50}")
+        screens.place_beside(self, master)
 
     def _cat_key(self):
         label = self.cat_var.get()
