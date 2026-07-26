@@ -730,7 +730,10 @@ def _make_practice_doc():
         for text in ("학년/반", "\\", "학생 이름", "\\"):
             hwp_engine.insert_plain(text)
             hwp_engine.hwp.HAction.Run("TableRightCell")
-        hwp_engine.exit_table()
+        # 커서를 **표 안에 남겨 둔다** (2026-07-26 실측).
+        # 표 밖으로 나오면 다음 단계에서 '표 안을 클릭' 을 안 한 사람은
+        # 캡처가 "선택 없음" 으로 실패한다. 표 안에 있으면 그대로 눌러도
+        # 표 전체가 자동 선택된다(auto_select_table_if_inside 확인).
         notify("ok", "연습용 표를 한글에 만들었습니다")
         return True
     except Exception as e:
@@ -774,6 +777,7 @@ class _TutorialCtx:
         lambda: bool(fn_open_library(cat="템플릿")))
     open_library_char = staticmethod(lambda: bool(fn_open_library(cat="문자")))
     open_library_form = staticmethod(lambda: bool(fn_open_library(cat="양식")))
+    open_library_photo = staticmethod(lambda: bool(fn_open_library(cat="사진")))
     open_palette_settings = staticmethod(
         lambda: bool(fn_open_palette_settings()))
     palette_grid = staticmethod(
@@ -781,7 +785,13 @@ class _TutorialCtx:
 
     @staticmethod
     def close_opened():
-        """튜토리얼이 열어 둔 창을 닫는다 — 끝난 뒤 화면에 남지 않게."""
+        """튜토리얼이 열어 둔 창을 닫는다.
+
+        코스가 끝날 때뿐 아니라 **단계 중간에도** 부른다 — 설정 창에서 할 일이
+        끝났는데 그대로 떠 있으면 그다음에 짚는 메인 화면을 가린다
+        (사용자 지적 2026-07-26: "필요없어진 위젯은 알아서 창을 닫겠습니다").
+        next_action 으로도 쓰이므로 True 를 돌려준다(코스를 계속 진행).
+        """
         for key in ("library", "settings"):
             win = _open_windows.get(key)
             try:
@@ -789,6 +799,7 @@ class _TutorialCtx:
                     win.destroy()
             except Exception:
                 pass
+        return True
 
 
 def _start_tutorial():
