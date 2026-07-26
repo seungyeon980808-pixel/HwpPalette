@@ -69,6 +69,18 @@ class SelectionReadTest(unittest.TestCase):
         self.assertEqual(got, "다음 중 \\굵게{옳지 않은} 것은?")
         self.assertEqual(hwp_engine.hwp.copied, 0)      # Copy 도 안 눌렀다
 
+    def test_한글이_남긴_숫자_엔티티는_글자로_되돌린다(self):
+        r"""핵심 회귀 (실측 2026-07-26): GetTextFile 은 줄표(—)를 &#8212; 로
+        바꿔서 준다. 그대로 두면 — 가 든 공문 문장의 변환이 다 어긋난다."""
+        self._use(FakeHwp(block="붙임 &#8212; 계획서 1부 &#8220;안&#8221;",
+                          mode=1))
+        self.assertEqual(hwp_engine.read_selection_text(),
+                         "붙임 — 계획서 1부 “안”")
+
+    def test_엔티티가_없으면_원문_그대로(self):
+        self.assertEqual(hwp_engine._unescape_entities("50% <표>&값"),
+                         "50% <표>&값")
+
     def test_SelectionMode가_0이어도_선택_내용이_있으면_읽는다(self):
         self._use(FakeHwp(block="\\원1\\ \\섭씨\\", mode=0))
         self.assertEqual(hwp_engine.read_selection_text(), "\\원1\\ \\섭씨\\")

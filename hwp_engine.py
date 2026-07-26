@@ -22,6 +22,7 @@ Tkinter/UI에 의존하지 않는다. 표/박스의 모든 치수·글꼴·테�
 """
 
 import os
+import re
 import time
 
 from pyhwpx import Hwp
@@ -267,6 +268,20 @@ def copy_selection():
     hwp.HAction.Run("Copy")
 
 
+def _unescape_entities(text):
+    r"""한글 TEXT 내보내기가 남긴 &#8212; 꼴 숫자 엔티티를 글자로 되돌린다.
+
+    실측 (2026-07-26): GetTextFile("TEXT", ...) 은 줄표(—) 같은 일부 문자를
+    `&#8212;` 로 바꿔서 준다 (클립보드 경유는 원문 그대로). 그대로 두면
+    — 가 든 줄을 변환할 때 엉뚱한 글자가 문서에 들어가고, 제자리 치환은
+    바꿀 자리를 못 찾는다. 사용자가 문서에 진짜로 `&#8212;` 라고 칠 가능성은
+    사실상 없으므로 일괄 복원한다.
+    """
+    if "&#" not in text:
+        return text
+    return re.sub(r"&#(\d+);", lambda m: chr(int(m.group(1))), text)
+
+
 def read_selection_direct():
     r"""선택 영역을 **클립보드를 거치지 않고** 한글에서 바로 읽는다.
 
@@ -278,7 +293,7 @@ def read_selection_direct():
     프로그램이 클립보드를 점유해도 영향을 받지 않는다.
     """
     try:
-        return hwp.GetTextFile("TEXT", "saveblock") or ""
+        return _unescape_entities(hwp.GetTextFile("TEXT", "saveblock") or "")
     except Exception as e:
         applog.exc("선택 영역 직접 읽기 실패 — 클립보드로 넘어감", e)
         return ""
