@@ -753,7 +753,7 @@ def _make_practice_doc():
         return False
 
 
-def _make_example_doc(codes, course_title=""):
+def _make_example_doc(examples, course_title=""):
     r"""연습용 문서를 새로 열고 그 코스의 예문을 **모두 적어 준다**.
 
     왜 (사용자 요청 2026-07-26): 실습 단계에서 "복사해 한글에 붙여넣고 선택해
@@ -761,6 +761,10 @@ def _make_example_doc(codes, course_title=""):
     붙이게 되고, 붙여넣기가 잘못되면 그다음 실습이 전부 막힌다.
     예문이 이미 적힌 새 문서를 열어 주면 **드래그해서 누르기 한 번**만 남고,
     같은 화면에서 예문이 무엇으로 바뀌는지 위아래로 비교하며 볼 수 있다.
+
+    examples 는 (단계 제목, 예문) 짝의 목록이다. **제목을 함께 적는다** —
+    번호만 붙여 두니 "예문 4의 정체가 뭐냐"가 됐다(사용자 지적 2026-07-26).
+    어느 단계에서 쓸 예문인지 문서에서 바로 읽혀야 한다.
 
     코스마다 처음 실습 단계에 걸린다(tutorials.py 의 _with_example_doc).
     실패하면 False — 튜토리얼은 거기서 멈춘다(한글이 없으면 나머지도 못 한다).
@@ -770,13 +774,16 @@ def _make_example_doc(codes, course_title=""):
     try:
         hwp_engine.hwp.FileNew()
         lines = [f"[연습] {course_title}".strip(),
-                 "예문을 한 덩어리씩 드래그로 선택한 뒤 팔레트 버튼을 누르세요.",
+                 "안내창이 말하는 예문을 아래에서 찾아 드래그로 선택한 뒤,",
+                 "팔레트의 버튼을 누르세요. 아래로 내려가며 하나씩 해 보면 됩니다.",
                  # 줄표(—)는 한글 TEXT 내보내기에서 &#8212; 로 새는 것을 봤으므로
                  # 연습 문서에는 쓰지 않는다 (실측 2026-07-26)
                  "마음껏 고쳐도 됩니다. 이 문서는 연습용이라 저장하지 않습니다.",
                  ""]
-        for i, code in enumerate(codes, 1):
-            lines.append(f"-- 예문 {i} --")
+        for i, item in enumerate(examples, 1):
+            title, code = item if isinstance(item, (tuple, list)) else ("", item)
+            head = f"[실습 {i}] {title}".rstrip() if title else f"[실습 {i}]"
+            lines.append(head)
             lines.extend(str(code).split("\n"))
             lines.append("")
         for n, text in enumerate(lines):
@@ -788,7 +795,7 @@ def _make_example_doc(codes, course_title=""):
             hwp_engine.hwp.MoveDocBegin()       # 첫 예문이 보이는 자리에서 시작
         except Exception as e:
             applog.exc("연습 문서 커서 되돌리기 실패 (무해)", e)
-        notify("ok", f"연습용 예문 {len(codes)}개를 한글에 적어 두었습니다")
+        notify("ok", f"연습용 예문 {len(examples)}개를 한글에 적어 두었습니다")
         return True
     except Exception as e:
         report_error("연습용 예문 문서 만들기 실패", e)
@@ -825,10 +832,14 @@ class _TutorialCtx:
     library_more_btn = staticmethod(lambda: _library_widget("act_more"))
     library_side = staticmethod(lambda: _library_widget("side"))
     library_list = staticmethod(lambda: _library_widget("_canvas"))
+    # 고른 것의 '부르는 법'이 나오는 하단 줄 + 주 동작 버튼 — 기호판과 함께
+    # 짚어야 한다 (따로 짚으면 정작 봐야 할 아래쪽이 흐림에 가린다)
+    library_hint = staticmethod(lambda: _library_widget("sel_hint"))
+    library_act_main = staticmethod(lambda: _library_widget("act_main"))
     ensure_hwp = staticmethod(lambda: ensure_hwp())
     make_practice_doc = staticmethod(lambda: _make_practice_doc())
     make_example_doc = staticmethod(
-        lambda codes, title="": _make_example_doc(codes, title))
+        lambda examples, title="": _make_example_doc(examples, title))
     open_library_template = staticmethod(
         lambda: bool(fn_open_library(cat="템플릿")))
     open_library_char = staticmethod(lambda: bool(fn_open_library(cat="문자")))

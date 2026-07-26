@@ -45,6 +45,53 @@ _DIM_ALPHA = 0.55       # 흐림 정도 — 글자가 읽히되 '지금 여기�
 _active = None
 
 
+# ── 짚는 대상은 위젯 하나가 아닐 수도 있다 (2026-07-26 사용자 지적) ──
+#
+# "기호를 누르면 창 아래에 부르는 법이 나옵니다" 처럼, 눌러야 할 곳과 결과가
+# 보이는 곳이 떨어져 있는 단계가 있다. 하나만 짚으면 정작 봐야 할 아래쪽이
+# 흐림에 가려 안 보였다. 그래서 커리큘럼이 위젯을 **여러 개** 돌려줄 수 있게
+# 하고, 그 전체를 감싸는 사각형을 구멍으로 쓴다.
+def _widgets(w):
+    """대상을 리스트로 정규화 — 살아 있는 것만."""
+    if w is None:
+        return []
+    items = w if isinstance(w, (list, tuple)) else [w]
+    out = []
+    for it in items:
+        try:
+            if it is not None and it.winfo_exists():
+                out.append(it)
+        except Exception:
+            pass
+    return out
+
+
+def _rect_of(w):
+    """대상(들)을 감싸는 화면 좌표 사각형 (x, y, 너비, 높이). 없으면 None."""
+    ws = _widgets(w)
+    if not ws:
+        return None
+    try:
+        x1 = min(i.winfo_rootx() for i in ws)
+        y1 = min(i.winfo_rooty() for i in ws)
+        x2 = max(i.winfo_rootx() + i.winfo_width() for i in ws)
+        y2 = max(i.winfo_rooty() + i.winfo_height() for i in ws)
+    except Exception:
+        return None
+    return (x1, y1, x2 - x1, y2 - y1)
+
+
+def _base_of(w, fallback):
+    """대상이 들어 있는 창 (없으면 fallback)."""
+    ws = _widgets(w)
+    if not ws:
+        return fallback
+    try:
+        return ws[0].winfo_toplevel()
+    except Exception:
+        return fallback
+
+
 class Tutorial:
 
     def __init__(self, root, steps, on_done=None, title="", on_cleanup=None):
@@ -121,16 +168,12 @@ class Tutorial:
         if step.get("widget"):
             try:
                 w = step["widget"]()
-                if w is None or not w.winfo_exists():
-                    w = None
+                w = _widgets(w) or None         # 여러 개일 수도 있다
             except Exception as e:
                 applog.exc(f"튜토리얼 {i}단계 대상 없음 — 안내만 보여줌", e)
                 w = None
         self._target = w
-        try:
-            self._base = w.winfo_toplevel() if w is not None else self.root
-        except Exception:
-            self._base = self.root
+        self._base = _base_of(w, self.root)
         self._raise_over(self._base)    # 흐림이 그 창 위에 오도록 z-순서 정리
         self._draw_dim(w)               # 대상만 남기고 나머지를 흐리게
         if w is not None:
@@ -304,9 +347,8 @@ class Tutorial:
             return
         self._busy = True                   # 다시 그리는 동안 온 이벤트는 무시
         try:
-            w = self._target
-            if w is not None and not w.winfo_exists():
-                w = self._target = None
+            w = _widgets(self._target) or None
+            self._target = w
             self._draw_dim(w)               # 있는 패널을 **옮긴다** (재생성 아님)
             self._draw_halo(w)
             self._place_coach(self._coach, w)
@@ -326,23 +368,20 @@ class Tutorial:
         대상이 다른 창(물감 설정 등)에 있으면 **그 창**을 기준으로 덮는다.
         짚을 것이 없는 단계(한글에서 할 일)는 이 프로그램 창 전체를 덮어
         "지금은 여기가 아니라 한글을 보라"는 뜻이 되게 한다.
+        대상이 여러 개면 그 전체를 감싸는 사각형을 구멍으로 쓴다.
         """
-        base = self.root
-        if w is not None:
-            try:
-                base = w.winfo_toplevel()
-            except Exception:
-                base = self.root
+        base = _base_of(w, self.root)
         bx, by = base.winfo_rootx(), base.winfo_rooty()
         bw, bh = base.winfo_width(), base.winfo_height()
         if bw <= 1 or bh <= 1:
             return
-        if w is None:
+        hole = _rect_of(w)
+        if hole is None:
             rects = [(bx, by, bw, bh)]
         else:
             p = _HOLE_PAD
-            tx, ty = w.winfo_rootx() - p, w.winfo_rooty() - p
-            tw, th = w.winfo_width() + 2 * p, w.winfo_height() + 2 * p
+            tx, ty = hole[0] - p, hole[1] - p
+            tw, th = hole[2] + 2 * p, hole[3] + 2 * p
             rects = [
                 (bx, by, bw, ty - by),                          # 위
                 (bx, ty + th, bw, by + bh - (ty + th)),         # 아래
@@ -363,12 +402,24 @@ class Tutorial:
                 d = tk.Toplevel(self.root)
                 d.wm_overrideredirect(True)
                 d.configure(bg="#000000")
-                d.attributes("-topmost", True)
                 d.attributes("-alpha", _DIM_ALPHA)
                 self._dim.append(d)
             except Exception as e:
                 applog.exc("흐림 패널 생성 실패 — 강조 없이 계속", e)
                 break
+        # 흐림은 **덮는 창에 딸린 것**이어야 한다 (사용자 지적 2026-07-26).
+        #
+        # 예전엔 '항상 위'였다. 그래서 다른 창(물감·팔레트 설정)이 그 창 위에
+        # 겹쳐 있어도 회색 판이 그 창을 덮어, 남의 창에 회색이 묻은 것처럼
+        # 보였다. transient(=주인 창 지정)으로 바꾸면 윈도우가 z-순서를
+        # 관리해 준다: 주인 창 바로 위에 붙고, 무관한 다른 창이 앞에 오면
+        # 회색도 함께 가려진다 — 화면이 실제 관계대로 보인다.
+        for d in self._dim:
+            try:
+                if d.transient() != str(base):
+                    d.transient(base)
+            except Exception:
+                pass
         self._dim_geo = []
         for d, (x, y, ww, hh) in zip(self._dim, rects):
             g = (int(x), int(y), int(ww), int(hh))
@@ -380,7 +431,9 @@ class Tutorial:
                 # 위치는 이전 값에 머무는 일이 있다 — 흐림이 엉뚱한 자리를
                 # 덮던 원인. update_idletasks 로 요청을 즉시 흘려보내면 맞는다.
                 d.update_idletasks()
-                d.lift()            # 대상 창 위로 — 안 그러면 회색이 안 보인다
+                # 대상 창 **바로 위**로. lift() 를 인자 없이 부르면 맨 위로
+                # 올라가 다른 창까지 덮는다 (위 transient 설명과 같은 이유).
+                d.lift(base)
             except Exception:
                 pass
 
@@ -404,12 +457,13 @@ class Tutorial:
             except Exception:
                 pass
         self._halo = []
-        if w is None:
+        hole = _rect_of(w)
+        if hole is None:
             return
-        base = w.winfo_toplevel()
-        rx = w.winfo_rootx() - base.winfo_rootx()
-        ry = w.winfo_rooty() - base.winfo_rooty()
-        ww, wh = w.winfo_width(), w.winfo_height()
+        base = _base_of(w, self.root)
+        rx = hole[0] - base.winfo_rootx()
+        ry = hole[1] - base.winfo_rooty()
+        ww, wh = hole[2], hole[3]
         p = _HALO_PX
         rects = ((rx - p, ry - p, ww + 2 * p, p),          # 위
                  (rx - p, ry + wh, ww + 2 * p, p),         # 아래
@@ -433,6 +487,19 @@ class Tutorial:
         tk.Label(head, text=f"{self.i + 1} / {len(self.steps)}",
                  font=(FONT, theme.fs(8), "bold"), bg=ACCENT_SOFT, fg=ACCENT,
                  padx=7, pady=1).pack(side="left")
+        # 설명인지 실습인지 **한눈에** (사용자 요청 2026-07-26).
+        #
+        # 읽고 넘기면 되는 단계와 한글에서 직접 해 봐야 하는 단계가 같은
+        # 얼굴이라, 어디서 손을 움직여야 하는지 알기 어려웠다. 실습에는 파란
+        # 배지를, 설명에는 회색 배지를 달아 성격을 먼저 알린다.
+        step = self.steps[self.i] if isinstance(self.steps[self.i], dict) else {}
+        code = step.get("code")
+        practice = bool(code) or step.get("kind") == "실습"
+        tk.Label(head, text="실습" if practice else "설명",
+                 font=(FONT, theme.fs(8), "bold"),
+                 bg=ACCENT if practice else ROWBG,
+                 fg=CARD if practice else MUTED,
+                 padx=6, pady=1).pack(side="left", padx=(4, 0))
         if self.title:
             tk.Label(head, text=self.title, font=(FONT, theme.fs(8)),
                      bg=CARD, fg=MUTED).pack(side="left", padx=(6, 0))
@@ -441,9 +508,17 @@ class Tutorial:
                  justify="left", wraplength=270).pack(fill="x", pady=(2, 4))
         tk.Label(body, text=text, font=(FONT, theme.fs(9)), bg=CARD, fg=TEXT,
                  justify="left", wraplength=270, padx=12).pack(anchor="w")
-        code = self.steps[self.i].get("code") if isinstance(
-            self.steps[self.i], dict) else None
         if code:
+            # 설명과 과제를 눈으로 갈라 놓는다 — 구분선 + '실습 과제' 머리표
+            tk.Frame(body, bg=BORDER, height=1).pack(fill="x", padx=12,
+                                                     pady=(10, 0))
+            tk.Label(body, text="실습 과제", font=(FONT, theme.fs(8), "bold"),
+                     bg=CARD, fg=ACCENT, anchor="w", padx=12).pack(
+                     fill="x", pady=(6, 0))
+            tk.Label(body, text=step.get("task")
+                     or "한글 연습 문서에서 이 부분을 드래그로 선택하고 누르세요.",
+                     font=(FONT, theme.fs(8)), bg=CARD, fg=MUTED, anchor="w",
+                     justify="left", wraplength=270, padx=12).pack(fill="x")
             self._code_box(body, code)
         foot = tk.Frame(body, bg=CARD, padx=12, pady=8)
         foot.pack(fill="x")
@@ -535,8 +610,9 @@ class Tutorial:
                 y = by - ch - 10
             else:
                 # 짚은 것과 같은 높이로. 창 범위를 크게 벗어나지 않게 잡는다.
-                anchor_cy = (w.winfo_rooty() + w.winfo_height() // 2
-                             if w is not None else by + bh // 3)
+                hole = _rect_of(w)
+                anchor_cy = (hole[1] + hole[3] // 2 if hole
+                             else by + bh // 3)
                 y = anchor_cy - ch // 3
                 y = max(by - 40, min(y, by + bh + 40 - ch))
             x, y = screens.clamp_window(c, x, y, cw, ch)
@@ -579,8 +655,10 @@ class Tutorial:
     def _finish(self, completed=False):
         r"""튜토리얼 종료. completed=True 는 마지막 단계까지 마친 것.
 
-        '그만' 으로 끝냈을 때는 on_done(목록 다시 열기)을 부르지 않는다 —
-        끄려고 눌렀는데 다른 창이 뜨면 "안 닫힌다"로 읽힌다 (사용자 지적).
+        어느 쪽으로 끝나든 **튜토리얼이 만든 창은 다 사라진다** — 흐림·테두리·
+        안내창은 여기서, 튜토리얼이 열어 둔 설정 창은 on_cleanup 이 닫는다.
+        on_done 은 코스를 다 마친 경우에만 부르는 뒷일 자리다(지금은 아무도
+        쓰지 않는다 — 끝나면 목록을 다시 열던 동작을 뺐다, 2026-07-26).
         """
         global _active
         if self._done:
@@ -678,13 +756,14 @@ class Picker(tk.Toplevel):
 
     def _start(self, course):
         self.destroy()          # 목록은 비켜 준다 — 화면을 가리면 안 된다
-        # 코스가 끝나면 목록으로 돌아온다 — 이어서 다음 코스를 하기 쉽게
+        # 코스가 끝나면 **아무 창도 남기지 않는다** (사용자 요청 2026-07-26).
+        #
+        # 예전에는 목록을 다시 열어 줬다("이어서 다음 코스를 하기 쉽게").
+        # 그런데 실습을 끝낸 사람이 원하는 것은 방금 배운 것을 자기 문서에
+        # 써 보는 것이지 목록이 아니었다 — 끝냈는데 창이 또 뜨니 닫는 일이
+        # 하나 더 늘었다. 다음 코스는 ? → 튜토리얼 로 언제든 다시 온다.
         Tutorial(self.master_win, course["steps"], title=course["title"],
-                 on_cleanup=self.on_cleanup,
-                 on_done=lambda: self.master_win.after(
-                     300, lambda: open_picker(self.master_win, self.courses,
-                                              on_cleanup=self.on_cleanup))
-                 ).start()
+                 on_cleanup=self.on_cleanup).start()
 
 
 def open_picker(master, courses, on_cleanup=None):

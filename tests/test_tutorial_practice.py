@@ -7,6 +7,7 @@ r"""튜토리얼 연습 문서 회귀 테스트 (사용자 요청 2026-07-26).
 지켜야 할 것:
   · 실습(code)이 있는 코스는 **첫 실습 단계에서 한 번** 연습 문서를 연다
   · 그 코스의 예문을 **빠짐없이** 넘긴다 (예문을 두 곳에 적어 두지 않는다)
+  · 예문마다 **단계 제목을 함께** 넘긴다 ("예문 4가 뭐냐"가 되지 않게)
   · 이미 준비(action)가 있는 단계는 덮어쓰지 않는다 (템플릿 코스의 연습용 표)
 """
 
@@ -25,8 +26,8 @@ class FakeCtx:
     def __init__(self):
         self.calls = []
 
-    def make_example_doc(self, codes, title=""):
-        self.calls.append((title, list(codes)))
+    def make_example_doc(self, examples, title=""):
+        self.calls.append((title, list(examples)))
         return True
 
     def __getattr__(self, name):
@@ -41,6 +42,9 @@ class ExampleDocWiringTest(unittest.TestCase):
 
     def _codes(self, course):
         return [s["code"] for s in course["steps"] if s.get("code")]
+
+    def _titles(self, course):
+        return [s.get("title", "") for s in course["steps"] if s.get("code")]
 
     def test_실습이_있는_코스는_연습_문서를_한_번만_연다(self):
         for course in self.courses:
@@ -64,8 +68,23 @@ class ExampleDocWiringTest(unittest.TestCase):
                     break
             self.assertEqual(len(self.ctx.calls), 1, course["key"])
             title, passed = self.ctx.calls[0]
-            self.assertEqual(passed, codes, course["key"])
+            self.assertEqual([c for _, c in passed], codes, course["key"])
+            self.assertEqual([t for t, _ in passed], self._titles(course),
+                             course["key"])
             self.assertEqual(title, course["title"])
+
+    def test_예문마다_단계_제목이_붙는다(self):
+        """문서에 '[실습 4] 시험문제는 전용 문법으로' 처럼 적히게."""
+        for course in self.courses:
+            if not self._codes(course):
+                continue
+            self.ctx.calls.clear()
+            for step in course["steps"]:
+                if step.get("code") and step.get("action"):
+                    step["action"]()
+                    break
+            for step_title, _code in self.ctx.calls[0][1]:
+                self.assertTrue(step_title, course["key"])
 
     def test_첫_실습_단계에_걸린다(self):
         """뒤쪽 실습에 걸리면 앞 단계에서 붙여넣을 곳이 없다."""

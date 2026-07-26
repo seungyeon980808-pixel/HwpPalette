@@ -103,8 +103,10 @@ class SelectionReadTest(unittest.TestCase):
         type(broken).SelectionMode = mock.PropertyMock(
             side_effect=RuntimeError("COM 끊김"))
         self._use(broken)
-        self.assertEqual(hwp_engine.read_selection_text(), "")
-        self.assertFalse(hwp_engine.has_selection())
+        # 일부러 터뜨리는 테스트라 app.log 에 오류를 남기지 않는다
+        with mock.patch("hwp_engine.applog.exc"):
+            self.assertEqual(hwp_engine.read_selection_text(), "")
+            self.assertFalse(hwp_engine.has_selection())
 
 
 class ClipboardModuleTest(unittest.TestCase):
