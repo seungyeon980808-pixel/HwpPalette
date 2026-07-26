@@ -758,6 +758,11 @@ class _TutorialCtx:
     gear = staticmethod(lambda: _gear)
     help_btn = staticmethod(lambda: _help_btn)
     conn_dot = staticmethod(lambda: conn_dot)
+    convert_btn = staticmethod(
+        lambda: _builtin_btns.get("convert") or quick_area)
+    special_btn = staticmethod(
+        lambda: _builtin_btns.get("special") or quick_area)
+    photo_btn = staticmethod(lambda: _builtin_btns.get("photo") or quick_area)
     library_add_btn = staticmethod(lambda: _library_widget("add_btn"))
     library_edit_btn = staticmethod(lambda: _library_widget("act_edit"))
     library_more_btn = staticmethod(lambda: _library_widget("act_more"))
@@ -1001,6 +1006,8 @@ doc_zone = tk.Frame(root, bg=SUBBG)
 doc_zone.pack(fill="x", pady=(0, 10))
 
 _pal_state = {"tab": 0}
+# 도구 블럭(마크다운 변환 등) 버튼 — key → 위젯. 튜토리얼이 짚을 때 쓴다.
+_builtin_btns = {}
 
 # 팔레트 고르기 = **이름표 옆 드롭다운** (사용자 결정 2026-07-25).
 #
@@ -1174,6 +1181,7 @@ def render_palette():
     # 블럭이 바뀌었을 수 있으므로 묵은 격자를 재사용하면 안 된다.
     _pal_state["tab_frames"] = {}
     _pal_state["shown_frame"] = None
+    _builtin_btns.clear()               # 도구 블럭 이름표 (튜토리얼이 쓴다)
     for w in pal_area.winfo_children():
         w.destroy()
     for w in quick_area.winfo_children():
@@ -1421,6 +1429,10 @@ def _make_block_button(parent, blk, span=1):
                       bg=bg, fg=theme.text_on(bg), radius=8, font=_font(size),
                       outline=BORDER, focus_color=ACCENT,
                       zone_bg=parent.cget("bg"))
+    # 도구 블럭은 이름표를 달아 둔다 — 튜토리얼이 '마크다운 변환' 버튼을
+    # 짚으려면 그 위젯을 찾을 수 있어야 한다 (2026-07-26).
+    if blk.get("type") == "builtin" and blk.get("key"):
+        _builtin_btns[blk["key"]] = btn
     # 이름이 안 잘려도 '무엇이 들었는지'를 보여주므로 늘 붙인다 (UI 제안 6)
     _add_tooltip(btn, _block_tooltip(blk))
     return btn

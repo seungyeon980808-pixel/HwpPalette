@@ -38,6 +38,12 @@ _HOLE_PAD = 7           # 흐림에서 파낼 구멍이 대상보다 얼마나 �
 _DIM_ALPHA = 0.55       # 흐림 정도 — 글자가 읽히되 '지금 여기가 아니다'가 보이게
 
 
+# 지금 돌고 있는 튜토리얼 (2026-07-26). 하나만 살아 있어야 한다 —
+# 이전 것을 안 끄고 새로 시작하면 흐림 패널이 겹쳐 남아 화면이 지저분해지고,
+# '완료'를 눌러도 안 사라지는 것처럼 보인다 (사용자 지적).
+_active = None
+
+
 class Tutorial:
 
     def __init__(self, root, steps, on_done=None, title=""):
@@ -49,17 +55,29 @@ class Tutorial:
         self._halo = []         # 테두리 조각 4개
         self._dim = []          # 흐림 패널 (대상만 남기고 덮는다)
         self._coach = None
+        self._base = root       # 지금 단계가 기준으로 삼는 창
+        self._target = None     # 지금 단계가 짚는 위젯
+        self._binds = []        # (위젯, 이벤트, funcid) — 끝낼 때 떼기 위해
+        self._reflow_job = None
+        self._done = False
 
     def start(self):
+        global _active
+        if _active is not None and _active is not self:
+            _active._finish()           # 앞엣것을 확실히 끝내고 시작한다
+        _active = self
         if not self.steps:
+            self._finish()
             return
         self._show(0)
 
     # ── 한 단계 ─────────────────────────────────────
     def _show(self, i):
+        if self._done:
+            return
         self._clear()
         if i >= len(self.steps):
-            self._finish()
+            self._finish(completed=True)
             return
         self.i = i
         step = self.steps[i]
@@ -83,11 +101,66 @@ class Tutorial:
             except Exception as e:
                 applog.exc(f"튜토리얼 {i}단계 대상 없음 — 안내만 보여줌", e)
                 w = None
+        self._target = w
+        try:
+            self._base = w.winfo_toplevel() if w is not None else self.root
+        except Exception:
+            self._base = self.root
         self._draw_dim(w)               # 대상만 남기고 나머지를 흐리게
         if w is not None:
             self._draw_halo(w)
         self._draw_coach(w, step["title"], step["text"],
                          last=(i == len(self.steps) - 1))
+        self._track()                   # 창이 움직이면 따라오게
+
+    # ── 창을 따라다니기 (2026-07-26 사용자 지적) ────
+    #
+    # 흐림·테두리·코치는 화면 좌표로 찍어 둔 별개의 창이라, 프로그램 창을
+    # 옮기면 제자리에 남아 회색 판이 엉뚱한 곳에 떠 있었다. 창이 움직이거나
+    # 크기가 바뀌면 지금 단계를 그대로 다시 그린다.
+    def _track(self):
+        for wdg in {self.root, self._base}:
+            try:
+                fid = wdg.bind("<Configure>", self._on_move, add="+")
+                self._binds.append((wdg, "<Configure>", fid))
+            except Exception:
+                pass
+
+    def _untrack(self):
+        for wdg, ev, fid in self._binds:
+            try:
+                wdg.unbind(ev, fid)
+            except Exception:
+                pass
+        self._binds = []
+
+    def _on_move(self, _e=None):
+        if self._done or self._reflow_job is not None:
+            return
+        # 창을 끄는 동안 <Configure> 가 수십 번 온다 — 한 박자 몰아서 한 번만
+        self._reflow_job = self.root.after(60, self._reflow)
+
+    def _reflow(self):
+        self._reflow_job = None
+        if self._done or self._coach is None:
+            return
+        try:
+            w = self._target
+            if w is not None and not w.winfo_exists():
+                w = self._target = None
+            self._clear_dim()
+            for f in self._halo:
+                try:
+                    f.destroy()
+                except Exception:
+                    pass
+            self._halo = []
+            self._draw_dim(w)
+            if w is not None:
+                self._draw_halo(w)
+            self._place_coach(self._coach, w)
+        except Exception as e:
+            applog.exc("튜토리얼 위치 갱신 실패 — 안내는 그대로 둔다", e)
 
     def _draw_dim(self, w):
         r"""**눌러야 할 것만 남기고 나머지를 흐리게** (사용자 결정 2026-07-26).
@@ -197,22 +270,37 @@ class Tutorial:
                          bg=CARD, fg=MUTED, cursor="hand2")
         quit_.pack(side="right", padx=(0, 12))
         quit_.bind("<Button-1>", lambda e: self._finish())
-        # 대상 오른쪽 옆. 그 모니터를 벗어나면 왼쪽으로 넘긴다.
-        # 기준은 **모든 모니터를 합친 범위** — 주 모니터 크기로만 재면 왼쪽
-        # 모니터(x 가 음수)에서 안내가 딴 화면으로 튄다 (2026-07-26).
-        c.update_idletasks()
-        cw, ch = c.winfo_reqwidth(), c.winfo_reqheight()
-        dx, _dy, dw, _dh = screens.desktop_bounds(c)
-        if w is None:       # 짚을 위젯이 없는 단계 — 이 창 오른쪽에 세워 둔다
-            x = self.root.winfo_rootx() + self.root.winfo_width() + 12
-            y = self.root.winfo_rooty() + 60
-        else:
-            x = w.winfo_rootx() + w.winfo_width() + 12
-            y = w.winfo_rooty()
-            if x + cw > dx + dw:
-                x = w.winfo_rootx() - cw - 12
-        x, y = screens.clamp_window(c, x, y, cw, ch)
-        c.geometry(f"+{x}+{y}")
+        c.bind("<Escape>", lambda e: self._finish())
+        self._place_coach(c, w)
+
+    def _place_coach(self, c, w):
+        r"""안내창은 **창 바깥 위쪽**에 띄운다 (사용자 결정 2026-07-26).
+
+        대상 옆에 붙였더니 안내창이 프로그램 화면을 덮어, 정작 짚어 준 곳을
+        가리는 일이 잦았다. 창 위쪽 바깥에 두면 화면은 하나도 안 가리면서
+        시선은 '위 안내 → 아래 강조'로 자연스럽게 흐른다.
+        위에 자리가 없으면(창이 화면 맨 위) 아래쪽 바깥으로 내린다.
+        """
+        try:
+            c.update_idletasks()
+            cw, ch = c.winfo_reqwidth(), c.winfo_reqheight()
+            base = self._base if self._base.winfo_exists() else self.root
+            bx, by = base.winfo_rootx(), base.winfo_rooty()
+            bw, bh = base.winfo_width(), base.winfo_height()
+            # 가로: 짚은 것과 같은 줄에 오도록 대상 중심에 맞추되 창 폭 안에서
+            anchor_cx = (w.winfo_rootx() + w.winfo_width() // 2
+                         if w is not None else bx + bw // 2)
+            x = anchor_cx - cw // 2
+            x = max(bx - 40, min(x, bx + bw + 40 - cw))
+            dx, dy, dw, dh = screens.desktop_bounds(c)
+            y = by - ch - 10                    # 창 위쪽 바깥
+            if y < dy + 4:                      # 위에 자리가 없으면 아래로
+                y = by + bh + 10
+            x, y = screens.clamp_window(c, x, y, cw, ch)
+            c.geometry(f"+{x}+{y}")
+            c.lift()
+        except Exception as e:
+            applog.exc("안내창 위치 잡기 실패 — 기본 자리에 둔다", e)
 
     # ── 정리 ────────────────────────────────────────
     def _clear(self):
@@ -230,9 +318,27 @@ class Tutorial:
                 pass
             self._coach = None
 
-    def _finish(self):
+    def _finish(self, completed=False):
+        r"""튜토리얼 종료. completed=True 는 마지막 단계까지 마친 것.
+
+        '그만' 으로 끝냈을 때는 on_done(목록 다시 열기)을 부르지 않는다 —
+        끄려고 눌렀는데 다른 창이 뜨면 "안 닫힌다"로 읽힌다 (사용자 지적).
+        """
+        global _active
+        if self._done:
+            return
+        self._done = True
+        if self._reflow_job is not None:
+            try:
+                self.root.after_cancel(self._reflow_job)
+            except Exception:
+                pass
+            self._reflow_job = None
+        self._untrack()
         self._clear()
-        if self.on_done:
+        if _active is self:
+            _active = None
+        if completed and self.on_done:
             self.on_done()
 
 
@@ -296,8 +402,11 @@ class Picker(tk.Toplevel):
 
     def _start(self, course):
         self.destroy()          # 목록은 비켜 준다 — 화면을 가리면 안 된다
-        Tutorial(self.master_win, course["steps"],
-                 title=course["title"]).start()
+        # 코스가 끝나면 목록으로 돌아온다 — 이어서 다음 코스를 하기 쉽게
+        Tutorial(self.master_win, course["steps"], title=course["title"],
+                 on_done=lambda: self.master_win.after(
+                     300, lambda: open_picker(self.master_win, self.courses))
+                 ).start()
 
 
 def open_picker(master, courses):
