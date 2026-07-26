@@ -117,7 +117,7 @@ def _single(key, make):
 
 
 def fn_open_library(cat=None):
-    """라이브러리 창. cat 을 주면 그 탭으로 바로 연다 (특수문자 → '내장')."""
+    """라이브러리 창. cat 을 주면 그 탭으로 바로 연다 (특수기호 도구 → '문자')."""
     win = _single("library", lambda: library_ui.open_manager(root, cat=cat))
     # 이미 떠 있던 창이라도 요청한 탭('내장' 등)으로는 이동시킨다.
     # _switch_tab 이어야 탭 버튼 색·설명·동작바까지 함께 따라온다.
@@ -441,7 +441,7 @@ BUILTIN_DISPATCH = {
     "convert":      lambda: fn_convert(),
     "reset_format": lambda: fn_reset_format(),
     "photo":        lambda: fn_pick_photo(),
-    "special":      lambda: fn_open_library(cat="내장"),
+    "special":      lambda: fn_open_library(cat="문자"),
     "form_fill":    lambda: fn_open_form_fill(),
     "library":      lambda: fn_open_library(),
     "search":       lambda: _open_search(),

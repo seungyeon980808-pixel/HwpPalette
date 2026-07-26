@@ -54,8 +54,11 @@ CATS = (
     {"key": "템플릿", "label": "템플릿"},
     {"key": "양식",   "label": "양식"},
     {"key": "사진",   "label": "사진"},
-    {"key": "내장",   "label": "내장"},
 )
+# '내장' 탭은 없앴다 (사용자 결정 2026-07-26) — 내장 기호와 내가 등록한 기호는
+# 쓰는 사람 입장에서 같은 것("문서에 \라벨\ 로 부르는 기호")인데 탭이 갈려 있어
+# 두 곳을 뒤져야 했다. 이제 '특수기호' 한 탭에서 문자표처럼 함께 보여준다.
+MY_GROUP_CHIP = "내가 등록"
 CAT_LABEL = {c["key"]: c["label"] for c in CATS}
 TABS = tuple(c["key"] for c in CATS)    # open_manager(cat=...) 검사용
 
@@ -63,13 +66,13 @@ TAB_DESC = {
     "서식": "문서에서 캡처한 글자 모양(굵기·색상·자간 등) 일부만 저장해 "
             "아무 글자에나 입히는 기능 "
             "— 팔레트의 '서식 조합'은 캡처 대신 목록에서 직접 고르는 쪽",
-    "문자": "특수기호나 자주 쓰는 문구를 저장해 바로 삽입하는 기능",
+    "문자": "기호·문구를 눌러 삽입하거나, 문서에 \\라벨\\ 로 불러 씁니다 "
+            "(내장 기호는 등록 없이 바로 쓸 수 있습니다)",
     "템플릿": "표·결재란처럼 문서 '일부'를 저장해 커서 자리에 꽂아 넣는 기능",
     "양식": "hwp 파일 '전체'를 저장해 새 문서로 여는 기능 "
             "(용지·여백·머리말까지 그대로 — 표지·통신문용)",
     "사진": "연결한 폴더의 그림을 \\파일이름\\ 으로 부르거나 여기서 바로 삽입 "
             "(하위 폴더는 읽지 않습니다)",
-    "내장": "등록 없이 바로 쓰는 기본 기호. 문서에 \\원1\\ \\로마3\\ \\홑낫표\\ 로 호출",
 }
 
 # 글자 수 상한 (개선안 23 — 흩어져 있던 매직넘버에 이름을 붙임)
@@ -450,7 +453,7 @@ class LibraryManager(tk.Toplevel):
         self.current_cat = "서식"
         self._sel = None                # 지금 선택된 행 {"cat","item","row"}
         self._collapsed = set()         # 접힌 분류 {(cat, group), ...}
-        self._builtin_group = "전체"     # 내장 탭의 그룹 칩 선택
+        self._builtin_group = "전체"     # 특수기호 탭의 묶음 칩 선택
 
         tk.Label(self, text="물감 설정", font=(FONT, theme.fs(12), "bold"),
                  bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(14, 2))
@@ -500,7 +503,7 @@ class LibraryManager(tk.Toplevel):
         self.group_manage.fit(pad_x=7, pad_y=3)
         self.group_manage.pack(side="left", padx=(4, 0))
 
-        # 내장 탭 전용: 그룹 칩 (원문자·숫자 / 로마숫자 / 낫표 …)
+        # 특수기호 탭 전용: 묶음 칩 (내가 등록 / 원문자·숫자 / 로마숫자 …)
         self.chip_row = tk.Frame(self, bg=BG, padx=16)
         self._chip_btns = {}
 
@@ -587,11 +590,12 @@ class LibraryManager(tk.Toplevel):
         if add_spec:
             self.add_btn.config(text=add_spec[0], command=add_spec[1])
             self.add_btn.pack(fill="x", padx=16, pady=(8, 0), before=self._sep)
-        else:                           # 내장 — 추가 불가(읽기 전용)
+        else:
             self.add_btn.pack_forget()
 
-        # 분류 필터 — 서식·특수기호·템플릿·양식에서만. 내장은 그룹 칩, 사진은 없음
-        show_group = cat not in ("내장", "사진")
+        # 분류 필터 — 서식·템플릿·양식에서만.
+        # 특수기호는 칩(내가 등록 / 원문자·숫자 …)이 그 일을 하고, 사진은 없음
+        show_group = cat not in ("문자", "사진")
         if show_group:
             self.group_lbl.pack(side="left")
             self.group_combo.pack(side="left", padx=(6, 0))
@@ -600,7 +604,7 @@ class LibraryManager(tk.Toplevel):
             self.group_lbl.pack_forget()
             self.group_combo.pack_forget()
             self.group_manage.pack_forget()
-        if cat == "내장":
+        if cat == "문자":
             self._build_chips()
             self.chip_row.pack(fill="x", pady=(6, 0), before=self.add_btn
                                if add_spec else self._sep)
@@ -614,7 +618,7 @@ class LibraryManager(tk.Toplevel):
         for b in (self.act_main, self.act_edit, self.act_del, self.act_more):
             b.pack_forget()
         self.act_main.pack(side="right", padx=(6, 0))
-        if cat not in ("내장", "사진"):     # 읽기 전용 — 수정·삭제 없음
+        if cat != "사진":       # 사진은 읽기 전용 (특수기호는 고른 것에 따라 판단)
             self.act_edit.pack(side="right", padx=(6, 0))
             self.act_del.pack(side="right", padx=(6, 0))
         if cat in ("템플릿", "양식"):       # 꺼내서 고치기 · AI 프롬프트
@@ -622,11 +626,11 @@ class LibraryManager(tk.Toplevel):
         self._refresh(cat)
 
     def _build_chips(self):
-        """내장 탭의 그룹 칩 — 무엇이 들었는지 종류별로 보인다 (사용자 요청)."""
+        """특수기호 탭의 묶음 칩 — 내가 등록한 것과 내장 기호 종류들."""
         for w in self.chip_row.winfo_children():
             w.destroy()
         self._chip_btns = {}
-        groups = ["전체"]
+        groups = ["전체", MY_GROUP_CHIP]
         for _, _, g in builtin_chars.BUILTINS:
             if g not in groups:
                 groups.append(g)
@@ -706,19 +710,8 @@ class LibraryManager(tk.Toplevel):
         self._canvas.yview_moveto(0)
         query = self.search_var.get().strip()
 
-        if cat == "내장":
-            results = builtin_chars.search(query)
-            if self._builtin_group != "전체":
-                results = [r for r in results if r[2] == self._builtin_group]
-            if not results:
-                self._empty_note("검색 결과가 없습니다.")
-                return
-            for label, text, group in results[:200]:
-                self._render_builtin_row(label, text, group)
-            if len(results) > 200:
-                tk.Label(self.list_area,
-                         text=f"…외 {len(results)-200}개 (검색으로 좁혀주세요)",
-                         font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(anchor="w", pady=4)
+        if cat == "문자":
+            self._render_char_grid(query)
             return
 
         if cat == "사진":
@@ -840,16 +833,71 @@ class LibraryManager(tk.Toplevel):
                  fg=MUTED, padx=10).pack(side="right")
         self._wire_row(row, cat, item, "item")
 
-    def _render_builtin_row(self, label, text, group):
-        item = {"name": label, "label": label, "text": text, "group": group}
-        row = self._make_row("내장", item, "builtin")
-        info = tk.Frame(row, bg=ROWBG, padx=10, pady=4)
-        info.pack(side="left", fill="both", expand=True)
-        tk.Label(info, text=text, font=(FONT, theme.fs(12)), bg=ROWBG,
-                 fg=TEXT, anchor="w").pack(side="left")
-        tk.Label(row, text=f"\\{label}\\", font=(FONT, theme.fs(8)), bg=ROWBG,
-                 fg=MUTED, padx=10).pack(side="right")
-        self._wire_row(row, "내장", item, "builtin")
+    # ── 특수기호: 한글 문자표처럼 격자로 (사용자 결정 2026-07-26) ──
+    #
+    # 한 줄에 기호 하나씩 늘어놓으니 78개 기호가 화면 열 몇 개를 잡아먹으면서도
+    # 정작 한 번에 열 개도 못 봤다. 격자로 모으면 한 화면에 다 들어오고,
+    # 무엇을 고르든 **호출 방법은 아래 한 곳**에서 말해 주면 된다.
+    def _char_entries(self, query):
+        """내가 등록한 기호 + 내장 기호를 한 목록으로 (등록한 것이 먼저)."""
+        chip = self._builtin_group
+        ql = query.lower()
+        out = []
+        if chip in ("전체", MY_GROUP_CHIP):
+            for it in library.list_items("문자"):
+                if ql and ql not in self._search_blob("문자", it):
+                    continue
+                out.append({"kind": "item", "cat": "문자", "item": it,
+                            "text": it.get("text", ""),
+                            "label": it.get("label") or it["name"],
+                            "group": it.get("group") or library.DEFAULT_GROUP})
+        if chip != MY_GROUP_CHIP:
+            for label, text, group in builtin_chars.search(query):
+                if chip not in ("전체", group):
+                    continue
+                out.append({"kind": "builtin", "cat": "문자",
+                            "item": {"name": label, "label": label,
+                                     "text": text, "group": group},
+                            "text": text, "label": label, "group": group})
+        return out
+
+    def _render_char_grid(self, query):
+        entries = self._char_entries(query)
+        if not entries:
+            self._empty_note("해당하는 기호가 없습니다.")
+            return
+        # 칸은 정사각형. 목록 폭에 몇 개가 들어가는지 재서 줄을 나눈다.
+        cell = int(round(46 * (theme.FONT_SCALE if theme.FONT_SCALE else 1)))
+        avail = max(self._canvas.winfo_width(), 440) - 8
+        cols = max(4, avail // (cell + 4))
+        grid = tk.Frame(self.list_area, bg=BG)
+        grid.pack(anchor="w")
+        self._cells = []
+        for i, e in enumerate(entries):
+            f = tk.Frame(grid, bg=ROWBG, width=cell, height=cell,
+                         highlightbackground=BORDER, highlightthickness=1)
+            f.pack_propagate(False)
+            f.grid(row=i // cols, column=i % cols, padx=2, pady=2)
+            # 문구가 긴 항목(자주 쓰는 문장)은 앞부분만 — 전체는 툴팁·아래 줄에서
+            shown = e["text"].replace("\n", " ")
+            size = 13 if len(shown) <= 2 else (10 if len(shown) <= 4 else 8)
+            if len(shown) > 6:
+                shown = shown[:5] + "…"
+            tk.Label(f, text=shown, font=(FONT, theme.fs(size)), bg=ROWBG,
+                     fg=TEXT).pack(expand=True)
+            e["row"] = f
+            self._wire_cell(f, e)
+        # 내가 등록한 것과 내장 기호가 섞이므로, 무엇이 무엇인지 아래 줄이 말한다
+        tk.Label(self.list_area,
+                 text=f"{len(entries)}개  ·  누르면 아래에 부르는 법이 나옵니다",
+                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(anchor="w",
+                                                                 pady=(6, 0))
+
+    def _wire_cell(self, f, entry):
+        for w in (f, *f.winfo_children()):
+            w.bind("<Button-1>", lambda e, en=entry: self._select(en))
+            w.bind("<Double-Button-1>", lambda e: self._act_selected())
+            w.config(cursor="hand2")
 
     def _render_photo_list(self, query):
         """사진 탭 — 연결된 폴더의 그림 목록. 폴더가 없으면 안내만."""
@@ -918,9 +966,29 @@ class LibraryManager(tk.Toplevel):
         if sel is None:
             self.sel_hint.config(text="항목을 누르면 아래 버튼으로 실행합니다")
         else:
-            it = sel["item"]
-            self.sel_hint.config(
-                text=it.get("name") or it.get("label") or "")
+            self.sel_hint.config(text=self._sel_hint_text(sel))
+        # 내장 기호는 내 것이 아니라 고칠 수 없다 — 버튼을 흐리게 두는 대신
+        # 눌렀을 때 이유를 말한다(_edit_selected). 여기서는 안내만 바꾼다.
+
+    def _sel_hint_text(self, sel):
+        r"""고른 것이 무엇이고 문서에서 어떻게 부르는지 — 한 줄로.
+
+        특수기호는 격자로 보여 주므로 이름·라벨이 칸에 안 들어간다. 대신
+        고르는 순간 여기서 '\원1\ 로 부릅니다' 를 말해 준다 (사용자 요청).
+        """
+        it = sel["item"]
+        kind = sel.get("kind")
+        name = it.get("name") or it.get("label") or ""
+        label = it.get("label") or name
+        if sel.get("cat") == "문자":
+            text = (it.get("text") or "").replace("\n", " ")
+            if len(text) > 20:
+                text = text[:19] + "…"
+            source = "내장" if kind == "builtin" else "내가 등록"
+            return f"{text}   ·   문서에서  \\{label}\\   ·   {source}"
+        if kind == "photo":
+            return f"{name}   ·   문서에서  \\{label}\\"
+        return name
 
     @staticmethod
     def _tint_row(row, bg):
@@ -964,13 +1032,15 @@ class LibraryManager(tk.Toplevel):
         except Exception as e:
             messagebox.showerror("오류", f"{type(e).__name__}: {e}", parent=self)
 
+    _READONLY_WHY = ("내장 기호는 프로그램에 들어 있는 것이라 고치거나 지울 수 "
+                     "없습니다.\n내 것으로 만들고 싶으면 '+ 새 특수기호/문구 "
+                     "추가'로 등록하세요.")
+
     def _edit_selected(self):
         if not self._need_sel():
             return
         if self._sel["kind"] != "item":
-            messagebox.showinfo("수정 불가",
-                                "내장·사진 항목은 여기서 수정할 수 없습니다.",
-                                parent=self)
+            messagebox.showinfo("수정 불가", self._readonly_msg(), parent=self)
             return
         self._edit(self._sel["cat"], self._sel["item"])
 
@@ -978,11 +1048,15 @@ class LibraryManager(tk.Toplevel):
         if not self._need_sel():
             return
         if self._sel["kind"] != "item":
-            messagebox.showinfo("삭제 불가",
-                                "내장·사진 항목은 여기서 삭제할 수 없습니다.",
-                                parent=self)
+            messagebox.showinfo("삭제 불가", self._readonly_msg(), parent=self)
             return
         self._delete(self._sel["cat"], self._sel["item"])
+
+    def _readonly_msg(self):
+        if self._sel and self._sel.get("kind") == "photo":
+            return ("사진은 폴더의 파일이라 여기서 고칠 수 없습니다.\n"
+                    "파일 이름을 바꾸면 부르는 이름(\\파일이름\\)도 바뀝니다.")
+        return self._READONLY_WHY
 
     # ── 템플릿·양식 추가 동작 (⋯) ────────────────────
     def _more_menu(self):
@@ -1335,7 +1409,7 @@ class ShareDialog(tk.Toplevel):
                  fg=TEXT).pack(side="left")
         # 내장·사진은 파일/프로그램에 딸린 것이라 내보낼 게 없다
         self._exportable = [c for c in CATS
-                            if c["key"] not in ("내장", "사진")]
+                            if c["key"] != "사진"]
         self.cat_var = tk.StringVar(value=self._exportable[0]["label"])
         ttk.Combobox(row, textvariable=self.cat_var, state="readonly",
                      width=10, font=(FONT, theme.fs(9)),
