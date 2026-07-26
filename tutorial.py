@@ -5,9 +5,15 @@ r"""따라하기 튜토리얼 — 실제 화면 위에서 한 곳씩 짚어 주�
 띄운다. [다음]으로 진행, [그만]으로 언제든 종료. 화면을 가리는 반투명 덮개는
 쓰지 않는다 — 실제 화면이 그대로 보여야 "아 저거구나"가 된다.
 
-steps: [(위젯을 돌려주는 함수, 제목, 설명), ...]
+steps: [step, ...]  — step 은 dict:
+    {"widget": 위젯을 돌려주는 함수 (없으면 화면 가운데 안내만),
+     "title": 제목, "text": 설명,
+     "action": 이 단계로 들어올 때 한 번 실행할 일 (없어도 됨),
+     "wait": True 면 '다음' 대신 사용자가 한글에서 할 일을 기다린다는 뜻(문구만)}
+
 위젯을 함수로 받는 이유: 튜토리얼을 켜는 시점의 실제 위젯을 잡기 위해서다
-(팔레트는 다시 그려질 때마다 위젯이 새로 만들어진다).
+(팔레트는 다시 그려질 때마다 위젯이 새로 만들어진다). action 은 한글에
+연습용 문서를 만들어 주는 등 '화면 밖의 준비'를 맡는다.
 """
 
 import tkinter as tk
@@ -49,17 +55,31 @@ class Tutorial:
             self._finish()
             return
         self.i = i
-        get_widget, title, text = self.steps[i]
-        try:
-            w = get_widget()
-            if w is None or not w.winfo_exists():
-                raise RuntimeError("대상 위젯 없음")
-        except Exception as e:
-            applog.exc(f"튜토리얼 {i}단계 대상 없음 — 건너뜀", e)
-            self._show(i + 1)
-            return
-        self._draw_halo(w)
-        self._draw_coach(w, title, text, last=(i == len(self.steps) - 1))
+        step = self.steps[i]
+        if isinstance(step, tuple):         # 옛 형식 (위젯, 제목, 설명)
+            step = {"widget": step[0], "title": step[1], "text": step[2]}
+        if step.get("action"):
+            try:
+                if step["action"]() is False:   # 준비 실패 — 여기서 멈춘다
+                    self._finish()
+                    return
+            except Exception as e:
+                applog.exc(f"튜토리얼 {i}단계 준비 실패 — 중단", e)
+                self._finish()
+                return
+        w = None
+        if step.get("widget"):
+            try:
+                w = step["widget"]()
+                if w is None or not w.winfo_exists():
+                    w = None
+            except Exception as e:
+                applog.exc(f"튜토리얼 {i}단계 대상 없음 — 안내만 보여줌", e)
+                w = None
+        if w is not None:
+            self._draw_halo(w)
+        self._draw_coach(w, step["title"], step["text"],
+                         last=(i == len(self.steps) - 1))
 
     def _draw_halo(self, w):
         """대상 둘레 4변에 파란 띠 — root 좌표계에 place 로 얹는다."""
@@ -105,10 +125,14 @@ class Tutorial:
         c.update_idletasks()
         cw, ch = c.winfo_reqwidth(), c.winfo_reqheight()
         dx, _dy, dw, _dh = screens.desktop_bounds(c)
-        x = w.winfo_rootx() + w.winfo_width() + 12
-        y = w.winfo_rooty()
-        if x + cw > dx + dw:
-            x = w.winfo_rootx() - cw - 12
+        if w is None:       # 짚을 위젯이 없는 단계 — 이 창 오른쪽에 세워 둔다
+            x = self.root.winfo_rootx() + self.root.winfo_width() + 12
+            y = self.root.winfo_rooty() + 60
+        else:
+            x = w.winfo_rootx() + w.winfo_width() + 12
+            y = w.winfo_rooty()
+            if x + cw > dx + dw:
+                x = w.winfo_rootx() - cw - 12
         x, y = screens.clamp_window(c, x, y, cw, ch)
         c.geometry(f"+{x}+{y}")
 

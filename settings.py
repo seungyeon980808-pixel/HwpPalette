@@ -12,6 +12,7 @@ import copy
 import applog
 import backup
 import json
+import os
 import pathlib
 import paths
 
@@ -260,7 +261,8 @@ CONFIG_KEY_OWNERS = {
     "profiles": "settings",
     "active_profile": "settings",
     "quick_buttons": "settings",
-    "photo_dir": "settings",
+    "photo_dir": "settings",        # 구버전 단일 폴더 — photo_dirs 로 승격됨
+    "photo_dirs": "settings",
     "ui_scale": "settings",
     "window_pos": "settings",
     "palette_tabs": "palette",
@@ -269,13 +271,106 @@ CONFIG_KEY_OWNERS = {
 
 
 # ── 사진 폴더 (\사진이름\ 변환용) ──────────────────────
+# 폴더는 여러 개를 연결할 수 있다(photo_dirs, 목록). 예전에는 한 개(photo_dir,
+# 문자열)뿐이었으므로 **구 키를 지우지 않고** 읽을 때 목록으로 승격시킨다.
+# 목록을 실제로 저장하는 순간(추가/삭제/교체) photo_dirs 가 만들어지고,
+# photo_dir 에는 첫 폴더를 계속 써 둔다 — 구버전으로 되돌아가도 최소한 한
+# 폴더는 살아 있게 하려는 것.
+def _norm_dir(path):
+    """저장·비교용 경로 정규화. 슬래시 방향과 끝의 \\ 차이로 중복되는 걸 막는다."""
+    s = (path or "").strip()
+    return os.path.normpath(s) if s else ""
+
+
+def _dir_key(path):
+    """중복 판정용 키. 윈도우 경로는 대소문자를 구분하지 않는다."""
+    n = _norm_dir(path)
+    return n.casefold() if os.name == "nt" else n
+
+
+def _read_photo_dirs():
+    """config 의 photo_dirs 만 읽는다(구 키 승격 없음). 깨진 값은 버린다."""
+    raw = get_config_value("photo_dirs", None)
+    if not isinstance(raw, (list, tuple)):
+        return []
+    out, seen = [], set()
+    for x in raw:
+        n = _norm_dir(str(x) if x is not None else "")
+        if n and _dir_key(n) not in seen:
+            seen.add(_dir_key(n))
+            out.append(n)
+    return out
+
+
+def get_photo_dirs():
+    """연결된 사진 폴더 목록(list[str]). 등록 순서 = 탐색 우선순위."""
+    dirs = _read_photo_dirs()
+    if dirs:
+        return dirs
+    old = get_photo_dir()               # 구 키 승격 — 읽기만 하고 저장은 안 한다
+    return [old] if old else []
+
+
+def _write_photo_dirs(dirs):
+    """목록을 저장하고 구 키(photo_dir)도 첫 폴더로 맞춰 둔다."""
+    dirs = [_norm_dir(d) for d in dirs if _norm_dir(d)]
+    set_config_value("photo_dirs", dirs)
+    set_config_value("photo_dir", dirs[0] if dirs else "")
+    return dirs
+
+
+def set_photo_dirs(dirs):
+    """목록 전체를 교체. 중복은 제거하고 순서는 유지."""
+    out, seen = [], set()
+    for d in (dirs or []):
+        n = _norm_dir(d)
+        if n and _dir_key(n) not in seen:
+            seen.add(_dir_key(n))
+            out.append(n)
+    return _write_photo_dirs(out)
+
+
+def add_photo_dir(path):
+    """폴더 추가. 이미 있으면 아무것도 안 하고 False."""
+    n = _norm_dir(path)
+    if not n:
+        return False
+    dirs = get_photo_dirs()             # 구 키만 있던 상태라면 여기서 승격된다
+    if _dir_key(n) in {_dir_key(d) for d in dirs}:
+        return False
+    _write_photo_dirs(dirs + [n])
+    return True
+
+
+def remove_photo_dir(path):
+    """폴더 연결 해제. 없던 폴더면 False (파일은 건드리지 않는다)."""
+    key = _dir_key(path)
+    if not key:
+        return False
+    dirs = get_photo_dirs()
+    left = [d for d in dirs if _dir_key(d) != key]
+    if len(left) == len(dirs):
+        return False
+    _write_photo_dirs(left)
+    return True
+
+
 def get_photo_dir():
-    """등록된 사진 폴더 경로 문자열. 없으면 빈 문자열."""
-    return (get_config_value("photo_dir", "") or "").strip()
+    """구버전 호환 — 첫 번째 사진 폴더. 없으면 빈 문자열.
+
+    (get_photo_dirs 가 이 함수를 승격 경로로 부르므로, 여기서 거꾸로
+    get_photo_dirs 를 부르면 안 된다 — 무한 재귀.)
+    """
+    dirs = _read_photo_dirs()
+    if dirs:
+        return dirs[0]
+    return _norm_dir(get_config_value("photo_dir", ""))
 
 
 def set_photo_dir(path):
-    set_config_value("photo_dir", (path or "").strip())
+    """구버전 호환 — 이 한 폴더만 남긴다(빈 값이면 전부 해제)."""
+    n = _norm_dir(path)
+    _write_photo_dirs([n] if n else [])
 
 
 # ── 화면 크기 모드 (작게 1.0 / 크게 1.3) ────────────────

@@ -346,30 +346,62 @@ PHOTO_EXTS = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff", ".webp")
 
 
 def _photo_lookup():
-    r"""사진 폴더의 파일들 → {파일이름(확장자 뺀): ("사진", {"path": 전체경로})}.
+    r"""연결된 사진 폴더들의 파일 → {파일이름(확장자 뺀): ("사진", {"path": …})}.
 
     \실험사진1\ 처럼 등록 없이 파일 이름만으로 부르기 위한 것. 하위 폴더는
     뒤지지 않는다 — 이름 충돌과 속도 문제를 피하려는 의도적 제한.
+
+    폴더는 여러 개일 수 있고, **먼저 등록한 폴더가 이긴다**. 나중 폴더가
+    같은 이름을 덮으면 폴더 하나를 추가한 것만으로 기존 \이름\ 이 다른 그림으로
+    바뀌어 버린다 — 사용자가 눈치채기 가장 어려운 종류의 사고다.
+    폴더 하나가 사라져도(외장 디스크·이동) 나머지는 계속 동작해야 하므로
+    빠뜨린 폴더는 로그만 남기고 넘어간다.
     """
     import settings                     # 순환 참조는 아니나 소유권 규칙상 여기서만 조회
-    photo_dir = settings.get_photo_dir()
-    if not photo_dir:
-        return {}
-    root = pathlib.Path(photo_dir)
-    if not root.is_dir():
-        applog.warn(f"사진 폴더가 없습니다: {photo_dir} — \\사진이름\\ 변환이 안 됩니다")
-        return {}
     out = {}
-    try:
-        for f in sorted(root.iterdir()):
-            if f.is_file() and f.suffix.lower() in PHOTO_EXTS:
-                stem = f.stem.strip()
-                if stem and stem not in out:    # 같은 이름의 png/jpg 가 있으면 먼저 온 것
-                    out[stem] = ("사진", {"name": stem, "label": stem,
-                                          "path": str(f)})
-    except OSError as e:
-        applog.exc(f"사진 폴더를 읽지 못함 ({photo_dir})", e)
+    for photo_dir in settings.get_photo_dirs():
+        root = pathlib.Path(photo_dir)
+        if not root.is_dir():
+            applog.warn(
+                f"사진 폴더가 없습니다: {photo_dir} — 이 폴더의 \\사진이름\\ 변환이 안 됩니다")
+            continue
+        try:
+            for f in sorted(root.iterdir()):
+                if f.is_file() and f.suffix.lower() in PHOTO_EXTS:
+                    stem = f.stem.strip()
+                    if stem and stem not in out:   # 같은 이름이면 먼저 온 것(폴더 순서 포함)
+                        out[stem] = ("사진", {"name": stem, "label": stem,
+                                              "path": str(f)})
+        except OSError as e:
+            applog.exc(f"사진 폴더를 읽지 못함 ({photo_dir})", e)
     return out
+
+
+def photo_folders_summary():
+    """UI 표시용 폴더 현황 — [{"path", "exists", "count"}] (등록 순서).
+
+    count 는 라벨이 될 수 있는 이미지 파일 수(폴더가 없으면 0). 화면을 그리다
+    예외로 죽는 일이 없도록 어떤 실패든 삼키고 0 으로 둔다.
+    """
+    import settings
+    try:
+        dirs = settings.get_photo_dirs()
+    except Exception:
+        dirs = []
+    rows = []
+    for d in dirs:
+        info = {"path": d, "exists": False, "count": 0}
+        try:
+            root = pathlib.Path(d)
+            if root.is_dir():
+                info["exists"] = True
+                info["count"] = sum(
+                    1 for f in root.iterdir()
+                    if f.is_file() and f.suffix.lower() in PHOTO_EXTS)
+        except OSError:
+            pass
+        rows.append(info)
+    return rows
 
 
 def label_lookup():

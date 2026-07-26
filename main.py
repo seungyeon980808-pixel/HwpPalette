@@ -399,12 +399,50 @@ def fn_open_palette_settings():
 
 
 def fn_pick_photo():
-    """사진 삽입 — 파일 선택 후 커서 위치(셀)에 삽입 (따로 뺀 기능)."""
+    r"""사진 삽입 — **연결해 둔 폴더**에서 고른다 (사용자 결정 2026-07-26).
+
+    예전에는 곧장 파일 탐색 대화상자를 띄웠다. 그런데 쓰는 사진은 대부분
+    정해진 폴더 몇 개(수업 사진·실험 사진 …)에 있어서, 매번 그 폴더까지
+    찾아 들어가는 것이 일이었다. 이제 연결한 폴더 이름이 먼저 뜨고, 고르면
+    그 안의 그림 목록이 뜬다. 폴더를 안 쓰는 경우를 위해 '파일에서 직접
+    고르기'도 남겨 둔다.
+    """
     if not ensure_hwp(): return
+    folders = library.photo_folders_summary()
+    usable = [f for f in folders if f["exists"] and f["count"]]
+    if not usable:
+        return _pick_photo_file()
+    if len(usable) == 1:
+        return _pick_photo_in(usable[0]["path"])
+    pop = Popover(root, _gear)          # 톱니 아래 — 화면 왼쪽 위 고정 자리
+    for f in usable:
+        name = pathlib.Path(f["path"]).name or f["path"]
+        pop.add_check(f"{name}  ({f['count']}장)",
+                      lambda p=f["path"]: _pick_photo_in(p))
+    pop.separator()
+    pop.add("파일에서 직접 고르기…", _pick_photo_file, indent=True)
+    pop.show()
+
+
+def _pick_photo_in(folder):
+    """그 폴더의 그림 목록에서 골라 넣는다 (목록은 파일 이름 순)."""
+    path = filedialog.askopenfilename(
+        title=f"삽입할 사진 선택 — {pathlib.Path(folder).name}",
+        initialdir=folder,
+        filetypes=[("이미지", "*.png *.jpg *.jpeg *.gif *.bmp *.tif *.tiff *.webp"),
+                   ("모든 파일", "*.*")])
+    _insert_photo_path(path)
+
+
+def _pick_photo_file():
     path = filedialog.askopenfilename(
         title="삽입할 사진 선택",
         filetypes=[("이미지", "*.png *.jpg *.jpeg *.gif *.bmp *.tif *.tiff *.webp"),
                    ("모든 파일", "*.*")])
+    _insert_photo_path(path)
+
+
+def _insert_photo_path(path):
     if not path:
         return
     try:
@@ -652,7 +690,8 @@ def _help_menu(anchor_widget):
     (Popover(root, anchor_widget,
              on_close=lambda: _bar_active(anchor_widget, False))
      .add("도움말  (기능별 설명)", lambda: help_ui.open_help(root))
-     .add("따라하기  (화면 위 안내)", lambda: _start_tutorial())
+     .add("따라하기 ①  화면 둘러보기", lambda: _start_tutorial())
+     .add("따라하기 ②  한글에서 템플릿 만들기", lambda: _start_hwp_tutorial())
      .separator()
      .add("문법 요약 펼치기/접기", lambda: _toggle_guide())
      .show())
@@ -688,6 +727,69 @@ def _start_tutorial():
          "이제 직접 써 보세요!"),
     ]
     tutorial.Tutorial(root, steps).start()
+
+
+# ── 따라하기 ② — 한글 안에서 직접 해 보는 것 (사용자 기획 2026-07-26) ──
+#
+# 화면 둘러보기(①)는 '어디에 무엇이 있는지'를 말한다. 그런데 이 프로그램의
+# 진짜 사용법은 **한글 안에서** 일어난다 — 표를 만들고, 빈칸을 넣고, 그것을
+# 템플릿으로 저장하는 흐름. 그 흐름을 연습용 표를 직접 깔아 주면서 짚는다.
+_PRACTICE_TITLE = "[연습] 가정통신문 머리"
+
+
+def _make_practice_doc():
+    """한글에 연습용 표를 만들어 준다. 실패하면 False (튜토리얼 중단)."""
+    if not ensure_hwp():
+        return False
+    try:
+        hwp_engine.hwp.FileNew()
+        hwp_engine.insert_plain(_PRACTICE_TITLE)
+        hwp_engine.hwp.HAction.Run("BreakPara")
+        hwp_engine.create_table_autofit(2, 2)
+        # 표 안을 왼→오, 위→아래로 돌며 채운다. \ 가 나중에 채워질 빈칸이다.
+        for text in ("학년/반", "\\", "학생 이름", "\\"):
+            hwp_engine.insert_plain(text)
+            hwp_engine.hwp.HAction.Run("TableRightCell")
+        hwp_engine.exit_table()
+        notify("ok", "연습용 표를 한글에 만들었습니다")
+        return True
+    except Exception as e:
+        report_error("연습용 표 만들기 실패", e)
+        return False
+
+
+def _start_hwp_tutorial():
+    steps = [
+        {"title": "한글에 연습용 표를 깔았습니다",
+         "text": "학년/반과 이름을 적는 작은 표입니다.\n"
+                 "칸 안의 역슬래시(\\)가 **나중에 내용이 채워질 빈칸**입니다.\n"
+                 "한글 창을 한 번 보고 오세요.",
+         "action": _make_practice_doc},
+        {"title": "표를 통째로 고릅니다",
+         "text": "한글에서 그 표 **안을 아무 데나 클릭**해 두세요.\n"
+                 "(드래그로 영역을 선택해도 됩니다 — 표는 클릭만으로 충분합니다)"},
+        {"widget": lambda: _gear, "title": "물감 설정을 엽니다",
+         "text": "⚙ → 물감 설정 → 템플릿 탭.\n"
+                 "다음을 누르면 제가 대신 열어 드릴게요.",
+         "action": lambda: True},
+        {"widget": lambda: _library_add_btn(), "title": "템플릿으로 저장",
+         "text": "이 버튼을 누르면 지금 한글에서 고른 표가\n"
+                 "템플릿으로 저장됩니다. 이름은 '가정통신문머리'처럼\n"
+                 "나중에 알아볼 수 있게 지으세요.",
+         "action": lambda: fn_open_library(cat="템플릿") and True},
+        {"title": "이제 언제든 꺼내 씁니다",
+         "text": "문서에서 \\이름\\ 이라고 쓰고 Ctrl+Alt+T 를 누르면\n"
+                 "이 표가 그대로 들어갑니다. 아랫줄에 적은 내용이\n"
+                 "빈칸에 차례대로 채워집니다.\n\n"
+                 "팔레트 설정에서 블럭으로 올려 두면 버튼 한 번으로도 됩니다."},
+    ]
+    tutorial.Tutorial(root, steps).start()
+
+
+def _library_add_btn():
+    """물감 설정 창의 '추가' 버튼 — 튜토리얼이 짚을 대상."""
+    win = _open_windows.get("library")
+    return getattr(win, "add_btn", None) if win else None
 
 
 _help_btn = _bar_btn("?", lambda: _help_menu(_help_btn), "도움말")

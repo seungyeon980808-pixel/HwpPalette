@@ -207,8 +207,11 @@ class PhotoLookupTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.dir = pathlib.Path(self.tmp.name)
         import settings
-        patcher = mock.patch.object(settings, "get_photo_dir",
-                                    return_value=str(self.dir))
+        # 폴더가 여러 개가 된 뒤로는 get_photo_dirs 가 실제 조회 경로다
+        # (get_photo_dir 만 목킹하면 사용자가 UI 로 폴더를 추가해 둔 순간
+        #  실제 config 값이 새어 들어와 테스트가 흔들린다, 2026-07-26)
+        patcher = mock.patch.object(settings, "get_photo_dirs",
+                                    return_value=[str(self.dir)])
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -227,13 +230,13 @@ class PhotoLookupTest(unittest.TestCase):
 
     def test_폴더_미설정이면_빈_결과(self):
         import settings
-        with mock.patch.object(settings, "get_photo_dir", return_value=""):
+        with mock.patch.object(settings, "get_photo_dirs", return_value=[]):
             self.assertEqual(library._photo_lookup(), {})
 
     def test_없는_폴더면_빈_결과(self):
         import settings
-        with mock.patch.object(settings, "get_photo_dir",
-                               return_value=str(self.dir / "없는폴더")):
+        with mock.patch.object(settings, "get_photo_dirs",
+                               return_value=[str(self.dir / "없는폴더")]):
             self.assertEqual(library._photo_lookup(), {})
 
     def test_같은_이름의_png와_jpg면_하나만(self):

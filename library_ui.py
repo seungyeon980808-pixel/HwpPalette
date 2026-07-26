@@ -71,8 +71,8 @@ TAB_DESC = {
     "템플릿": "표·결재란처럼 문서 '일부'를 저장해 커서 자리에 꽂아 넣는 기능",
     "양식": "hwp 파일 '전체'를 저장해 새 문서로 여는 기능 "
             "(용지·여백·머리말까지 그대로 — 표지·통신문용)",
-    "사진": "연결한 폴더의 그림을 \\파일이름\\ 으로 부르거나 여기서 바로 삽입 "
-            "(하위 폴더는 읽지 않습니다)",
+    "사진": "그림이 든 폴더를 연결해 둡니다. 문서에서 \\파일이름\\ 으로 부르거나 "
+            "팔레트의 '사진' 버튼에서 골라 넣습니다 (하위 폴더는 읽지 않습니다)",
 }
 
 # 글자 수 상한 (개선안 23 — 흩어져 있던 매직넘버에 이름을 붙임)
@@ -80,6 +80,8 @@ ROW_PREVIEW_MAX = 16     # 목록 행에 보여줄 내용 미리보기 길이
 AUTO_NAME_MAX = 10       # 문자 등록 시 내용에서 이름을 자동으로 뽑는 길이
 SUMMARY_MAX = 34         # 행 요약(한 줄)의 글자 수 상한
 LIST_H_PX = 360          # 스크롤 목록의 고정 높이
+LIST_W_PX = 520          # 스크롤 목록의 폭 (기호판이 한 줄에 여러 개 들어가게)
+SIDE_W_PX = 132          # 왼쪽 분류 목록의 폭 (특수기호 탭)
 
 
 def _dialog_btn(parent, text, command, primary=False, zone_bg=None):
@@ -503,8 +505,9 @@ class LibraryManager(tk.Toplevel):
         self.group_manage.fit(pad_x=7, pad_y=3)
         self.group_manage.pack(side="left", padx=(4, 0))
 
-        # 특수기호 탭 전용: 묶음 칩 (내가 등록 / 원문자·숫자 / 로마숫자 …)
-        self.chip_row = tk.Frame(self, bg=BG, padx=16)
+        # 특수기호 탭은 칩 대신 **왼쪽 분류 목록**을 쓴다 (사용자 결정 2026-07-26).
+        # 기호가 200개를 넘으면서 칩 줄이 여러 줄로 접혔다 — 한글 문자표처럼
+        # 왼쪽에 분류, 오른쪽에 기호판을 두면 분류가 몇 개든 줄이 안 늘어난다.
         self._chip_btns = {}
 
         # 추가 버튼(탭마다 동작이 다름) — 자리는 항상 구분선 앞 (앵커 = _sep)
@@ -515,12 +518,20 @@ class LibraryManager(tk.Toplevel):
         self._sep = tk.Frame(self, bg=BORDER, height=1)
         self._sep.pack(fill="x", padx=16, pady=(10, 6))
 
+        # ── 목록 영역 = [왼쪽 분류 목록] + [스크롤 목록] ──
+        # 왼쪽 목록은 특수기호 탭에서만 나타난다 (다른 탭은 분류가 적어 필요 없다).
+        body = tk.Frame(self, bg=BG)
+        body.pack(fill="both", expand=True, padx=16)
+        self.side = tk.Frame(body, bg=CARD, width=SIDE_W_PX,
+                             highlightbackground=BORDER, highlightthickness=1)
+        self.side.pack_propagate(False)
+
         # ── 스크롤 목록 (2026-07-25 재구축의 핵심) ──
         # 예전에는 스크롤이 없어 항목 20개면 창이 화면 밖으로 나갔다.
-        wrap = tk.Frame(self, bg=BG)
-        wrap.pack(fill="both", expand=True, padx=16)
+        wrap = tk.Frame(body, bg=BG)
+        wrap.pack(side="left", fill="both", expand=True)
         self._canvas = tk.Canvas(wrap, bg=BG, highlightthickness=0,
-                                 height=LIST_H_PX, width=460)
+                                 height=LIST_H_PX, width=LIST_W_PX)
         sb = tk.Scrollbar(wrap, orient="vertical", command=self._canvas.yview)
         self.list_area = tk.Frame(self._canvas, bg=BG)
         self._canvas_win = self._canvas.create_window(
@@ -585,7 +596,7 @@ class LibraryManager(tk.Toplevel):
             "문자":   ("+ 새 특수기호/문구 추가", self._add_char),
             "템플릿": ("+ 지금 선택 영역을 템플릿으로 저장", self._add_template),
             "양식":   ("+ hwp 파일을 양식으로 등록", self._add_form),
-            "사진":   ("사진 폴더 연결/변경…", self._pick_photo_dir),
+            "사진":   ("+ 사진 폴더 연결 (여러 개 가능)", self._pick_photo_dir),
         }.get(cat)
         if add_spec:
             self.add_btn.config(text=add_spec[0], command=add_spec[1])
@@ -604,21 +615,22 @@ class LibraryManager(tk.Toplevel):
             self.group_lbl.pack_forget()
             self.group_combo.pack_forget()
             self.group_manage.pack_forget()
+        # 왼쪽 분류 목록은 특수기호 탭에서만 (다른 탭은 분류가 적어 필요 없다)
         if cat == "문자":
+            self.side.pack(side="left", fill="y", padx=(0, 8))
             self._build_chips()
-            self.chip_row.pack(fill="x", pady=(6, 0), before=self.add_btn
-                               if add_spec else self._sep)
         else:
-            self.chip_row.pack_forget()
+            self.side.pack_forget()
 
         # 동작바 — 탭마다 쓸 수 있는 동작이 다르다. 순서가 흐트러지지 않게
         # 전부 뗐다가 정해진 차례로 다시 붙인다 (주 동작이 맨 오른쪽).
+        # 사진 탭은 '폴더 관리' 화면이라 동작바 자체가 필요 없다.
         main_label = {"서식": "적용", "양식": "열기"}.get(cat, "삽입")
         self.act_main.set_text(main_label, pad_x=16, pad_y=6)
         for b in (self.act_main, self.act_edit, self.act_del, self.act_more):
             b.pack_forget()
-        self.act_main.pack(side="right", padx=(6, 0))
-        if cat != "사진":       # 사진은 읽기 전용 (특수기호는 고른 것에 따라 판단)
+        if cat != "사진":
+            self.act_main.pack(side="right", padx=(6, 0))
             self.act_edit.pack(side="right", padx=(6, 0))
             self.act_del.pack(side="right", padx=(6, 0))
         if cat in ("템플릿", "양식"):       # 꺼내서 고치기 · AI 프롬프트
@@ -626,8 +638,12 @@ class LibraryManager(tk.Toplevel):
         self._refresh(cat)
 
     def _build_chips(self):
-        """특수기호 탭의 묶음 칩 — 내가 등록한 것과 내장 기호 종류들."""
-        for w in self.chip_row.winfo_children():
+        """왼쪽 분류 목록 — 한글 문자표처럼 '분류를 고르면 기호판이 바뀐다'.
+
+        분류가 200개 기호를 열몇 갈래로 나누므로 세로 목록이 맞다. 가로 칩으로
+        늘어놓으면 줄이 접혀 화면 위쪽을 다 먹는다 (사용자 지적 2026-07-26).
+        """
+        for w in self.side.winfo_children():
             w.destroy()
         self._chip_btns = {}
         groups = ["전체", MY_GROUP_CHIP]
@@ -636,24 +652,35 @@ class LibraryManager(tk.Toplevel):
                 groups.append(g)
         if self._builtin_group not in groups:
             self._builtin_group = "전체"
+        # 분류가 많아지면 이 목록도 스크롤이 필요하다 — 기호판과 같은 방식
+        cv = tk.Canvas(self.side, bg=CARD, highlightthickness=0,
+                       width=SIDE_W_PX - 2, height=LIST_H_PX - 2)
+        inner = tk.Frame(cv, bg=CARD)
+        cv.create_window((0, 0), window=inner, anchor="nw")
+        inner.bind("<Configure>",
+                   lambda e: cv.configure(scrollregion=cv.bbox("all")))
+        cv.pack(fill="both", expand=True)
+        cv.bind("<Enter>", lambda e: cv.bind_all(
+            "<MouseWheel>",
+            lambda ev: cv.yview_scroll(-1 * (ev.delta // 120), "units")))
+        cv.bind("<Leave>", lambda e: cv.unbind_all("<MouseWheel>"))
         for g in groups:
             on = g == self._builtin_group
-            b = RoundButton(self.chip_row, text=g,
+            b = RoundButton(inner, text=g,
                             command=lambda gg=g: self._pick_chip(gg),
-                            bg=ACCENT_SOFT if on else CARD,
-                            fg=ACCENT if on else MUTED, radius=10,
-                            font=(FONT, theme.fs(8)),
-                            outline="" if on else BORDER, zone_bg=BG)
-            b.fit(pad_x=9, pad_y=3)
-            b.pack(side="left", padx=(0, 4))
+                            bg=ACCENT if on else CARD,
+                            fg="white" if on else TEXT, radius=6,
+                            font=(FONT, theme.fs(8)), outline="",
+                            zone_bg=CARD, justify="left")
+            b.fit(pad_x=8, pad_y=5, min_w=SIDE_W_PX - 12)
+            b.pack(anchor="w", padx=4, pady=1)
             self._chip_btns[g] = b
 
     def _pick_chip(self, group):
         self._builtin_group = group
         for g, b in self._chip_btns.items():
             on = g == group
-            b.retint(bg=ACCENT_SOFT if on else CARD,
-                     fg=ACCENT if on else MUTED)
+            b.retint(bg=ACCENT if on else CARD, fg="white" if on else TEXT)
         self._refresh()
 
     # ── 분류 관리 (이름 바꾸기 / 삭제) ────────────────
@@ -868,7 +895,7 @@ class LibraryManager(tk.Toplevel):
             return
         # 칸은 정사각형. 목록 폭에 몇 개가 들어가는지 재서 줄을 나눈다.
         cell = int(round(46 * (theme.FONT_SCALE if theme.FONT_SCALE else 1)))
-        avail = max(self._canvas.winfo_width(), 440) - 8
+        avail = max(self._canvas.winfo_width(), LIST_W_PX) - 8
         cols = max(4, avail // (cell + 4))
         grid = tk.Frame(self.list_area, bg=BG)
         grid.pack(anchor="w")
@@ -900,36 +927,57 @@ class LibraryManager(tk.Toplevel):
             w.config(cursor="hand2")
 
     def _render_photo_list(self, query):
-        """사진 탭 — 연결된 폴더의 그림 목록. 폴더가 없으면 안내만."""
-        d = settings.get_photo_dir()
-        if not d:
-            self._empty_note("사진 폴더가 연결돼 있지 않습니다.\n"
-                             "위 버튼으로 폴더를 연결하면 파일 이름이 여기 나오고,\n"
-                             "문서에 \\파일이름\\ 으로 그림을 넣을 수 있습니다.")
+        r"""사진 탭 = **폴더 관리** 화면 (사용자 결정 2026-07-26).
+
+        예전에는 폴더 안 그림을 한 장씩 행으로 늘어놓았다. 그림이 수백 장인
+        폴더에서는 목록이 끝없이 길어지고, 정작 여기서 할 일(어느 폴더를
+        연결해 둘지)은 안 보였다. 그림을 고르는 일은 팔레트의 '사진' 버튼이
+        맡는다 — 그때가 실제로 문서에 넣는 순간이다.
+        """
+        folders = library.photo_folders_summary()
+        if not folders:
+            self._empty_note(
+                "연결된 사진 폴더가 없습니다.\n"
+                "위 버튼으로 폴더를 연결하면, 문서에 \\파일이름\\ 으로 그림을\n"
+                "넣을 수 있고 팔레트의 '사진' 버튼에서 골라 넣을 수도 있습니다.")
             return
-        tk.Label(self.list_area, text=d, font=(FONT, theme.fs(8)), bg=BG,
-                 fg=MUTED, anchor="w").pack(fill="x", pady=(2, 4))
-        photos = library._photo_lookup()
-        entries = [entry for _, entry in sorted(photos.items())]
-        if query:
-            ql = query.lower()
-            entries = [e for e in entries if ql in e[1]["name"].lower()]
-        if not entries:
-            self._empty_note("폴더에 그림 파일이 없습니다."
-                             if not query else "검색 결과가 없습니다.")
-            return
-        for _cat, it in entries:
-            row = self._make_row("사진", it, "photo")
-            info = tk.Frame(row, bg=ROWBG, padx=10, pady=5)
+        tk.Label(self.list_area,
+                 text="연결한 순서대로 찾습니다 — 같은 이름의 그림이 여러 폴더에 "
+                      "있으면 위쪽 폴더가 이깁니다.",
+                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED,
+                 wraplength=LIST_W_PX - 20, justify="left").pack(
+                 anchor="w", pady=(2, 6))
+        for i, f in enumerate(folders):
+            row = tk.Frame(self.list_area, bg=ROWBG,
+                           highlightbackground=BORDER, highlightthickness=1)
+            row.pack(fill="x", pady=2)
+            info = tk.Frame(row, bg=ROWBG, padx=10, pady=6)
             info.pack(side="left", fill="both", expand=True)
-            tk.Label(info, text=it["name"], font=(FONT, theme.fs(9), "bold"),
-                     bg=ROWBG, fg=TEXT, anchor="w").pack(side="left")
-            ext = pathlib.Path(it["path"]).suffix.lower().lstrip(".")
-            tk.Label(info, text=ext, font=(FONT, theme.fs(8)), bg=ROWBG,
-                     fg=MUTED).pack(side="left", padx=(8, 0))
-            tk.Label(row, text=f"\\{it['label']}\\", font=(FONT, theme.fs(8)),
-                     bg=ROWBG, fg=MUTED, padx=10).pack(side="right")
-            self._wire_row(row, "사진", it, "photo")
+            name = pathlib.Path(f["path"]).name or f["path"]
+            tk.Label(info, text=f"{i + 1}. {name}",
+                     font=(FONT, theme.fs(9), "bold"), bg=ROWBG,
+                     fg=TEXT, anchor="w").pack(anchor="w")
+            detail = (f"그림 {f['count']}장" if f["exists"]
+                      else "⚠ 폴더를 찾을 수 없습니다 (옮겼거나 지워짐)")
+            tk.Label(info, text=f"{detail}   ·   {f['path']}",
+                     font=(FONT, theme.fs(8)), bg=ROWBG,
+                     fg=MUTED if f["exists"] else "#9b1c1c",
+                     anchor="w").pack(anchor="w")
+            RoundButton(row, text="연결 해제",
+                        command=lambda p=f["path"]: self._unlink_photo_dir(p),
+                        bg=SOFT, fg=TEXT, radius=6, font=(FONT, theme.fs(8)),
+                        outline="", zone_bg=ROWBG).fit(pad_x=10, pad_y=4).pack(
+                        side="right", padx=10)
+
+    def _unlink_photo_dir(self, path):
+        if not messagebox.askyesno(
+                "연결 해제",
+                f"이 폴더 연결을 해제할까요?\n{path}\n\n"
+                "폴더와 그림 파일은 그대로 있습니다.", parent=self):
+            return
+        settings.remove_photo_dir(path)
+        self._refresh("사진")
+        self._notify()
 
     def _summary(self, cat, item):
         """행 요약 한 줄 — 라벨·분류는 다른 곳에서 보이므로 **내용만** 말한다."""
@@ -1042,7 +1090,21 @@ class LibraryManager(tk.Toplevel):
         if self._sel["kind"] != "item":
             messagebox.showinfo("수정 불가", self._readonly_msg(), parent=self)
             return
-        self._edit(self._sel["cat"], self._sel["item"])
+        cat, item = self._sel["cat"], self._sel["item"]
+        # 템플릿은 '무엇을 고치는가'가 세 갈래다 (사용자 결정 2026-07-26):
+        #   이름·라벨 / 내용(글자·표) / 양식(빈칸 자리)
+        # 한 버튼에 몰아넣으면 이름 고치러 들어갔다가 한글이 열려 당황한다.
+        if cat == "템플릿":
+            (Popover(self, self.act_edit)
+             .add("이름·라벨 수정", lambda: self._edit(cat, item))
+             .separator()
+             .add("내용 수정  (글자·표를 고친다)",
+                  lambda: self._extract_edit("content"))
+             .add("양식 수정  (빈칸 \\ 자리를 고친다)",
+                  lambda: self._extract_edit("form"))
+             .show())
+            return
+        self._edit(cat, item)
 
     def _del_selected(self):
         if not self._need_sel():
@@ -1065,30 +1127,52 @@ class LibraryManager(tk.Toplevel):
         cat = self._sel["cat"]
         pop = Popover(self, self.act_more)
         if cat == "템플릿":
-            pop.add("꺼내서 고치기…  (한글에 펼쳐서 수정 후 덮어쓰기)",
-                    self._extract_edit)
+            pop.add("내용 수정  (한글에 펼쳐서 고치기)",
+                    lambda: self._extract_edit("content"))
+            pop.add("양식 수정  (빈칸 \\ 자리 고치기)",
+                    lambda: self._extract_edit("form"))
+            pop.separator()
         pop.add("AI 프롬프트 복사  (빈칸을 AI 에게 채우게)",
                 self._copy_ai_prompt)
         pop.show()
 
-    def _extract_edit(self):
-        r"""템플릿 꺼내서 고치기 (기획 15번).
+    # 고치는 동안 한글 문서 맨 위에 붙는 안내 (mode 별로 말이 다르다)
+    _EDIT_NOTES = {
+        "content": [
+            "이 문서의 글자와 표를 원하는 대로 고치세요.",
+            "역슬래시(\\)는 나중에 내용이 채워질 '빈칸'입니다 — 지우지 마세요.",
+            "다 고쳤으면 HwpPalette 의 [이 내용으로 덮어쓰기]를 누르세요.",
+            "(이 안내 줄들은 저장할 때 자동으로 빠집니다)",
+        ],
+        "form": [
+            "빈칸 자리를 고치는 화면입니다. 지금 보이는 역슬래시(\\) 하나가",
+            "나중에 내용 한 줄이 들어갈 자리입니다 — 평소 삽입할 때는 안 보입니다.",
+            "빈칸을 늘리려면 \\ 를 더 넣고, 없애려면 지우면 됩니다.",
+            "채워지는 순서는 위에서 아래, 왼쪽에서 오른쪽입니다.",
+            "다 고쳤으면 HwpPalette 의 [이 내용으로 덮어쓰기]를 누르세요.",
+            "(이 안내 줄들은 저장할 때 자동으로 빠집니다)",
+        ],
+    }
 
-        조각을 한글 **새 탭**에 펼쳐 주고, 다 고치면 떠 있는 안내 창의
-        [덮어쓰기]가 그 문서 전체를 다시 캡처해 같은 항목에 저장한다.
-        id 가 유지되므로 팔레트 블럭 연결이 안 끊긴다.
+    def _extract_edit(self, mode="content"):
+        r"""템플릿 꺼내서 고치기 (기획 15번) — 내용 수정 / 양식 수정.
+
+        조각을 한글 **새 탭**에 펼치고 문서 맨 위에 안내문을 붙인다. 다 고치면
+        떠 있는 안내 창의 [덮어쓰기]가 안내문을 걷어낸 뒤 문서 전체를 다시
+        캡처해 같은 항목에 저장한다. id 가 유지되므로 팔레트 연결이 안 끊긴다.
         """
         item = self._sel["item"]
         if not _ensure_hwp(self):
             return
         try:
-            engine_library.open_template_copy(library.template_path(item))
+            engine_library.open_template_copy(
+                library.template_path(item), self._EDIT_NOTES[mode])
         except Exception as e:
             applog.exc("템플릿 꺼내기 실패", e)
             messagebox.showerror("꺼내기 실패", f"{type(e).__name__}: {e}",
                                  parent=self)
             return
-        _RecaptureCoach(self, item)
+        _RecaptureCoach(self, item, mode)
 
     def _copy_ai_prompt(self):
         r"""AI 프롬프트 복사 (기획 18번) — 양식 구조(표 포함)를 보여주고,
@@ -1242,17 +1326,19 @@ class LibraryManager(tk.Toplevel):
 
     # ── 사진 폴더 (\사진이름\ 변환) — '사진' 탭에서만 보인다 ──
     def _pick_photo_dir(self):
-        cur = settings.get_photo_dir()
+        """폴더를 **추가**한다 (여러 개 연결 가능 — 해제는 각 줄의 버튼)."""
+        dirs = settings.get_photo_dirs()
         path = filedialog.askdirectory(
-            parent=self, title="사진 폴더 선택 (취소하면 연결 해제 여부를 묻습니다)",
-            initialdir=cur or None)
-        if path:
-            settings.set_photo_dir(path)
-        elif cur and messagebox.askyesno(
-                "연결 해제", "사진 폴더 연결을 해제할까요?\n"
-                f"(현재: {cur})", parent=self):
-            settings.set_photo_dir("")
-        self._refresh()
+            parent=self, title="연결할 사진 폴더 선택",
+            initialdir=dirs[-1] if dirs else None)
+        if not path:
+            return
+        if not settings.add_photo_dir(path):
+            messagebox.showinfo("이미 연결됨", "그 폴더는 이미 연결돼 있습니다.",
+                                parent=self)
+            return
+        self._refresh("사진")
+        self._notify()
 
     def _edit(self, cat, item):
         """등록된 항목의 이름·라벨·분류 수정 (id 유지 → 팔레트 연결 안 깨짐)."""
@@ -1322,21 +1408,24 @@ class _RecaptureCoach(tk.Toplevel):
     다른 문서로 갈아탔을 수도 있으므로 문구로 분명히 말해 둔다.
     """
 
-    def __init__(self, master, item):
+    def __init__(self, master, item, mode="content"):
         super().__init__(master)
         self._manager = master
         self._item = item
+        self._mode = mode
+        what = "양식(빈칸 자리)" if mode == "form" else "내용"
         self.title(appinfo.WINDOW_TITLE)
         self.configure(bg=BG)
         self.resizable(False, False)
         self.attributes("-topmost", True)
-        tk.Label(self, text=f"'{item['name']}' 고치는 중",
+        tk.Label(self, text=f"'{item['name']}' {what} 고치는 중",
                  font=(FONT, theme.fs(11), "bold"), bg=BG, fg=TEXT).pack(
                  anchor="w", padx=16, pady=(14, 2))
         tk.Label(self,
-                 text="한글 새 탭에 템플릿을 펼쳐 두었습니다.\n"
-                      "내용을 고친 뒤 아래 [이 내용으로 덮어쓰기]를 누르세요.\n"
-                      "지금 한글에 보이는 문서 **전체**가 이 템플릿으로 저장됩니다.\n"
+                 text="한글 새 탭에 템플릿을 펼쳐 두었습니다 "
+                      "(자세한 안내는 그 문서 맨 위에 있습니다).\n"
+                      "고친 뒤 아래 [이 내용으로 덮어쓰기]를 누르세요.\n"
+                      "지금 한글에 보이는 문서 전체가 이 템플릿으로 저장됩니다.\n"
                       "(고치던 탭은 저장하지 않고 닫아도 됩니다)",
                  font=(FONT, theme.fs(8)), bg=BG, fg=MUTED,
                  justify="left").pack(anchor="w", padx=16, pady=(0, 10))
@@ -1352,6 +1441,7 @@ class _RecaptureCoach(tk.Toplevel):
         if not _ensure_hwp(self):
             return
         try:
+            engine_library.strip_edit_note()   # 안내문은 저장물에 넣지 않는다
             engine_library.select_all()     # 지금 문서 전체를 캡처 대상으로
             ok = library.replace_template_fragment(
                 self._item["id"], engine_library.capture_fragment)

@@ -489,17 +489,66 @@ def export_as_hwpx(src_path, dst_path):
             applog.exc("HWPX 변환용 임시 문서 닫기 실패 — 창이 남아 있을 수 있음", e)
 
 
-def open_template_copy(path):
+# 고치는 동안 문서 맨 위에 붙는 안내문의 표시 (2026-07-26).
+# 저장할 때 이 표시가 있는 줄들을 걷어내므로, 사용자가 절대 쓸 일 없는
+# 문자열이어야 한다.
+EDIT_NOTE_MARK = "※※ [고치는 중] "
+
+
+def _insert_edit_note(lines):
+    r"""문서 맨 위에 안내문을 넣는다. 각 줄 앞에 EDIT_NOTE_MARK 를 붙인다.
+
+    왜 문서 안에 넣나 (사용자 결정 2026-07-26): 고치는 동안 사용자가 보는
+    것은 **한글 창**이지 이 프로그램이 아니다. 무엇을 어떻게 고쳐야 하는지는
+    고치는 화면 위에 같이 있어야 읽힌다.
+    """
+    hwp = _h()
+    hwp.MoveDocBegin()
+    for ln in lines:
+        hwp_engine.insert_plain(EDIT_NOTE_MARK + ln)
+        hwp.HAction.Run("BreakPara")
+    hwp_engine.insert_plain("")          # 안내와 본문 사이 빈 줄
+    hwp.HAction.Run("BreakPara")
+
+
+def strip_edit_note():
+    r"""안내문 줄들을 지운다 (저장 직전). 지운 줄 수를 돌려준다.
+
+    문단 단위로 지운다 — 표 안이 아니라 문서 맨 위 문단들이므로 안전하다.
+    """
+    hwp = _h()
+    removed = 0
+    for _ in range(20):                  # 안내가 20줄을 넘을 일은 없다
+        hwp.MoveDocBegin()
+        if not hwp_engine.find_text(EDIT_NOTE_MARK):
+            break
+        try:
+            hwp.HAction.Run("MoveSelLineEnd")   # 그 줄 끝까지 선택
+            hwp.HAction.Run("Delete")
+            hwp.HAction.Run("DeleteBack")       # 남은 빈 문단도 지운다
+            removed += 1
+        except Exception as e:
+            applog.exc("안내문 줄 삭제 실패 — 저장물에 안내가 남을 수 있음", e)
+            break
+    return removed
+
+
+def open_template_copy(path, note_lines=None):
     r"""템플릿 조각을 **새 탭**에 펼친다 — '꺼내서 고치기'용 (2026-07-25).
 
     파일을 직접 열지 않고 빈 새 탭에 insert 한다. 직접 열면 한글이 조각
     파일을 잠가(한 번 연 파일은 안 놓는다 — WinError 32 계보) 덮어쓰기
     저장이 막히기 때문이다. 새 탭은 제목 없는 문서라 원본과 무관하다.
+
+    note_lines 를 주면 문서 맨 위에 안내문을 붙인다 (저장할 때 자동으로 빠진다).
     """
     hwp = _h()
     hwp.XHwpDocuments.Add(1)          # 1 = 새 탭
     hwp.insert_file(str(path), keep_section=0, keep_charshape=1,
                     keep_parashape=1, keep_style=1)
+    if note_lines:
+        _insert_edit_note(note_lines)
+        hwp.MoveDocBegin()
 
 
 def select_all():
