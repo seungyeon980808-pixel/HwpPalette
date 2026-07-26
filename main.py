@@ -74,6 +74,7 @@ import ui_fx                         # 호버 보간·누름 피드백 (애플 A
 import screens                       # 여러 모니터를 합친 좌표
 import help_ui                       # 도움말 창 (기능별 사전)
 import tutorial                      # 따라하기 (화면 위 안내)
+import tutorials                     # 튜토리얼 커리큘럼 (주제별 코스)
 from roundbtn import RoundButton     # 둥근 모서리 버튼
 from popover import Popover          # 앱과 같은 얼굴의 팝업 메뉴
 
@@ -737,78 +738,46 @@ def _make_practice_doc():
         return False
 
 
-def _library_add_btn():
-    """물감 설정 창의 '추가' 버튼 — 튜토리얼이 짚을 대상."""
+def _library_widget(name):
+    """물감 설정 창의 위젯 하나 — 튜토리얼이 짚을 대상 (없으면 None)."""
     win = _open_windows.get("library")
-    return getattr(win, "add_btn", None) if win else None
+    return getattr(win, name, None) if win else None
+
+
+class _TutorialCtx:
+    """튜토리얼 커리큘럼(tutorials.py)에 넘길 위젯·동작 모음.
+
+    커리큘럼 파일이 main 을 직접 임포트하지 않게 하는 다리다 — 글만 고칠 때
+    이 파일을 건드리지 않아도 되고, 순환 임포트도 생기지 않는다.
+    각 항목은 **함수**다: 튜토리얼을 시작하는 시점이 아니라 그 단계에 이르렀을
+    때의 실제 위젯을 잡아야 하기 때문(팔레트는 다시 그릴 때마다 새로 생긴다).
+    """
+    quick_area = staticmethod(lambda: quick_area)
+    pal_pick = staticmethod(lambda: pal_pick)
+    pal_area = staticmethod(lambda: pal_area)
+    gear = staticmethod(lambda: _gear)
+    help_btn = staticmethod(lambda: _help_btn)
+    conn_dot = staticmethod(lambda: conn_dot)
+    library_add_btn = staticmethod(lambda: _library_widget("add_btn"))
+    library_edit_btn = staticmethod(lambda: _library_widget("act_edit"))
+    library_more_btn = staticmethod(lambda: _library_widget("act_more"))
+    library_side = staticmethod(lambda: _library_widget("side"))
+    library_list = staticmethod(lambda: _library_widget("_canvas"))
+    ensure_hwp = staticmethod(lambda: ensure_hwp())
+    make_practice_doc = staticmethod(lambda: _make_practice_doc())
+    open_library_template = staticmethod(
+        lambda: bool(fn_open_library(cat="템플릿")))
+    open_library_char = staticmethod(lambda: bool(fn_open_library(cat="문자")))
+    open_library_form = staticmethod(lambda: bool(fn_open_library(cat="양식")))
+    open_palette_settings = staticmethod(
+        lambda: bool(fn_open_palette_settings()))
 
 
 def _start_tutorial():
-    """튜토리얼 — 10단계로 '한 편을 끝까지' 해 본다."""
-    steps = [
-        # ① 어디에 무엇이 있는지 (한 단계로 압축 — 구경은 짧을수록 좋다)
-        {"widget": lambda: quick_area, "title": "1/10  여기가 도구입니다",
-         "text": "위쪽은 어느 문서에서나 쓰는 '공통 팔레트',\n"
-                 "아래쪽은 문서 종류별로 갈아끼우는 '개인 팔레트'입니다.\n"
-                 "버튼(물감)을 누르면 한글에서 바로 실행됩니다."},
-        # ② 가장 쉬운 성공 — 누르면 된다는 감
-        {"widget": lambda: _gear, "title": "2/10  한글을 켜 두세요",
-         "text": "이 프로그램은 한글을 대신 조종합니다.\n"
-                 "한글을 켜 두면 오른쪽 위 동그라미가 초록입니다.\n"
-                 "다음을 누르면 연습용 새 문서를 열어 드릴게요.",
-         "action": lambda: ensure_hwp()},
-        # ③ 기호 — 등록 없이 바로 되는 것부터
-        {"widget": lambda: _help_btn, "title": "3/10  기호부터 넣어 봅니다",
-         "text": "한글 문서 아무 곳에나 이렇게 쳐 보세요.\n\n"
-                 "    \\원1\\ \\섭씨\\ \\오른쪽화살표\\\n\n"
-                 "그 줄을 드래그로 선택한 뒤 Ctrl+Alt+T 를 누르면\n"
-                 "① ℃ → 로 바뀝니다. 425개가 이미 들어 있습니다."},
-        # ④ 변환 — 이 프로그램의 본체
-        {"widget": lambda: quick_area, "title": "4/10  서식도 글로 씁니다",
-         "text": "다음 줄을 치고 선택 → Ctrl+Alt+T:\n\n"
-                 "    다음 중 \\굵게{옳지 않은} 것은?\n\n"
-                 "감싼 부분만 굵어집니다. \\색빨강{…} \\크기15{…} 처럼\n"
-                 "겹쳐 쓸 수도 있습니다."},
-        # ⑤ 연습용 표 — 여기서부터 '내 자산 만들기'
-        {"title": "5/10  연습용 표를 깔아 드립니다",
-         "text": "학년/반과 이름을 적는 작은 표입니다.\n"
-                 "칸 안의 역슬래시(\\)가 나중에 내용이 채워질 빈칸입니다.\n"
-                 "한글 창을 한 번 보고 오세요.",
-         "action": _make_practice_doc},
-        # ⑥ 캡처 — 결과물을 통째로 저장한다는 이 프로그램의 핵심
-        {"title": "6/10  표를 고릅니다",
-         "text": "한글에서 그 표 안을 아무 데나 클릭해 두세요.\n"
-                 "(표는 클릭만으로 전체가 잡힙니다.\n"
-                 " 표가 아닌 영역은 드래그로 선택하면 됩니다)"},
-        {"widget": lambda: _library_add_btn(),
-         "title": "7/10  템플릿으로 저장",
-         "text": "물감 설정을 열어 두었습니다.\n"
-                 "이 버튼을 누르면 방금 고른 표가 템플릿이 됩니다.\n"
-                 "이름은 '가정통신문머리'처럼 알아볼 수 있게 지으세요.",
-         "action": lambda: fn_open_library(cat="템플릿") and True},
-        # ⑧ 꺼내 쓰기 + 빈칸 채우기 — 저장한 것이 실제로 일하는 순간
-        {"title": "8/10  꺼내 쓰고, 빈칸을 채웁니다",
-         "text": "한글에 이렇게 쓰고 선택 → Ctrl+Alt+T:\n\n"
-                 "    \\가정통신문머리\\\n"
-                 "    3학년 2반\n"
-                 "    박승연\n\n"
-                 "표가 들어가면서 빈칸이 위에서부터 채워집니다.\n"
-                 "비울 칸에는 - 한 줄만 씁니다."},
-        # ⑨ 손에 맞게 — 팔레트에 올리기
-        {"widget": lambda: _gear, "title": "9/10  버튼으로 올려 둡니다",
-         "text": "⚙ → 팔레트 설정 → 빈칸을 드래그하면\n"
-                 "그 자리에 새 블럭이 생깁니다. 방금 만든 템플릿을 고르면\n"
-                 "이제 버튼 한 번으로 그 표가 들어갑니다.\n"
-                 "Ctrl+1~9 로도 실행됩니다."},
-        # ⑩ 나머지는 어디서 찾는지만
-        {"widget": lambda: _help_btn, "title": "10/10  다 됐습니다",
-         "text": "남은 것들은 필요할 때 여기서 찾으세요.\n"
-                 "  · 도움말 — 기능별 설명\n"
-                 "  · 문법 요약 — 변환 문법 한눈에\n"
-                 "  · 물감 설정 — 서식·기호·양식·사진 등록\n\n"
-                 "이 튜토리얼은 언제든 다시 볼 수 있습니다."},
-    ]
-    tutorial.Tutorial(root, steps).start()
+    """튜토리얼 목록을 연다 — 주제별 코스를 골라 시작한다."""
+    tutorial.open_picker(root, tutorials.build(_TutorialCtx))
+
+
 
 
 _help_btn = _bar_btn("?", lambda: _help_menu(_help_btn), "도움말")
