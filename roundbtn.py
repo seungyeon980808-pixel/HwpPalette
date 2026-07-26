@@ -156,14 +156,30 @@ class RoundButton(tk.Canvas):
         self._pressed = True
         self._fill = self._press            # 누름은 즉시 — 눌린 맛
         self._redraw()
+        self._flush()
 
     def _on_release(self, e):
         self._pressed = False
         inside = 0 <= e.x < self.winfo_width() and 0 <= e.y < self.winfo_height()
         self._fill = self._hover if inside else self._base
         self._redraw()
+        self._flush()
         if inside:
             self._invoke()
+
+    def _flush(self):
+        r"""바뀐 색을 **지금 화면에 내보낸다**.
+
+        Tk 는 itemconfig 로 바뀐 그림을 곧바로 그리지 않고 '한가할 때' 그린다.
+        그런데 버튼 명령(한글 COM 조작)은 눌린 직후 몇 초씩 붙잡고 있어서,
+        그 사이 한가한 순간이 오지 않는다 — 눌러도 아무 반응이 없다가 일이
+        다 끝난 뒤에야 화면이 바뀌었다 (사용자 지적 2026-07-26).
+        명령을 부르기 전에 한 번 밀어내면 '눌렀다'가 즉시 보인다.
+        """
+        try:
+            self.update_idletasks()
+        except Exception:
+            pass                            # 파괴 직전 경합 — 조용히 넘어간다
 
     def _invoke(self):
         if self.command:

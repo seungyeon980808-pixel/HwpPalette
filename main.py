@@ -118,10 +118,11 @@ def _single(key, make):
 def fn_open_library(cat=None):
     """라이브러리 창. cat 을 주면 그 탭으로 바로 연다 (특수문자 → '내장')."""
     win = _single("library", lambda: library_ui.open_manager(root, cat=cat))
-    # 이미 떠 있던 창이라도 요청한 탭('내장' 등)으로는 이동시킨다
+    # 이미 떠 있던 창이라도 요청한 탭('내장' 등)으로는 이동시킨다.
+    # _switch_tab 이어야 탭 버튼 색·설명·동작바까지 함께 따라온다.
     if cat:
         try:
-            win._refresh(cat)
+            win._switch_tab(cat)
         except Exception as e:
             applog.exc(f"라이브러리 '{cat}' 탭 이동 실패 (무해)", e)
     return win
@@ -446,8 +447,41 @@ BUILTIN_DISPATCH = {
 }
 
 
+def _busy(label):
+    r"""'지금 일하는 중'을 **즉시** 화면에 내보낸다 (2026-07-26).
+
+    한글 조작은 COM 왕복이라 짧아도 수백 ms, 길면 몇 초다. 그동안 Tkinter 는
+    한 줄로 묶여 있어 화면이 얼어붙는데, 아무 표시도 없으면 "눌러도 반응이
+    없다"로 읽힌다 (사용자 지적). 일을 시작하기 전에 상태줄·커서를 바꾸고
+    화면에 밀어내면, 기다리는 동안에도 '먹었다'는 것이 보인다.
+    끝나면 notify 가 결과 문구로 덮어쓴다.
+    """
+    try:
+        status_var.set(f"{label} 실행 중…")
+        status_lbl.config(fg=MUTED, bg=CARD)
+        root.config(cursor="watch")
+        root.update_idletasks()             # ← 지금 화면에 내보내기
+    except Exception:
+        pass
+
+
+def _unbusy():
+    try:
+        root.config(cursor="")
+    except Exception:
+        pass
+
+
 def run_palette_block(block):
     """팔레트 블럭 클릭 — 종류에 따라 삽입/적용."""
+    _busy(_block_label(block).replace("\n", " "))
+    try:
+        _run_palette_block(block)
+    finally:
+        _unbusy()
+
+
+def _run_palette_block(block):
     if block.get("type") == "builtin":
         # 프로그램 기능은 한글 연결 없이도 여는 것이 있다(라이브러리·찾기).
         # 연결이 필요한 것은 각 함수가 스스로 ensure_hwp 를 한다.
