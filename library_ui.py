@@ -1133,7 +1133,9 @@ class LibraryManager(tk.Toplevel):
             elif cat == "문자":
                 hwp_engine.insert_plain(item["text"])
             elif cat == "양식":
-                engine_library.open_form(library.template_path(item))
+                # 물감 설정의 [열기] 도 손으로 채워 쓰는 경우 — 자리표시는 지운다
+                engine_library.open_form(library.template_path(item),
+                                         strip_markers=True)
             else:
                 engine_library.insert_fragment(library.template_path(item))
         except Exception as e:

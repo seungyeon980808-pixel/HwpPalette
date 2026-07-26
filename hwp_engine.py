@@ -289,6 +289,15 @@ def read_selection_text(retries=10, delay=0.08):
     타이밍이 어긋나 빈 값이 잦았다(실측 2026-07-15).
     """
     import win32clipboard        # 플랫폼 의존 — 없을 수 있어 지역 import
+    # **선택이 없으면 클립보드를 아예 읽지 않는다** (2026-07-26 버그).
+    #
+    # Copy 는 선택이 없으면 아무 일도 안 하는데, 그 뒤 클립보드를 읽으면
+    # **직전에 복사해 둔 남의 글**이 선택 내용으로 둔갑했다. 튜토리얼의
+    # [복사] 로 예문을 담아 둔 상태에서 변환을 누르면, 그 예문을 문서에서
+    # 찾아 바꾸려다 "바꿀 자리를 찾지 못해 건너뜀" 만 반복했다(실측 로그).
+    # 최악의 경우 엉뚱한 글이 문서에 삽입될 수도 있었다.
+    if not has_selection():
+        return ""
     copy_selection()
     last_error = None
     for _ in range(retries):

@@ -601,16 +601,48 @@ def read_file_structure(path):
     return (xml or None), text
 
 
-def open_form(path):
+def strip_marks(limit=500):
+    r"""문서에 남은 자리표시를 지운다 — \본문\ 먼저, 그다음 빈칸 \.
+
+    양식 파일 안의 역슬래시는 **글이 아니라 표시**다 (여기가 본문 자리다,
+    여기에 내용이 들어간다). 그런데 양식을 그냥 열어 쓸 때는 그 표시가 그대로
+    인쇄물에 남았다 (사용자 지적 2026-07-26).
+    \본문\ 을 먼저 지우는 이유: 그 안에도 역슬래시가 둘 있어, 빈칸부터 지우면
+    '본문' 이라는 글자만 남는다.
+    반환: 지운 개수.
+    """
+    hwp = _h()
+    removed = 0
+    for target in (BODY_ANCHOR, "\\"):
+        hwp.MoveDocBegin()
+        while removed < limit and find_text(target):
+            delete_selection()
+            removed += 1
+    hwp.MoveDocBegin()
+    return removed
+
+
+def open_form(path, strip_markers=False):
     r"""양식 파일을 새 문서로 연다 (용지·여백·머리말까지 원본 그대로).
 
     템플릿(insert_fragment)은 문서 '일부'를 커서 위치에 꽂는 것이라 페이지 설정이
     안 따라온다. 표지·통신문처럼 "이 양식으로 새로 시작"하려면 파일 전체를 열어야
     한다. 실측(2026-07-16): 여백 45/40 보존, 창 최대화도 유지됨.
+
+    strip_markers=True 면 열자마자 자리표시(\본문\·빈칸 \)를 걷어낸다.
+    **그냥 열어서 손으로 쓰는 경우**가 그렇다 — 표시가 남으면 그대로 인쇄된다.
+    변환(\양식라벨\)으로 여는 경우에는 그 표시를 보고 내용을 채우므로 지우면 안 된다.
     """
     hwp = _h()
     hwp.FileNew()
     hwp.open(str(path))
+    if strip_markers:
+        try:
+            n = strip_marks()
+            if n:
+                applog.info(f"양식을 열며 자리표시 {n}개를 걷어냈습니다")
+        except Exception as e:
+            applog.exc("자리표시 걷어내기 실패 — 문서에 \\ 가 남습니다", e)
 
 
 # ── 팔레트: 기능 블럭 실행 (여러 기능 병렬) ─────────────
@@ -759,9 +791,9 @@ def run_block(block, template_path_fn=None, form_path_fn=None,
         if not path:
             return False, (f"양식을 찾을 수 없습니다: {block.get('form', '?')}"
                            " (라이브러리에서 삭제된 것 같습니다)")
-        open_form(path)
-        # 새 문서로 연 것이므로 빈칸은 남겨둔다 — 사용자가 채우거나
-        # \라벨\ 변환으로 채운다.
+        # 팔레트 버튼으로 여는 것 = 손으로 채워 쓰는 경우다. 자리표시(\)는
+        # 인쇄물에 남으면 안 되므로 열면서 걷어낸다 (2026-07-26).
+        open_form(path, strip_markers=True)
         return True, "양식 열기"
     return False, f"알 수 없는 블럭: {btype}"
 

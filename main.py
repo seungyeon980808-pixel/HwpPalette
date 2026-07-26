@@ -287,8 +287,20 @@ def fn_convert():
         selected = read_selected_text()
         hwp_engine._diag("fn_convert: read_selected_text(Copy) 후")
         if not selected or not selected.strip():
+            # 문서가 여러 개 열려 있으면 '내가 보는 문서'와 '한글이 활성으로
+            # 아는 문서'가 어긋날 수 있다 (2026-07-26 실측: 프로그램이 양식을
+            # 연 뒤 사용자가 다른 문서에서 선택하면 그 선택이 안 보였다).
+            # 그때 "선택하세요" 라고만 하면 이미 선택한 사람은 길을 잃는다.
+            extra = ""
+            try:
+                if hwp_engine.hwp.XHwpDocuments.Count > 1:
+                    extra = ("\n\n한글에 문서가 여러 개 열려 있습니다.\n"
+                             "변환할 문서를 한 번 클릭해 그 창을 활성으로 만든 뒤\n"
+                             "다시 선택해서 눌러주세요.")
+            except Exception:
+                pass
             messagebox.showwarning("선택 없음",
-                "한글에서 변환할 텍스트를 드래그로 선택해주세요.")
+                "한글에서 변환할 텍스트를 드래그로 선택해주세요." + extra)
             return
         data = md_parser.parse(selected)
         if md_parser.has_recognized_content(data):
