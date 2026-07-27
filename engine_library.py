@@ -751,6 +751,30 @@ def execute_function_block(actions):
 
 
 # ── 팔레트: 블럭 실행 ──────────────────────────────────
+def restore_text(text):
+    r"""지워진 원문을 커서 자리에 그대로 다시 넣는다. 성공 여부를 돌려준다.
+
+    왜 필요한가 (2026-07-26 검진):
+        변환은 **선택을 먼저 지운 뒤** 계획을 실행한다(그 자리가 삽입 지점이라
+        순서를 바꿀 수 없다). 그런데 계획 실행이 실패하면 지운 글은 돌아오지
+        않았다 — 사용자가 쓴 문장이 조용히 사라지는 유일한 경로였다.
+
+    줄바꿈을 문단으로 되살린다. insert_plain 에 여러 줄을 통째로 주면 한글이
+    문단을 나누지 않아 한 줄로 뭉친다(실측).
+    """
+    try:
+        lines = str(text).replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        for n, line in enumerate(lines):
+            if n:
+                _h().HAction.Run("BreakPara")
+            if line:
+                insert_plain(line)
+        return True
+    except Exception as e:
+        applog.exc("지워진 선택을 문서에 되돌리지 못했습니다", e)
+        return False
+
+
 def run_block(block, template_path_fn=None, form_path_fn=None,
               slot_count_fn=None):
     r"""팔레트 블럭 하나를 실행한다. 종류에 따라 삽입/적용 분기.

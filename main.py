@@ -57,6 +57,7 @@ from tkinter import messagebox, filedialog
 import applog
 import paths
 import theme
+import clipboard                    # 윈도우 클립보드 (실패한 변환의 원문 대피용)
 import onboarding
 import parser as md_parser
 import hwp_engine
@@ -278,11 +279,43 @@ def _confirm_plan(ops, warns):
     return messagebox.askokcancel("변환 확인", "\n".join(lines))
 
 
+def _rescue_selection(text, touched_document):
+    r"""변환이 실패했을 때 **지워진 사용자 글을 지킨다** (2026-07-26 검진).
+
+    변환은 선택을 먼저 지운 뒤 계획을 실행한다(그 자리가 삽입 지점이라 순서를
+    바꿀 수 없다). 실패하면 그 글이 사라진 채로 끝나던 것을 막는다.
+
+    touched_document:
+      False — 아직 아무것도 안 넣었다(예: 양식 파일을 못 찾아 계획이 멈춤).
+              문서에 그대로 되돌린다. 사용자는 아무 일도 없었던 것처럼 본다.
+      True  — 실행 도중 터졌다. 무언가 이미 들어갔을 수 있어 **문서를 더
+              건드리지 않는다** — 되돌려 넣으면 반쯤 들어간 것 위에 겹쳐
+              중복이 생긴다. 대신 클립보드에 담아 사용자가 붙여넣게 한다.
+              (평소에는 클립보드를 안 건드리지만, 글을 잃는 것보다는 낫다)
+    """
+    if not text:
+        return
+    if not touched_document and engine_library.restore_text(text):
+        notify("info", "변환에 실패해 원래 글을 되돌려 놓았습니다")
+        return
+    if clipboard.set_text(text, widget=root):
+        messagebox.showwarning(
+            "원래 글을 클립보드에 담았습니다",
+            "변환이 중간에 멈춰 선택했던 글을 문서에 되돌리지 못했습니다.\n"
+            "원문을 클립보드에 담아 두었으니 붙여넣기(Ctrl+V)로 살리세요.")
+        notify("warn", "원래 글을 클립보드에 담았습니다 — 붙여넣기로 살리세요")
+    else:
+        notify("error", "원래 글을 되살리지 못했습니다 — 한글의 되돌리기(Ctrl+Z)를 쓰세요")
+
+
 def fn_convert():
     """선택 영역 마크다운 변환 — 시험문제 문법 또는 라이브러리 \\라벨\\ 문법"""
     hwp_engine._diag("fn_convert: 버튼 눌린 직후")
     if not ensure_hwp(): return
     hwp_engine._diag("fn_convert: ensure_hwp 후")
+    selected = ""               # 실패했을 때 되돌리기 위해 바깥에 둔다
+    erased = False              # 선택을 지웠는가 (지웠으면 책임지고 되살린다)
+    touched = False             # 문서에 무언가 넣기 시작했는가
     try:
         selected = read_selected_text()
         hwp_engine._diag("fn_convert: read_selected_text(Copy) 후")
@@ -306,6 +339,8 @@ def fn_convert():
         if md_parser.has_recognized_content(data):
             # 시험문제 변환 (기존 동작)
             hwp_engine.delete_selection()
+            erased = True
+            touched = True      # insert_question 은 곧바로 문서를 쓰기 시작한다
             should_increment = exam_engine.insert_question(data, num_var.get(), num_use.get())
             hwp_engine._diag("fn_convert: insert_question(시험문제 변환) 후")
             if should_increment:
@@ -347,11 +382,18 @@ def fn_convert():
                     notify("ok", msg)
                 return
             hwp_engine.delete_selection()
+            erased = True
             result = engine_library.execute_library_plan(
                 ops, library.template_path, form_path_fn=library.template_path)
+            touched = True      # 여기까지 왔으면 문서를 건드렸을 수 있다
             hwp_engine._diag("fn_convert: execute_library_plan 후")
             if result.get("error"):
+                # 이 실패는 **아무것도 넣기 전**에 난다(양식 파일을 못 찾는
+                # 경우뿐 — engine_library 의 유일한 error 반환 지점).
+                # 그래서 지운 글을 문서에 그대로 되돌릴 수 있다.
                 applog.warn(f"라이브러리 변환 실패: {result['error']}")
+                _rescue_selection(selected, touched_document=False)
+                erased = False
                 messagebox.showerror("변환 실패", result["error"])
                 notify("warn", f"{result['error']}")
                 return
@@ -384,6 +426,10 @@ def fn_convert():
     except Exception as e:
         # detail=True — 변환은 단계가 많아 스택 없이는 원인 지점을 못 찾는다
         report_error("마크다운 변환 실패", e, detail=True)
+        # **여기서 그냥 끝내면 지운 선택이 사라진 채로 남는다** (2026-07-26 검진).
+        # 터진 위치를 알 수 없으므로 문서를 더 건드리지 않고 클립보드로 건넨다.
+        if erased:
+            _rescue_selection(selected, touched_document=touched)
 
 
 def fn_reset_format():
@@ -870,6 +916,9 @@ class _TutorialCtx:
     library_hint = staticmethod(lambda: _library_widget("sel_hint"))
     library_act_main = staticmethod(lambda: _library_widget("act_main"))
     ensure_hwp = staticmethod(lambda: ensure_hwp())
+    # 그 라벨이 이 사람 라이브러리에 실제로 있는가 — 등록 안 된 물감을 쓰는
+    # 실습을 설명으로 바꾸는 데 쓴다 (tutorials._fit_to_library)
+    has_label = staticmethod(lambda lab: lab in library.label_lookup())
     make_practice_doc = staticmethod(lambda: _make_practice_doc())
     make_example_doc = staticmethod(
         lambda examples, title="": _make_example_doc(examples, title))

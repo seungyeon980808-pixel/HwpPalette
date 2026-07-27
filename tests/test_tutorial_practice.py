@@ -23,8 +23,13 @@ import tutorials            # noqa: E402
 class FakeCtx:
     """main.py 의 _TutorialCtx 흉내 — 무엇을 넘겼는지만 받아 둔다."""
 
-    def __init__(self):
+    def __init__(self, labels=None):
         self.calls = []
+        # 이 사람 라이브러리에 있는 라벨 (None 이면 '뭐든 다 있다')
+        self.labels = labels
+
+    def has_label(self, label):
+        return True if self.labels is None else label in self.labels
 
     def make_example_doc(self, examples, title=""):
         self.calls.append((title, list(examples)))
@@ -119,6 +124,62 @@ class ExampleDocWiringTest(unittest.TestCase):
         first = template["steps"][0]
         self.assertIsNotNone(first.get("action"))
         self.assertIsNone(first.get("code"))    # 표를 만드는 단계 그대로
+
+
+class FreshInstallTest(unittest.TestCase):
+    r"""갓 설치한 사람(빈 라이브러리)에게도 튜토리얼이 멀쩡한가.
+
+    v0.1.1 에 실려 나간 흠: '처음 시작하기'의 `\수능양식\` 실습은 만든 사람의
+    라이브러리에만 있는 물감이라, 새 사용자는 첫 코스 실습에서 "등록되지 않은
+    라벨"을 만났다 (2026-07-26 검진 → 2026-07-27 수정).
+    """
+
+    def _start(self, ctx):
+        return next(c for c in tutorials.build(ctx) if c["key"] == "start")
+
+    def test_라벨이_없으면_실습이_설명으로_바뀐다(self):
+        step = next(s for s in self._start(FreshInstallTest._empty())["steps"]
+                    if s.get("needs_label") == "수능양식")
+        self.assertIsNone(step.get("code"), "실습이 남아 있으면 변환이 실패한다")
+        self.assertIsNone(step.get("task"))
+        self.assertIn("양식", step["text"])
+
+    def test_라벨이_있으면_실습_그대로(self):
+        ctx = FakeCtx(labels={"수능양식"})
+        step = next(s for s in self._start(ctx)["steps"]
+                    if s.get("needs_label") == "수능양식")
+        self.assertEqual(step.get("code"), "\\수능양식\\")
+        self.assertIsNotNone(step.get("task"))
+
+    def test_단계_자체는_사라지지_않는다(self):
+        """건너뛰면 양식이라는 것이 있다는 사실조차 모르고 지나간다."""
+        full = len(self._start(FakeCtx(labels={"수능양식"}))["steps"])
+        empty = len(self._start(FreshInstallTest._empty())["steps"])
+        self.assertEqual(full, empty)
+
+    def test_빠진_실습은_연습_문서에도_안_들어간다(self):
+        """_fit_to_library 가 _with_example_doc 보다 먼저 돌아야 한다."""
+        ctx = FreshInstallTest._empty()
+        start = self._start(ctx)
+        for step in start["steps"]:
+            if step.get("code") and step.get("action"):
+                step["action"]()
+                break
+        _title, examples = ctx.calls[0]
+        self.assertNotIn("\\수능양식\\", [code for _t, code in examples])
+
+    def test_판단이_안_되면_원래대로_둔다(self):
+        """has_label 이 터져도 튜토리얼이 통째로 무너지면 안 된다."""
+        class Broken(FakeCtx):
+            def has_label(self, label):
+                raise RuntimeError("라이브러리를 읽을 수 없음")
+        step = next(s for s in self._start(Broken())["steps"]
+                    if s.get("needs_label") == "수능양식")
+        self.assertEqual(step.get("code"), "\\수능양식\\")
+
+    @staticmethod
+    def _empty():
+        return FakeCtx(labels=set())
 
 
 if __name__ == "__main__":
