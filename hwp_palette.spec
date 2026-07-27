@@ -24,7 +24,8 @@ a = Analysis(
     pathex=[str(HERE)],
     binaries=[],
     # 아이콘은 코드에서 파일로 읽으므로 같이 넣어야 한다 (paths.RESOURCE_DIR)
-    datas=[("assets/icon-96.png", "assets")],
+    # icon-96.png = 창 안 아이콘, folder.ico = '내 물감' 폴더에 입히는 아이콘
+    datas=[("assets/icon-96.png", "assets"), ("assets/folder.ico", "assets")],
     # pyhwpx 는 한글 COM 타입라이브러리를 실행 중에 만들어 쓴다. PyInstaller 의
     # 정적 분석으로는 win32com.client 의 동적 생성 경로가 안 잡혀서, 명시하지
     # 않으면 exe 에서만 "한글을 찾을 수 없습니다"가 난다.

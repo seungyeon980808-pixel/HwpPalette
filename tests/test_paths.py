@@ -57,11 +57,54 @@ class FrozenTest(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
 
-    def test_쓸_수_있으면_exe_옆에_둔다(self):
+    def test_exe_옆_내_물감_폴더에_둔다(self):
+        r"""**exe 옆에 파일을 흩뿌리지 않는다** (사용자 지적 2026-07-27).
+
+        예전에는 exe 옆에 그대로 뒀다. 바탕화면에 exe 를 두면 config.json ·
+        백업 3벌 · library.json · 백업 3벌 · app.log · fragments 까지
+        파일 10개 + 폴더 1개가 바탕화면에 흩어졌다.
+        """
         beside = self.tmp / "portable"
         beside.mkdir()
         self._frozen(beside)
-        self.assertEqual(paths.data_dir(), beside.resolve())
+        self.assertEqual(paths.data_dir(),
+                         beside.resolve() / paths.DATA_FOLDER_NAME)
+
+    def test_폴더_하나만_생긴다(self):
+        beside = self.tmp / "desktop"
+        beside.mkdir()
+        self._frozen(beside)
+        paths.data_dir()
+        made = [p.name for p in beside.iterdir()]
+        self.assertEqual(made, [paths.DATA_FOLDER_NAME])
+
+    def test_옛_exe_가_흩뿌린_것을_폴더로_옮긴다(self):
+        """v0.1.1 exe 를 써 본 사람의 팔레트가 조용히 사라지면 안 된다."""
+        beside = self.tmp / "old"
+        beside.mkdir()
+        (beside / "config.json").write_text("{}", encoding="utf-8")
+        (beside / "config.json.bak1").write_text("{}", encoding="utf-8")
+        (beside / "library.json").write_text("{}", encoding="utf-8")
+        (beside / "app.log").write_text("", encoding="utf-8")
+        self._frozen(beside)
+
+        folder = paths.data_dir()
+        for name in ("config.json", "config.json.bak1", "library.json",
+                     "app.log"):
+            self.assertTrue((folder / name).exists(), name)
+            self.assertFalse((beside / name).exists(), f"{name} 이 남아 있다")
+
+    def test_새_폴더에_이미_있으면_덮어쓰지_않는다(self):
+        beside = self.tmp / "both"
+        (beside / paths.DATA_FOLDER_NAME).mkdir(parents=True)
+        (beside / "config.json").write_text("옛것", encoding="utf-8")
+        (beside / paths.DATA_FOLDER_NAME / "config.json").write_text(
+            "지금 쓰는 것", encoding="utf-8")
+        self._frozen(beside)
+
+        folder = paths.data_dir()
+        self.assertEqual((folder / "config.json").read_text(encoding="utf-8"),
+                         "지금 쓰는 것")
 
     def test_임시_폴더에_두지_않는다(self):
         # 이것이 이 파일의 핵심. _MEIPASS 는 프로그램이 끝나면 지워진다.
@@ -71,7 +114,8 @@ class FrozenTest(unittest.TestCase):
         meipass.mkdir()
         self._frozen(beside, meipass=meipass)
         self.assertNotEqual(paths.data_dir(), meipass)
-        self.assertEqual(paths.data_dir(), beside.resolve())
+        self.assertEqual(paths.data_dir(),
+                         beside.resolve() / paths.DATA_FOLDER_NAME)
 
     def test_자원은_임시_폴더에서_읽는다(self):
         # 아이콘처럼 딸려온 파일은 거기 풀리므로 여기서 읽는 게 맞다.
@@ -87,9 +131,10 @@ class FrozenTest(unittest.TestCase):
         appdata.mkdir()
         self._frozen(beside)
         real = paths._writable
-        # exe 옆만 못 쓰는 상황을 흉내낸다
+        # exe 옆(내 물감 폴더)만 못 쓰는 상황을 흉내낸다 — Program Files 처럼
+        blocked = beside.resolve() / paths.DATA_FOLDER_NAME
         p = mock.patch.object(paths, "_writable",
-                              lambda d: False if d == beside.resolve() else real(d))
+                              lambda d: False if d == blocked else real(d))
         p.start()
         self.addCleanup(p.stop)
         p2 = mock.patch.dict("os.environ", {"LOCALAPPDATA": str(appdata)})
@@ -107,7 +152,8 @@ class FrozenTest(unittest.TestCase):
         p2 = mock.patch.dict("os.environ", {"LOCALAPPDATA": "", "APPDATA": ""})
         p2.start()
         self.addCleanup(p2.stop)
-        self.assertEqual(paths.data_dir(), beside.resolve())   # 안 터진다
+        self.assertEqual(paths.data_dir(),                     # 안 터진다
+                         beside.resolve() / paths.DATA_FOLDER_NAME)
 
 
 class WritableTest(unittest.TestCase):

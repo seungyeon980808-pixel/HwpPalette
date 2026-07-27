@@ -52,11 +52,93 @@ def _writable(d):
         return False
 
 
+# exe 옆에 만드는 데이터 폴더 이름 (사용자 결정 2026-07-27).
+#
+# 예전에는 **exe 옆에 파일을 그대로 흩뿌렸다.** 폴더에 넣어 쓸 것이라는 전제가
+# 있었는데, 사람들은 받은 exe 를 바탕화면이나 '다운로드'에 그냥 둔다. 그러면
+# config.json · 백업 3벌 · library.json · 백업 3벌 · app.log · fragments 까지
+# **파일 10개 + 폴더 1개**가 바탕화면에 흩어졌다 (실측).
+#
+# 이름을 'data' 가 아니라 '내 물감' 으로 한 이유: 프로그램이 쓰는 말과 같아야
+# "이 폴더가 내 자산이구나"가 읽히고, 백업할 때 무엇을 챙길지 분명해진다.
+DATA_FOLDER_NAME = "내 물감"
+
+# 폴더 방식으로 바꾸기 전(v0.1.1)에 exe 옆에 흩어져 있던 것들. 그 시절 exe 를
+# 써 본 사람의 팔레트가 조용히 사라지지 않게 한 번만 옮겨 준다.
+_LEGACY_NAMES = ("config.json", "library.json", "app.log", "fragments",
+                 "window_diag.log")
+
+
+def _migrate_legacy(beside, folder):
+    """exe 옆에 흩어져 있던 예전 데이터를 새 폴더로 옮긴다 (한 번만).
+
+    옮기다 실패해도 프로그램은 떠야 한다 — 실패한 것은 제자리에 남고, 새
+    폴더는 빈 채로 시작한다(사용자 눈에는 '처음 켠 것'처럼 보이지만, 원본이
+    지워지지는 않는다).
+    """
+    moved = 0
+    for name in _LEGACY_NAMES:
+        for src in beside.glob(name + "*"):     # .bak1~3 까지 함께
+            if src.name == DATA_FOLDER_NAME:
+                continue
+            try:
+                dest = folder / src.name
+                if not dest.exists():
+                    src.replace(dest)
+                    moved += 1
+            except OSError:
+                pass            # 잠긴 파일 등 — 제자리에 두고 넘어간다
+    return moved
+
+
+def _decorate_folder(folder):
+    r"""'내 물감' 폴더에 물감 아이콘을 입힌다 (윈도우 desktop.ini 규칙).
+
+    왜: 바탕화면에 폴더 하나가 늘어나는데, 그게 무엇인지 이름만으로는 지나치기
+    쉽다. 물감 아이콘이 붙어 있으면 "아, 프로그램이 만든 내 자산" 이 한눈에
+    보이고, 옮기거나 백업할 때 헷갈리지 않는다.
+
+    아이콘 파일을 **폴더 안에** 두는 이유: 폴더째 복사해 옮겨도 아이콘이
+    따라간다(USB 로 들고 다니는 쓰임새를 지키기 위함).
+
+    전부 꾸밈이라 실패해도 조용히 넘어간다 — 아이콘 때문에 프로그램이 못 뜨는
+    일은 없어야 한다. (applog 를 쓰지 않는 이유: applog 가 paths 를 임포트해
+    순환이 된다)
+    """
+    try:
+        import ctypes
+        import shutil
+
+        ico = folder / ".folder.ico"
+        ini = folder / "desktop.ini"
+        if not ico.exists():
+            src = resource_dir() / "assets" / "folder.ico"
+            if not src.exists():
+                return
+            shutil.copyfile(src, ico)
+        if not ini.exists():
+            ini.write_text(
+                "[.ShellClassInfo]\n"
+                "IconResource=.folder.ico,0\n"
+                "InfoTip=HwpPalette 가 만든 물감·팔레트·양식이 들어 있습니다\n",
+                encoding="utf-8")
+
+        # 윈도우는 desktop.ini 가 **숨김+시스템**이고 폴더에 시스템 속성이
+        # 있어야 그 아이콘을 읽는다. 안 걸면 규칙 파일만 덩그러니 보인다.
+        setattrs = ctypes.windll.kernel32.SetFileAttributesW
+        setattrs(str(ico), 0x2 | 0x4)          # 숨김 + 시스템
+        setattrs(str(ini), 0x2 | 0x4)
+        setattrs(str(folder), 0x4)             # 폴더에 시스템 속성
+    except Exception:
+        pass                # 꾸밈 실패로 프로그램이 멈추면 안 된다
+
+
 def data_dir():
     """사용자 데이터를 두는 폴더. 없으면 만든다.
 
-    exe 는 **옆에** 두는 것을 먼저 시도한다 — USB 에 넣어 다니거나 통째로
-    복사해 옮길 수 있고, 설정이 어디 있는지 눈에 보인다.
+    exe 는 **옆에 '내 물감' 폴더를 만들어** 그 안에 넣는다 — 어디에 두어도
+    주변이 지저분해지지 않고, 폴더째 복사해 옮기거나 USB 에 넣어 다닐 수
+    있으며, 내 자산이 어디 있는지 눈에 보인다.
     Program Files 처럼 쓰기가 막힌 곳에 설치했으면 AppData 로 물러선다
     (거기서도 실패하면 예외 대신 exe 옆 경로를 돌려준다 — 저장할 때
     나는 오류가 여기서 나는 오류보다 다루기 쉽다).
@@ -65,15 +147,18 @@ def data_dir():
         return _HERE                       # 소스 실행 — 지금까지와 동일
 
     beside = pathlib.Path(sys.executable).resolve().parent
-    if _writable(beside):
-        return beside
+    folder = beside / DATA_FOLDER_NAME
+    if _writable(folder):
+        _migrate_legacy(beside, folder)
+        _decorate_folder(folder)
+        return folder
 
     base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
     if base:
         appdata = pathlib.Path(base) / APP_NAME
         if _writable(appdata):
             return appdata
-    return beside
+    return folder
 
 
 DATA_DIR = data_dir()
