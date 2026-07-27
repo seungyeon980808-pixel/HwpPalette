@@ -133,6 +133,37 @@ def ensure_visible():
     return bool(_hwp_window_handles())
 
 
+def window_is_visible():
+    """연결된 인스턴스의 창이 지금 화면에 보이는가.
+
+    '고치기'에 들어가기 **전에** 재 둔다 — 우리가 켠 창인지 알아야 끝난 뒤
+    원래대로 되돌릴 수 있다 (hide_window_if_idle 참고).
+    """
+    win = _active_window_com()
+    if win is None:
+        return False
+    try:
+        return bool(win.Visible)
+    except Exception as e:
+        applog.exc("한글 창 표시 여부 확인 실패 — 보인다고 본다", e)
+        return True             # 모르면 건드리지 않는 쪽이 안전하다
+
+
+def set_window_visible(on):
+    """연결된 인스턴스의 창을 켜거나 끈다. 반환: 실제로 바꿨는가."""
+    win = _active_window_com()
+    if win is None:
+        return False
+    try:
+        if bool(win.Visible) == bool(on):
+            return False        # 이미 그 상태 — Visible 대입은 부작용이 있다
+        win.Visible = bool(on)
+        return True
+    except Exception as e:
+        applog.exc(f"한글 창 표시 전환 실패 (on={on})", e)
+        return False
+
+
 def _connected_hwnd():
     """연결된 인스턴스의 창 핸들. 모르면 보이는 아무 한글 창, 없으면 None.
 

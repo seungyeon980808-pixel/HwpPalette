@@ -32,6 +32,7 @@ import engine_library        # noqa: E402
 class FakeDoc:
     def __init__(self, tag):
         self.tag = tag
+        self.FullName = ""
         self.closed = False
         self.activated = 0
 
@@ -101,7 +102,12 @@ class FakeHwp:
         self._end = True
 
     def GetPos(self):
-        return (0, 0, 24) if getattr(self, "_end", False) else (0, 0, 16)
+        # 실측값 흉내: 빈 문서는 처음과 끝이 둘 다 (0,0,16) 이고,
+        # 내용이 있으면 끝이 (0,0,24) 로 달라진다.
+        has_content = bool(self.body) or set(self.ctrls) - {"secd", "cold"}
+        if getattr(self, "_end", False) and has_content:
+            return (0, 0, 24)
+        return (0, 0, 16)
 
     def FileNew(self):
         raise AssertionError("FileNew 는 새 '창'을 연다 — 써서는 안 된다")
@@ -270,6 +276,71 @@ class FinishEditSessionTest(unittest.TestCase):
         doc = FakeDoc("탭")
         engine_library.finish_edit_session(engine_library.EditSession(doc), "id5")
         self.assertTrue(doc.closed, "미리보기 실패가 탭 닫기를 막았다")
+
+
+class HideWindowIfIdleTest(unittest.TestCase):
+    r"""고치기가 끝난 뒤 빈 한글 창을 남기지 않는다 (2026-07-27).
+
+    사용자 지적: "수정하고 닫은 다음에 빈 문서 하나가 여전히 남아 있다."
+    실측: 편집 탭은 정상적으로 닫히지만 그 인스턴스의 **바탕 문서**가 남는다.
+    한글은 문서를 0개로 만들 수 없어 마지막 문서는 Close 해도 안 없어진다
+    (실측: Close 뒤에도 Count 가 1). 남는 길은 창을 숨기는 것뿐이다.
+
+    다만 **사용자 문서가 하나라도 있으면 절대 숨기지 않는다** — 쓰던 창이
+    사라지는 것이 빈 창이 남는 것보다 훨씬 나쁘다.
+    """
+
+    def tearDown(self):
+        mock.patch.stopall()
+
+    def _hwp(self, docs):
+        """docs: [(FullName, 글자)] — 열려 있는 문서 목록."""
+        fake = FakeHwp()
+
+        class Docs:
+            Count = len(docs)
+
+            def Item(_s, i):
+                d = FakeDoc(docs[i][0])
+                d.FullName = docs[i][0]
+
+                def activate(_name=docs[i][0], _text=docs[i][1]):
+                    fake.body = _text
+                    fake.ctrls = ["secd", "cold"]
+                d.SetActive_XHwpDocument = activate
+                return d
+        fake.XHwpDocuments = Docs()
+        _install(fake)
+        return fake
+
+    def test_빈_무제_문서_하나뿐이면_창을_숨긴다(self):
+        self._hwp([("", "")])
+        hid = mock.patch.object(engine_library.hwp_engine, "set_window_visible",
+                                return_value=True).start()
+        self.assertTrue(engine_library.hide_window_if_idle())
+        hid.assert_called_once_with(False)
+
+    def test_문서가_둘_이상이면_숨기지_않는다(self):
+        self._hwp([("", ""), ("", "사용자 글")])
+        spy = mock.patch.object(engine_library.hwp_engine,
+                                "set_window_visible").start()
+        self.assertFalse(engine_library.hide_window_if_idle())
+        spy.assert_not_called()
+
+    def test_파일이_열려_있으면_숨기지_않는다(self):
+        r"""사용자가 쓰던 문서다 — 창이 사라지면 안 된다."""
+        self._hwp([(r"C:\수업\시험지.hwp", "")])
+        spy = mock.patch.object(engine_library.hwp_engine,
+                                "set_window_visible").start()
+        self.assertFalse(engine_library.hide_window_if_idle())
+        spy.assert_not_called()
+
+    def test_내용이_있으면_숨기지_않는다(self):
+        self._hwp([("", "사용자가 쓰던 글")])
+        spy = mock.patch.object(engine_library.hwp_engine,
+                                "set_window_visible").start()
+        self.assertFalse(engine_library.hide_window_if_idle())
+        spy.assert_not_called()
 
 
 class EditSessionTest(unittest.TestCase):

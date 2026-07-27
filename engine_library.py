@@ -882,6 +882,40 @@ def open_form_copy(path, note_lines=None):
     return EditSession(doc, temp_path=copy_path)
 
 
+def hide_window_if_idle():
+    r"""한글에 **빈 무제 문서 하나만** 남았으면 창을 숨긴다. 반환: 숨겼는가.
+
+    왜 필요한가 (실측 2026-07-27, 사용자 지적 "수정하고 닫은 다음에 빈 문서
+    하나가 여전히 남아 있다"): 고치기가 끝나면 편집 탭은 닫히지만, 그 한글
+    인스턴스의 **바탕 문서**가 남는다. 한글은 문서를 0개로 만들 수 없어서
+    마지막 문서는 닫아도 안 없어진다(실측: Close 해도 Count 가 1 그대로).
+    남는 길은 **창을 숨기는 것**뿐이다 (실측: Visible=False → 창 0개).
+
+    그 바탕 문서는 대개 우리가 붙은 숨은 COM 인스턴스의 것이라, 편집하려고
+    `ensure_visible` 로 켠 창이 그대로 남아 "안 띄운 빈 한글"로 보인다.
+    그래서 **우리가 켠 창일 때만** 되돌린다 — 호출부가 고치기 전에
+    `hwp_engine.window_is_visible()` 로 재 두고 판단한다.
+
+    사용자 문서가 하나라도 있으면(파일이 열려 있거나 내용이 있으면) 절대
+    숨기지 않는다 — 쓰던 창이 사라지는 것이 빈 창이 남는 것보다 나쁘다.
+    """
+    hwp = _h()
+    try:
+        docs = hwp.XHwpDocuments
+        if docs.Count != 1:
+            return False                # 다른 문서가 열려 있다 — 사용자 것이다
+        doc = docs.Item(0)
+        if (doc.FullName or ""):
+            return False                # 파일이 열려 있다
+        doc.SetActive_XHwpDocument()
+        if not doc_is_empty():
+            return False                # 내용이 있다
+    except Exception as e:
+        applog.exc("한글 창 숨김 판단 실패 — 창을 그대로 둔다", e)
+        return False
+    return hwp_engine.set_window_visible(False)
+
+
 def finish_edit_session(session, item_id):
     r"""고치기를 마무리한다 — 미리보기를 뽑고 편집 탭을 닫는다. 반환: (미리보기 성공, 탭 닫음).
 
