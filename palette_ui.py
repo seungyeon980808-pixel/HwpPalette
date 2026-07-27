@@ -441,7 +441,7 @@ class SettingsWindow(tk.Toplevel):
         m.add_command(label="이름 바꾸기  (더블클릭)",
                       command=lambda: self._rename_tab(idx))
         m.add_separator()
-        m.add_command(label="이 팔레트를 칩으로 내보내기…",
+        m.add_command(label="팔레트 내보내기…",
                       command=lambda: self._export_chip(idx))
         m.add_separator()
         m.add_command(label="삭제", command=lambda: self._del_tab(idx))
@@ -465,44 +465,44 @@ class SettingsWindow(tk.Toplevel):
 
         missing = chip.missing_refs(tab)
         if missing:
-            # 지워진 물감을 가리키는 버튼은 칩에 담을 수 없다. 조용히 빼면
+            # 지워진 물감을 가리키는 버튼은 내보낼 수 없다. 조용히 빼면
             # 받는 쪽에서 "왜 이 버튼만 안 되지"가 되므로 먼저 알린다.
             if not messagebox.askokcancel(
                     "빠지는 버튼이 있습니다",
                     "다음 버튼이 가리키는 물감이 라이브러리에 없어\n"
-                    "칩에 담기지 않습니다:\n\n  "
+                    "내보내지 않습니다:\n\n  "
                     + "\n  ".join(missing[:8])
                     + "\n\n그대로 내보낼까요?", parent=self):
                 return
 
         items = chip.required_items(tab)
         path = filedialog.asksaveasfilename(
-            parent=self, title=f"'{tab['name']}' 팔레트를 칩으로 내보내기",
+            parent=self, title=f"'{tab['name']}' 팔레트 내보내기",
             defaultextension=chip.CHIP_EXT,
             initialfile=f"{tab['name']}{chip.CHIP_EXT}",
-            filetypes=[("HwpPalette 칩", f"*{chip.CHIP_EXT}")])
+            filetypes=[("HwpPalette 물감·팔레트 파일", f"*{chip.CHIP_EXT}")])
         if not path:
             return
         note = simpledialog.askstring(
-            "칩 설명 (없어도 됩니다)",
+            "설명 (없어도 됩니다)",
             "받는 사람에게 한 줄로 알려줄 말:", parent=self) or ""
         try:
             r = chip.export_tab(tab, path, note=note)
         except Exception as ex:
-            applog.exc(f"칩 내보내기 실패 ({tab['name']})", ex)
+            applog.exc(f"팔레트 내보내기 실패 ({tab['name']})", ex)
             messagebox.showerror("내보내기 실패", f"{type(ex).__name__}: {ex}",
                                  parent=self)
             return
         messagebox.showinfo(
-            "칩으로 내보냈습니다",
-            f"'{tab['name']}' 팔레트를 칩 하나로 묶었습니다.\n\n"
+            "팔레트를 내보냈습니다",
+            f"'{tab['name']}' 팔레트를 파일로 내보냈습니다.\n\n"
             f"  버튼 {r['blocks']}개 · 물감 {r['items']}개\n"
             f"  {pathlib.Path(path).name}\n\n"
-            "받는 사람은 ⚙ → 물감 나누기 → [꾸러미 풀기] 로 등록합니다.\n"
+            "받는 사람은 ⚙ → 물감 나누기 → [불러오기] 로 등록합니다.\n"
             "물감은 그 사람 창고에 들어가 다른 팔레트에서도 쓸 수 있습니다.",
             parent=self)
         if items and not r["items"]:
-            applog.warn("칩 내보내기: 담긴 물감이 없습니다")
+            applog.warn("팔레트 내보내기: 담긴 물감이 없습니다")
 
     def _add_tab(self):
         name = simpledialog.askstring("탭 추가", "새 탭 이름:", parent=self)

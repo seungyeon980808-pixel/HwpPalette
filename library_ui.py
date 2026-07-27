@@ -1495,9 +1495,9 @@ class ShareDialog(tk.Toplevel):
         tk.Label(self, text="물감 나누기",
                  font=(FONT, theme.fs(12), "bold"), bg=BG, fg=TEXT).pack(
                  anchor="w", padx=16, pady=(14, 2))
-        tk.Label(self, text="내가 만든 물감을 꾸러미 하나로 묶어 동료와 주고받습니다.\n"
+        tk.Label(self, text="내가 만든 물감이나 팔레트를 파일로 묶어 동료와 주고받습니다.\n"
                             "팔레트를 통째로 넘기려면 팔레트 설정에서 탭을 "
-                            "우클릭 → '칩으로 내보내기'.",
+                            "우클릭 → '팔레트 내보내기'.",
                  font=(FONT, theme.fs(8)), bg=BG, fg=MUTED,
                  justify="left").pack(anchor="w", padx=16, pady=(0, 10))
 
@@ -1513,20 +1513,20 @@ class ShareDialog(tk.Toplevel):
                      width=10, font=(FONT, theme.fs(9)),
                      values=[c["label"] for c in self._exportable]).pack(
                      side="left", padx=(8, 8))
-        _dialog_btn(row, "꾸러미로 내보내기…", self._export,
+        _dialog_btn(row, "물감 내보내기…", self._export,
                     primary=True).pack(side="left")
 
         tk.Frame(self, bg=BORDER, height=1).pack(fill="x", padx=16, pady=10)
 
         row2 = tk.Frame(self, bg=BG, padx=16)
         row2.pack(fill="x", pady=(0, 14))
-        # 입구는 하나 — 팔레트 칩이든 물감 꾸러미든 같은 버튼이다.
+        # 입구는 하나 — 팔레트가 들었든 물감만 들었든 같은 버튼이다.
         # 받는 사람은 파일이 어느 쪽인지 모르는 게 정상이라, 열어 보고
         # 프로그램이 판단한다 (사용자 결정 2026-07-26).
         tk.Label(row2, text="받은 것을", font=(FONT, theme.fs(9)), bg=BG,
                  fg=TEXT).pack(side="left")
-        _dialog_btn(row2, "꾸러미 · 칩 등록…", self._import).pack(side="left",
-                                                              padx=(8, 0))
+        _dialog_btn(row2, "불러오기…", self._import).pack(side="left",
+                                                        padx=(8, 0))
         tk.Label(row2, text="(내 물감·팔레트는 덮어쓰지 않습니다)",
                  font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(
                  side="left", padx=(8, 0))
@@ -1570,26 +1570,26 @@ class ShareDialog(tk.Toplevel):
         messagebox.showinfo("내보내기 완료", msg, parent=self)
 
     def _import(self):
-        r"""꾸러미·칩 등록 — **입구는 하나** (사용자 결정 2026-07-26).
+        r"""불러오기 — **입구는 하나** (사용자 결정 2026-07-26).
 
-        팔레트 칩인지 물감 꾸러미인지는 받는 사람이 알 수 없다. 파일을 열어
-        프로그램이 판단하고, **넣기 전에 무엇이 들어오는지 보여준다.**
+        팔레트가 든 파일인지 물감만 든 파일인지는 받는 사람이 알 수 없다.
+        파일을 열어 프로그램이 판단하고, **넣기 전에 무엇이 들어오는지 보여준다.**
         예전에는 넣은 뒤에 "이름이 겹쳐 바꿨습니다"라고 사후 통보했다 —
         남의 파일이 내 창고에 섞이는 일이라 순서가 반대였다.
         """
         path = filedialog.askopenfilename(
-            parent=self, title="꾸러미 · 칩 등록",
-            filetypes=[("HwpPalette 칩·꾸러미", f"*{chip.CHIP_EXT} *.zip"),
+            parent=self, title="불러오기",
+            filetypes=[("HwpPalette 물감·팔레트 파일", f"*{chip.CHIP_EXT} *.zip"),
                        ("모든 파일", "*.*")])
         if not path:
             return
         try:
             info = chip.peek(path)
         except Exception as e:
-            applog.exc(f"꾸러미를 열지 못했습니다 ({path})", e)
+            applog.exc(f"파일을 열지 못했습니다 ({path})", e)
             messagebox.showerror(
                 "열 수 없는 파일",
-                f"이 파일은 물감 꾸러미나 칩이 아닌 것 같습니다.\n\n"
+                f"이 파일은 HwpPalette 의 물감·팔레트 파일이 아닌 것 같습니다.\n\n"
                 f"{type(e).__name__}: {e}", parent=self)
             return
 
@@ -1600,7 +1600,7 @@ class ShareDialog(tk.Toplevel):
         try:
             r = chip.install(path)
         except Exception as e:
-            applog.exc(f"꾸러미 등록 실패 ({path})", e)
+            applog.exc(f"불러오기 실패 ({path})", e)
             messagebox.showerror("등록 실패", f"{type(e).__name__}: {e}",
                                  parent=self)
             return
@@ -1646,7 +1646,7 @@ class ChipInstallDialog(tk.Toplevel):
         self.bind("<Escape>", lambda e: self.destroy())
 
         tab = info.get("tab")
-        kind = "팔레트 칩" if tab else "물감 꾸러미"
+        kind = "팔레트" if tab else "물감"
         tk.Label(self, text=f"{kind} 등록", font=(FONT, theme.fs(12), "bold"),
                  bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(14, 2))
         tk.Label(self, text=info["name"], font=(FONT, theme.fs(10), "bold"),
@@ -1698,7 +1698,7 @@ class ChipInstallDialog(tk.Toplevel):
         for w in warn:
             self._line(inner, "확인", w, warn=True)
 
-        tk.Label(self, text="받은 물감은 태그 없이 들어오고, 어느 칩에서 "
+        tk.Label(self, text="받은 물감은 태그 없이 들어오고, 어느 파일에서 "
                             "왔는지 꼬리표가 남습니다.\n"
                             "내 물감·팔레트는 덮어쓰지 않습니다.",
                  font=(FONT, theme.fs(7)), bg=BG, fg=MUTED,
