@@ -645,6 +645,10 @@ def export_items(pairs, dest_path):
 
     id 는 일부러 함께 넣지 않는다 — 받는 쪽에서 새로 발급해야 기존 항목과
     충돌하지 않는다(같은 id 가 두 개 있으면 팔레트 참조가 엉킨다).
+    대신 **`origin_id` 로 원본 id 를 적어 둔다** (2026-07-27). 두 가지에 쓴다:
+      · 팔레트 탭을 함께 보낼 때, 블럭의 `ref`(옛 id)를 받는 쪽의 새 id 로
+        갈아끼우기 위한 대응표의 열쇠 (chip.py)
+      · 같은 칩을 두 번 받았는지 판정 — 이미 있으면 물감을 또 만들지 않는다
 
     **태그도 빼고 보낸다** (사용자 결정 2026-07-26). 태그는 '내가 찾기 위한
     표시'라 남에게는 뜻이 없다 — 받는 쪽 태그 목록에 남의 습관(#급할때)이
@@ -652,10 +656,14 @@ def export_items(pairs, dest_path):
     """
     import zipfile
     items = []
-    _DROP = ("id", "origin", "tags")
+    # origin  = 양식을 등록할 때의 원본 파일 경로(내 PC 사정) — 안 보낸다
+    # tags    = 내 정리 습관 — 안 보낸다
+    # from_chip = 내가 받은 칩 이름 — 다시 보낼 때 남의 출처를 물려주지 않는다
+    _DROP = ("id", "origin", "tags", "from_chip", "origin_id")
     with zipfile.ZipFile(dest_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for cat, it in pairs:
             rec = {k: v for k, v in it.items() if k not in _DROP}
+            rec["origin_id"] = it.get("id")     # 받는 쪽이 ref 를 이어붙일 열쇠
             rec["category"] = cat
             if cat in _FILE_CATEGORIES:
                 src = FRAGMENTS_DIR / it["file"]
@@ -682,22 +690,34 @@ def _unique_label(label, taken):
     return f"{lab}{n}"
 
 
-def import_archive(src_path):
+def import_archive(src_path, from_chip=None):
     r"""내보낸 zip 을 읽어 라이브러리에 추가한다.
 
     반환: {"added": 개수, "renamed": [(원래이름, 바뀐이름), ...],
-           "relabeled": [(원래라벨, 바뀐라벨), ...]}
+           "relabeled": [(원래라벨, 바뀐라벨), ...],
+           "id_map": {보낸쪽 id: 내 id}, "reused": 이미 있어 건너뛴 개수}
 
     항상 **추가**만 한다(덮어쓰기 없음). 이름·라벨이 겹치면 번호를 붙여 피한다 —
     남의 파일을 받아서 내 것이 사라지는 일은 없어야 한다. 라벨을 안 바꾸면
     `\라벨\` 호출이 조용히 가려지므로(find_label_owner 참고) 라벨도 유일하게 만든다.
+
+    **id_map** 은 팔레트 탭을 함께 받을 때 블럭의 `ref` 를 이어붙이는 데 쓴다
+    (chip.py). 같은 칩을 두 번 받으면 물감을 또 만들지 않고 **이미 있는 것에
+    잇는다** — 그래야 창고가 두 배가 되지 않는다(origin_id 로 판정).
+
+    from_chip: 어느 칩에서 왔는지. 받은 물감에 꼬리표로 남는다(태그가 아니라
+    별도 필드 — 사용자가 지울 수 있는 태그와 성격이 다르다).
     """
     import zipfile
     _ensure_dirs()
     data = load()
     taken_labels = {normalize_label(it.get("label"))
                     for cat in CATEGORIES for it in data[cat]}
+    # 이미 받아 둔 물감 (origin_id → 내 id). 같은 칩 재등록 판정용.
+    known = {it["origin_id"]: it["id"]
+             for cat in CATEGORIES for it in data[cat] if it.get("origin_id")}
     added, renamed, relabeled = 0, [], []
+    id_map, reused = {}, 0
 
     with zipfile.ZipFile(src_path) as zf:
         manifest = json.loads(zf.read(_MANIFEST_NAME).decode("utf-8"))
@@ -710,7 +730,19 @@ def import_archive(src_path):
                 applog.warn(f"가져오기: 알 수 없는 분류라 건너뜀 — {cat!r}")
                 continue
             item = dict(rec)
+            origin_id = item.get("origin_id")
+            # 같은 칩을 두 번 받았으면 물감을 또 만들지 않고 **이미 있는 것에
+            # 잇는다** — 탭의 ref 도 그리로 연결된다(id_map).
+            if origin_id and origin_id in known:
+                id_map[origin_id] = known[origin_id]
+                reused += 1
+                continue
             item["id"] = uuid.uuid4().hex
+            if origin_id:
+                id_map[origin_id] = item["id"]
+                known[origin_id] = item["id"]
+            if from_chip:
+                item["from_chip"] = str(from_chip)
             # 받은 물감은 태그 없이 시작한다 (export_items 머리말 참조).
             # 옛 꾸러미에 group/tags 가 들어 있어도 여기서 떨군다.
             item.pop("group", None)
@@ -749,7 +781,8 @@ def import_archive(src_path):
             added += 1
 
     save(data)
-    return {"added": added, "renamed": renamed, "relabeled": relabeled}
+    return {"added": added, "renamed": renamed, "relabeled": relabeled,
+            "id_map": id_map, "reused": reused}
 
 
 def count_palette_refs(category, item_id):

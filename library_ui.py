@@ -21,6 +21,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 import applog
+import chip                      # 팔레트 칩 읽기·등록
 import clipboard                  # 윈도우 클립보드 (Tk 클립보드 금지)
 import hwp_engine
 import engine_library
@@ -1494,9 +1495,11 @@ class ShareDialog(tk.Toplevel):
         tk.Label(self, text="물감 나누기",
                  font=(FONT, theme.fs(12), "bold"), bg=BG, fg=TEXT).pack(
                  anchor="w", padx=16, pady=(14, 2))
-        tk.Label(self, text="내가 만든 물감을 꾸러미(zip) 하나로 묶어 동료와 주고받습니다.",
-                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(
-                 anchor="w", padx=16, pady=(0, 10))
+        tk.Label(self, text="내가 만든 물감을 꾸러미 하나로 묶어 동료와 주고받습니다.\n"
+                            "팔레트를 통째로 넘기려면 팔레트 설정에서 탭을 "
+                            "우클릭 → '칩으로 내보내기'.",
+                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED,
+                 justify="left").pack(anchor="w", padx=16, pady=(0, 10))
 
         row = tk.Frame(self, bg=BG, padx=16)
         row.pack(fill="x")
@@ -1517,11 +1520,14 @@ class ShareDialog(tk.Toplevel):
 
         row2 = tk.Frame(self, bg=BG, padx=16)
         row2.pack(fill="x", pady=(0, 14))
-        tk.Label(row2, text="받은 꾸러미를", font=(FONT, theme.fs(9)), bg=BG,
+        # 입구는 하나 — 팔레트 칩이든 물감 꾸러미든 같은 버튼이다.
+        # 받는 사람은 파일이 어느 쪽인지 모르는 게 정상이라, 열어 보고
+        # 프로그램이 판단한다 (사용자 결정 2026-07-26).
+        tk.Label(row2, text="받은 것을", font=(FONT, theme.fs(9)), bg=BG,
                  fg=TEXT).pack(side="left")
-        _dialog_btn(row2, "꾸러미 풀기…", self._import).pack(side="left",
-                                                          padx=(8, 0))
-        tk.Label(row2, text="(기존 물감은 그대로, 추가만 합니다)",
+        _dialog_btn(row2, "꾸러미 · 칩 등록…", self._import).pack(side="left",
+                                                              padx=(8, 0))
+        tk.Label(row2, text="(내 물감·팔레트는 덮어쓰지 않습니다)",
                  font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(
                  side="left", padx=(8, 0))
 
@@ -1564,29 +1570,163 @@ class ShareDialog(tk.Toplevel):
         messagebox.showinfo("내보내기 완료", msg, parent=self)
 
     def _import(self):
+        r"""꾸러미·칩 등록 — **입구는 하나** (사용자 결정 2026-07-26).
+
+        팔레트 칩인지 물감 꾸러미인지는 받는 사람이 알 수 없다. 파일을 열어
+        프로그램이 판단하고, **넣기 전에 무엇이 들어오는지 보여준다.**
+        예전에는 넣은 뒤에 "이름이 겹쳐 바꿨습니다"라고 사후 통보했다 —
+        남의 파일이 내 창고에 섞이는 일이라 순서가 반대였다.
+        """
         path = filedialog.askopenfilename(
-            parent=self, title="라이브러리 가져오기",
-            filetypes=[("hwp_palette 라이브러리", "*.zip"), ("모든 파일", "*.*")])
+            parent=self, title="꾸러미 · 칩 등록",
+            filetypes=[("HwpPalette 칩·꾸러미", f"*{chip.CHIP_EXT} *.zip"),
+                       ("모든 파일", "*.*")])
         if not path:
             return
         try:
-            r = library.import_archive(path)
+            info = chip.peek(path)
         except Exception as e:
-            applog.exc(f"라이브러리 가져오기 실패 ({path})", e)
-            messagebox.showerror("가져오기 실패", f"{type(e).__name__}: {e}",
+            applog.exc(f"꾸러미를 열지 못했습니다 ({path})", e)
+            messagebox.showerror(
+                "열 수 없는 파일",
+                f"이 파일은 물감 꾸러미나 칩이 아닌 것 같습니다.\n\n"
+                f"{type(e).__name__}: {e}", parent=self)
+            return
+
+        dlg = ChipInstallDialog(self, info, pathlib.Path(path).name)
+        self.wait_window(dlg)
+        if not dlg.ok:
+            return
+        try:
+            r = chip.install(path)
+        except Exception as e:
+            applog.exc(f"꾸러미 등록 실패 ({path})", e)
+            messagebox.showerror("등록 실패", f"{type(e).__name__}: {e}",
                                  parent=self)
             return
-        lines = [f"{r['added']}개를 가져왔습니다. (기존 항목은 그대로 둡니다)"]
+
+        lines = [f"물감 {r['added']}개를 등록했습니다. (기존 물감은 그대로입니다)"]
+        if r["reused"]:
+            lines.append(f"이미 갖고 있던 {r['reused']}개는 다시 만들지 "
+                         "않고 그대로 씁니다.")
+        if r["tab_name"]:
+            lines.append(f"\n팔레트 '{r['tab_name']}' 이(가) 더해졌습니다.")
+            if r["lost"]:
+                lines.append(f"(버튼 {r['lost']}개는 가리킬 물감이 없어 "
+                             "눌러도 동작하지 않습니다)")
         if r["renamed"]:
-            lines.append("\n이름이 겹쳐 바꾼 항목:")
-            lines += [f"  {a} → {b}" for a, b in r["renamed"][:8]]
+            lines.append("\n이름이 겹쳐 바꾼 물감:")
+            lines += [f"  {a} → {b}" for a, b in r["renamed"][:6]]
         if r["relabeled"]:
-            lines.append("\n라벨이 겹쳐 바꾼 항목:")
-            lines += [f"  \\{a}\\ → \\{b}\\" for a, b in r["relabeled"][:8]]
+            lines.append("\n라벨이 겹쳐 바꾼 물감:")
+            lines += [f"  \\{a}\\ → \\{b}\\" for a, b in r["relabeled"][:6]]
             lines.append("(라벨을 그대로 두면 마크다운 변환에서 호출되지 않습니다)")
-        messagebox.showinfo("가져오기 완료", "\n".join(lines), parent=self)
+        lines.append("\n마음에 안 들면 ⚙ → 물감 설정에서 지우거나, "
+                     "직전 상태로 되돌릴 수 있습니다.")
+        messagebox.showinfo("등록 완료", "\n".join(lines), parent=self)
         if self.on_saved:
             self.on_saved()
+
+
+class ChipInstallDialog(tk.Toplevel):
+    r"""등록 전 미리보기 — 무엇이 들어오고 무엇과 겹치는지 먼저 보여준다.
+
+    팔레트 배치를 그림으로 보여주는 것도 생각했지만, 1단계에서는 **버튼 이름
+    목록**으로 둔다(사용자 결정 2026-07-26) — 격자를 그리는 코드를 미리보기용
+    으로 한 벌 더 만들 값이 지금은 크다. 필요해지면 그때 올린다.
+    """
+
+    def __init__(self, master, info, filename):
+        super().__init__(master)
+        self.ok = False
+        self.title(appinfo.WINDOW_TITLE)
+        self.configure(bg=BG)
+        self.resizable(False, False)
+        self.attributes("-topmost", True)
+        self.bind("<Escape>", lambda e: self.destroy())
+
+        tab = info.get("tab")
+        kind = "팔레트 칩" if tab else "물감 꾸러미"
+        tk.Label(self, text=f"{kind} 등록", font=(FONT, theme.fs(12), "bold"),
+                 bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(14, 2))
+        tk.Label(self, text=info["name"], font=(FONT, theme.fs(10), "bold"),
+                 bg=BG, fg=ACCENT).pack(anchor="w", padx=16)
+        sub = " · ".join(x for x in (info.get("author"), info.get("made_with"),
+                                     filename) if x)
+        tk.Label(self, text=sub, font=(FONT, theme.fs(7)), bg=BG, fg=MUTED,
+                 wraplength=380, justify="left").pack(anchor="w", padx=16)
+        if info.get("note"):
+            tk.Label(self, text=f"“{info['note']}”", font=(FONT, theme.fs(8)),
+                     bg=BG, fg=TEXT, wraplength=380, justify="left").pack(
+                     anchor="w", padx=16, pady=(6, 0))
+
+        box = tk.Frame(self, bg=ROWBG, highlightbackground=BORDER,
+                       highlightthickness=1)
+        box.pack(fill="x", padx=16, pady=(10, 4))
+        inner = tk.Frame(box, bg=ROWBG, padx=12, pady=8)
+        inner.pack(fill="x")
+
+        if tab:
+            names = [b.get("template") or b.get("form") or b.get("value")
+                     or b.get("name") or "도구" for b in tab.get("blocks", [])]
+            self._line(inner, "팔레트",
+                       f"'{tab.get('name')}' 탭 — 버튼 {len(names)}개")
+            self._line(inner, "", "  " + " · ".join(names[:8])
+                       + (" …" if len(names) > 8 else ""), faint=True)
+        counts = {}
+        for rec in info["items"]:
+            counts[rec.get("category", "?")] = counts.get(
+                rec.get("category", "?"), 0) + 1
+        self._line(inner, "물감",
+                   " · ".join(f"{k} {v}개" for k, v in counts.items())
+                   or "없음")
+
+        warn = []
+        c = info["conflicts"]
+        if info.get("known"):
+            warn.append(f"이미 갖고 있는 물감 {info['known']}개 "
+                        "→ 다시 만들지 않고 그대로 씁니다")
+        if c["names"]:
+            warn.append(f"이름이 겹치는 물감 {len(c['names'])}개 "
+                        "→ 번호를 붙입니다 (내 것은 그대로)")
+        if c["labels"]:
+            warn.append(f"라벨이 겹치는 물감 {len(c['labels'])}개 "
+                        "→ 번호를 붙입니다")
+        if c["tab"]:
+            warn.append(f"'{c['tab']}' 팔레트가 이미 있습니다 "
+                        "→ 새 이름으로 더합니다 (내 것은 그대로)")
+        for w in warn:
+            self._line(inner, "확인", w, warn=True)
+
+        tk.Label(self, text="받은 물감은 태그 없이 들어오고, 어느 칩에서 "
+                            "왔는지 꼬리표가 남습니다.\n"
+                            "내 물감·팔레트는 덮어쓰지 않습니다.",
+                 font=(FONT, theme.fs(7)), bg=BG, fg=MUTED,
+                 justify="left").pack(anchor="w", padx=16)
+
+        foot = tk.Frame(self, bg=BG, padx=16, pady=12)
+        foot.pack(fill="x")
+        _dialog_btn(foot, "등록", self._go, primary=True).pack(side="right")
+        _dialog_btn(foot, "취소", self.destroy).pack(side="right", padx=(0, 6))
+
+        self.update_idletasks()
+        screens.place_beside(self, master)
+        self.grab_set()
+        ui_fx.attach_all(self)
+
+    @staticmethod
+    def _line(parent, head, text, faint=False, warn=False):
+        row = tk.Frame(parent, bg=ROWBG)
+        row.pack(fill="x", pady=1)
+        tk.Label(row, text=head, font=(FONT, theme.fs(8), "bold"), bg=ROWBG,
+                 fg=MUTED, width=5, anchor="w").pack(side="left")
+        tk.Label(row, text=text, font=(FONT, theme.fs(8)), bg=ROWBG,
+                 fg=(ACCENT if warn else MUTED if faint else TEXT),
+                 anchor="w", justify="left", wraplength=330).pack(side="left")
+
+    def _go(self):
+        self.ok = True
+        self.destroy()
 
 
 def open_share(master, on_saved=None):
