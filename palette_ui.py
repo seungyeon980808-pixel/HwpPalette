@@ -238,10 +238,13 @@ def _mini_btn(parent, text, cmd):
 
     무엇을 늘리는지는 **놓인 자리**가 말해 준다(칸 번호 옆 = 칸, 줄 번호 밑 = 줄).
     """
+    # 크기를 25% 줄였다 (사용자 결정 2026-07-27) — 격자 옆의 보조 단추라
+    # 눈에 띄기보다 자리만 지키면 되는데, 블럭만 하게 커서 시선을 끌었다.
     b = RoundButton(parent, text=text, command=cmd, bg=CARD, fg=TEXT,
-                    radius=theme.RADIUS["ctl"], font=(FONT, theme.fs(FS["body"])), outline=BORDER,
+                    radius=theme.RADIUS["ctl"],
+                    font=(FONT, theme.fs(FS["caption"])), outline=BORDER,
                     zone_bg=parent.cget("bg"))
-    b.config(width=theme.fs(26), height=theme.fs(20))
+    b.config(width=int(theme.fs(26) * 0.75), height=int(theme.fs(20) * 0.75))
     return b
 
 
@@ -317,12 +320,10 @@ class SettingsWindow(tk.Toplevel):
         self._size_tip = None      # 크기 조절 중 커서 옆에 뜨는 안내
         self._pending_block = None  # 창고에서 고른 뒤 '자리 고르는 중'인 물감
 
-        tk.Label(self, text="물감 · 팔레트 설정", font=(FONT, theme.fs(FS["title"]), "bold"),
-                 bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(12, 2))
-        tk.Label(self,
-                 text="왼쪽 창고에서 물감을 골라, 오른쪽 팔레트에 놓습니다.",
-                 font=(FONT, theme.fs(FS["sub"])), bg=BG, fg=MUTED).pack(
-            anchor="w", padx=16, pady=(0, 10))
+        # 창 제목·설명 줄은 없앴다 (사용자 지적 2026-07-27: "윗부분에 남는
+        # 공간이 너무 많다"). 판마다 머리말이 이미 있어서 — '팔레트',
+        # '물감 창고', '미리보기' — 위에서 같은 말을 또 할 필요가 없었다.
+        # 창 제목표시줄이 프로그램 이름을 말하고, 무슨 화면인지는 판이 말한다.
 
         # 왼쪽 목록과 오른쪽 격자를 **하나의 흰 판** 안에 나란히 둔다 (2026-07-25).
         # 고른 팔레트(왼쪽)와 그 내용(오른쪽)이 같은 판 위에 있어야
@@ -332,7 +333,7 @@ class SettingsWindow(tk.Toplevel):
         # 한 판 위에 붙여 뒀더니 어디까지가 창고이고 어디부터가 팔레트인지
         # 구별되지 않았다. 사이를 띄우고 판을 나눈다.
         outer = tk.Frame(self, bg=BG)
-        outer.pack(fill="both", expand=True, padx=16, pady=(0, 14))
+        outer.pack(fill="both", expand=True, padx=SP["l"], pady=SP["m"])
 
         # 왼쪽부터 **팔레트 → 물감 창고 → 미리보기** (사용자 결정 2026-07-27).
         # 셋 다 처음부터 자리를 차지한다 — 눌렀을 때 판이 생겼다 없어지면
@@ -371,6 +372,20 @@ class SettingsWindow(tk.Toplevel):
         self._zoom_photo = None
         self._detail = None
 
+        # 판 머리말 — 다른 두 판('팔레트'·'물감 창고')과 같은 자리·같은 크기.
+        # 없으면 이 판이 무엇인지 화면이 말해 주지 않는다 (사용자 지적
+        # 2026-07-27: "이 창이 템플릿 미리보기라는 것을 알 수 있어야 한다").
+        zhead = tk.Frame(self.zoom_pane, bg=CARD)
+        zhead.pack(side="top", fill="x", padx=SP["s"], pady=(SP["s"], 2))
+        tk.Label(zhead, text="미리보기",
+                 font=(FONT, theme.fs(FS["head"]), "bold"),
+                 bg=CARD, fg=TEXT).pack(side="left")
+        self.zoom_hint = tk.Label(zhead, text="물감을 고르면 보입니다",
+                                  font=(FONT, theme.fs(FS["caption"])),
+                                  bg=CARD, fg=MUTED)
+        self.zoom_hint.pack(side="left", padx=(SP["xs"] + 2, 0))
+        tk.Frame(self.zoom_pane, bg=BORDER, height=1).pack(side="top", fill="x")
+
         # 버튼 줄을 **먼저** side="bottom" 으로 붙인다 — 그래야 내용이 아무리
         # 길어도 이 줄은 밀려나지 않고 판 맨 아래에 그대로 남는다.
         self._zoom_foot = tk.Frame(self.zoom_pane, bg=CARD)
@@ -404,35 +419,41 @@ class SettingsWindow(tk.Toplevel):
         # 드롭다운으로 옮겼다 (사용자 지적 2026-07-27 — "왼쪽 탭이 공간
         # 낭비가 심하다"). 메인 창의 '개인 팔레트 [수능 ▾]' 와 같은 얼굴이다.
         # 세로 목록이 없어진 만큼 격자가 쓸 폭이 그대로 늘어난다.
+        # 머리말과 고르개를 **두 줄로** 나눈다 (사용자 결정 2026-07-27).
+        # 한 줄에 다 넣었더니 이름이 긴 팔레트('부천여자중학교 원안지')에서
+        # 설명과 드롭다운이 서로를 밀어내 줄이 빡빡했다.
         phead = tk.Frame(main, bg=CARD)
-        phead.pack(fill="x", padx=8, pady=(6, 2))
+        phead.pack(fill="x", padx=SP["s"], pady=(SP["s"], 2))
         tk.Label(phead, text="팔레트", font=(FONT, theme.fs(FS["head"]), "bold"),
                  bg=CARD, fg=TEXT).pack(side="left")
         self.pal_hint = tk.Label(phead, text=self._pal_hint_text(),
                                  font=(FONT, theme.fs(FS["caption"])),
                                  bg=CARD, fg=MUTED)
-        self.pal_hint.pack(side="left", padx=(6, 0))
+        self.pal_hint.pack(side="left", padx=(SP["xs"] + 2, 0))
 
-        # 오른쪽: 고르기(드롭다운) · 더하기 · 관리(⋯) — 순서가 손이 가는 빈도순
-        self.tab_more_btn = RoundButton(
-            phead, text="⋯", command=self._tab_more_menu,
-            bg=CARD, fg=MUTED, radius=theme.RADIUS["ctl"],
-            font=(FONT, theme.fs(FS["body"])), outline=BORDER, zone_bg=CARD)
-        self.tab_more_btn.fit(pad_x=SP["s"], pad_y=2).pack(side="right")
-        _tip(self.tab_more_btn, "이름 바꾸기·순서·내보내기·삭제")
-        self.tab_add_btn = RoundButton(
-            phead, text="＋", command=self._add_tab,
-            bg=CARD, fg=MUTED, radius=theme.RADIUS["ctl"],
-            font=(FONT, theme.fs(FS["body"])), outline=BORDER, zone_bg=CARD)
-        self.tab_add_btn.fit(pad_x=SP["s"], pad_y=2).pack(
-            side="right", padx=(0, SP["xs"]))
-        _tip(self.tab_add_btn, "팔레트 추가")
+        # 둘째 줄: 고르기(드롭다운) · 더하기 · 관리(⋯) — 손이 가는 빈도순
+        prow = tk.Frame(main, bg=CARD)
+        prow.pack(fill="x", padx=SP["s"], pady=(0, SP["s"]))
         self.tab_pick = RoundButton(
-            phead, text="", command=self._tab_dropdown,
+            prow, text="", command=self._tab_dropdown,
             bg=CARD, fg=TEXT, radius=theme.RADIUS["ctl"],
             font=(FONT, theme.fs(FS["body"])), outline=BORDER,
             focus_color=ACCENT, zone_bg=CARD)
-        self.tab_pick.pack(side="right", padx=(0, SP["xs"]))
+        self.tab_pick.pack(side="left")
+        self.tab_add_btn = RoundButton(
+            prow, text="＋", command=self._add_tab,
+            bg=CARD, fg=MUTED, radius=theme.RADIUS["ctl"],
+            font=(FONT, theme.fs(FS["body"])), outline=BORDER, zone_bg=CARD)
+        self.tab_add_btn.fit(pad_x=SP["s"], pad_y=2).pack(
+            side="left", padx=(SP["xs"], 0))
+        _tip(self.tab_add_btn, "팔레트 추가")
+        self.tab_more_btn = RoundButton(
+            prow, text="⋯", command=self._tab_more_menu,
+            bg=CARD, fg=MUTED, radius=theme.RADIUS["ctl"],
+            font=(FONT, theme.fs(FS["body"])), outline=BORDER, zone_bg=CARD)
+        self.tab_more_btn.fit(pad_x=SP["s"], pad_y=2).pack(
+            side="left", padx=(SP["xs"], 0))
+        _tip(self.tab_more_btn, "이름 바꾸기·순서·내보내기·삭제")
 
         tk.Frame(main, bg=BORDER, height=1).pack(fill="x")
 
@@ -541,12 +562,7 @@ class SettingsWindow(tk.Toplevel):
             w.destroy()
         self._zoom_canvas.yview_moveto(0)   # 새 물감을 고르면 맨 위부터 보여준다
 
-        head = tk.Frame(self._zoom_body, bg=CARD)
-        head.pack(fill="x", padx=SP["m"] - 2, pady=(SP["s"], 2))
-        tk.Label(head, text=item.get("name", ""), bg=CARD, fg=TEXT,
-                 font=(FONT, theme.fs(FS["head"]), "bold")).pack(side="left")
-        tk.Label(head, text=f"#{cat}", bg=CARD, fg=MUTED,
-                 font=(FONT, theme.fs(FS["caption"]))).pack(side="right")
+        self.zoom_hint.config(text=f"{item.get('name', '')} · #{cat}")
 
         photo = None
         if cat in ("템플릿", "양식"):
@@ -554,14 +570,21 @@ class SettingsWindow(tk.Toplevel):
                 # 폭은 판에 맞추되, 높이는 크게 열어 둔다 — 어차피 스크롤되므로
                 # 그림이 커도 잘리거나 버튼을 밀어내지 않는다.
                 photo = preview.tk_photo_for_item(
-                    item, library.template_path(item), ZOOM_W - 34, 1400)
+                    item, library.template_path(item), ZOOM_W - 44, 1400)
             except Exception as e:
                 applog.exc(f"미리보기 실패 — {item.get('name')}", e)
         if photo is not None:
             self._zoom_photo = photo        # 참조 유지
-            lbl = tk.Label(self._zoom_body, image=photo, bg=CARD)
+            # 그림을 **종이처럼** 흰 바탕 + 테두리로 감싼다 (사용자 지적
+            # 2026-07-27: "어디서부터 어디까지가 양식인지 안 보인다").
+            # 미리보기 그림은 배경이 흰색이라 판 바탕과 그대로 이어져 보여,
+            # 문서의 가장자리가 어디인지 알 수 없었다.
+            paper = tk.Frame(self._zoom_body, bg="#ffffff",
+                             highlightbackground=BORDER, highlightthickness=1)
+            paper.pack(padx=SP["m"], pady=SP["s"])
+            lbl = tk.Label(paper, image=photo, bg="#ffffff", bd=0)
             lbl.image = photo
-            lbl.pack(padx=SP["m"] - 2, pady=SP["s"])
+            lbl.pack(padx=SP["xs"], pady=SP["xs"])
         else:
             text = (library.get_preview(item) or "").strip() or "(미리보기 없음)"
             tk.Label(self._zoom_body, text=text[:600], bg=CARD, fg=MUTED,
@@ -2024,65 +2047,82 @@ class _ToolPickDialog(tk.Toplevel):
 
         size = f"{span}칸" if rows <= 1 else f"{span}×{rows}칸"
         tk.Label(self, text=f"{size} 자리에 넣을 도구",
-                 font=(FONT, theme.fs(11), "bold"), bg=BG, fg=TEXT).pack(
-            anchor="w", padx=16, pady=(12, 2))
+                 font=(FONT, theme.fs(FS["head"]), "bold"), bg=BG, fg=TEXT).pack(
+            anchor="w", padx=SP["l"], pady=(SP["m"], 2))
         tk.Label(self, text="고르면 그 도구를 만드는 창이 이어서 열립니다.",
-                 font=(FONT, theme.fs(FS["sub"])), bg=BG, fg=MUTED).pack(anchor="w", padx=16,
-                                                       pady=(0, 8))
+                 font=(FONT, theme.fs(FS["sub"])), bg=BG, fg=MUTED).pack(
+            anchor="w", padx=SP["l"], pady=(0, SP["s"]))
 
-        body = tk.Frame(self, bg=BG, padx=16)
+        # 항목을 RoundButton 으로 그리지 않는다 (사용자 지적 2026-07-27:
+        # "레이아웃이 맞지 않고 내용이 다 안 보인다"). RoundButton 은 Canvas 에
+        # 글자를 **가운데 기준**으로 하나만 그려서, '이름 + 설명' 두 줄을
+        # 왼쪽 맞춤으로 놓을 수 없고 폭도 글자 길이에 맞춰 잘렸다.
+        # 여기서는 Frame + Label 둘로 쌓아 왼쪽 맞춤과 자동 줄바꿈을 얻는다.
+        body = tk.Frame(self, bg=BG, padx=SP["l"])
         body.pack(fill="x")
         for key, name, desc in self._TOOLS:
-            # min_w 를 같이 주어 다섯 줄의 폭을 통일한다
-            row = RoundButton(body, text=f"{name}\n{desc}",
-                              command=lambda k=key: self._pick(k),
-                              bg=CARD, fg=TEXT, radius=theme.RADIUS["ctl"],
-                              font=(FONT, theme.fs(FS["body"])), outline=BORDER,
-                              zone_bg=BG, justify="left")
-            row.fit(pad_x=12, min_w=340).pack(fill="x", pady=2)
+            self._tool_row(body, key, name, desc)
 
-        # 버튼 색 — 기본(종류별 색) 또는 직접 지정
+        # 버튼 색 — 기본(종류별 색) 또는 12색 파스텔에서 고르기
         self.color = None
-        crow = tk.Frame(self, bg=BG, padx=16)
-        crow.pack(fill="x", pady=(6, 0))
+        crow = tk.Frame(self, bg=BG, padx=SP["l"])
+        crow.pack(fill="x", pady=(SP["m"], 0))
         tk.Label(crow, text="버튼 색", font=(FONT, theme.fs(FS["sub"])), bg=BG,
-                 fg=MUTED).pack(side="left", padx=(0, 6))
-        self._color_lbl = tk.Label(crow, text="기본", font=(FONT, theme.fs(FS["sub"])),
+                 fg=MUTED).pack(anchor="w")
+        sw_box = tk.Frame(crow, bg=BG)
+        sw_box.pack(fill="x", pady=(SP["xs"], 0))
+        self._color_lbl = tk.Label(sw_box, text="기본",
+                                   font=(FONT, theme.fs(FS["sub"])),
                                    bg=CARD, fg=TEXT, relief="solid", bd=1,
-                                   padx=8, pady=2)
-        self._color_lbl.pack(side="left")
-        for hexv in ("#ffffff", "#eef4ff", "#fff4e6", "#eafaf1",
-                     "#fdecec", "#f3ecfd", "#fdf7dc"):
-            sw = tk.Label(crow, text="  ", bg=hexv, relief="solid", bd=1)
-            sw.pack(side="left", padx=2)
+                                   padx=SP["s"], pady=2, cursor="hand2")
+        self._color_lbl.grid(row=0, column=0, rowspan=2, padx=(0, SP["s"]),
+                             sticky="ns")
+        self._color_lbl.bind("<Button-1>", lambda e: self._set_color(None))
+        # 12색을 6개씩 두 줄로 — 한 줄로 늘어놓으면 창 폭을 끌고 다닌다
+        for i, (nm, hexv) in enumerate(theme.pastels()):
+            # 견본은 넉넉해야 색이 읽힌다 — 파스텔은 옅어서 작으면 전부
+            # 흰색으로 보인다 (실측 2026-07-27)
+            sw = tk.Label(sw_box, text=" ", bg=hexv, relief="solid", bd=1,
+                          cursor="hand2", width=4, height=1)
+            sw.grid(row=i // 6, column=1 + (i % 6), padx=2, pady=2)
             sw.bind("<Button-1>", lambda e, v=hexv: self._set_color(v))
-            sw.config(cursor="hand2")
-        # 색 견본 줄 높이에 맞춘 납작한 둥근 버튼
-        RoundButton(crow, text="직접", command=self._custom_color, bg=CARD,
-                    fg=TEXT, radius=theme.RADIUS["ctl"], font=(FONT, theme.fs(FS["sub"])),
-                    outline=BORDER, zone_bg=BG).fit(pad_x=8, pad_y=2).pack(
-            side="left", padx=(4, 0))
+            _tip(sw, nm)
 
         _dialog_btn(self, "취소", self.destroy).pack(anchor="e",
-                                                   padx=16, pady=12)
+                                                   padx=SP["l"], pady=SP["m"])
 
+        self.bind("<Escape>", lambda e: self.destroy())
         self.update_idletasks()
-        self.geometry(f"+{master.winfo_rootx()+60}+{master.winfo_rooty()+80}")
+        screens.place_beside(self, master, follow=False)
         self.grab_set()
         ui_fx.attach_all(self)   # 창 안 모든 버튼에 호버 보간
 
-    def _set_color(self, hexv):
-        self.color = hexv
-        self._color_lbl.config(text=hexv or "기본",
-                               bg=hexv or CARD)
+    _ROW_W = 360        # 항목 줄 폭 — 설명이 잘리지 않게 넉넉히
 
-    def _custom_color(self):
-        # 블럭 색은 12색 중에서 (2026-07-27) — 문서 글자색과 달리 화면 장식이라
-        # 자유 선택을 두면 화면이 시끄러워진다
-        dlg = _PastelDialog(self, self.color)
-        self.wait_window(dlg)
-        if dlg.result:
-            self._set_color(dlg.result)
+    def _tool_row(self, parent, key, name, desc):
+        """이름(굵게) + 설명(흐리게) 두 줄짜리 항목. 왼쪽 맞춤 · 호버 반응."""
+        row = tk.Frame(parent, bg=CARD, highlightbackground=BORDER,
+                       highlightthickness=1, cursor="hand2")
+        row.pack(fill="x", pady=2)
+        nm = tk.Label(row, text=name, font=(FONT, theme.fs(FS["body"]), "bold"),
+                      bg=CARD, fg=TEXT, anchor="w")
+        nm.pack(fill="x", padx=SP["m"], pady=(SP["s"] - 2, 0))
+        ds = tk.Label(row, text=desc, font=(FONT, theme.fs(FS["sub"])),
+                      bg=CARD, fg=MUTED, anchor="w", justify="left",
+                      wraplength=self._ROW_W)
+        ds.pack(fill="x", padx=SP["m"], pady=(0, SP["s"] - 2))
+        parts = (row, nm, ds)
+        for w in parts:
+            w.bind("<Button-1>", lambda e, k=key: self._pick(k))
+            w.bind("<Enter>", lambda e: [x.config(bg=ACCENT_SOFT) for x in parts])
+            w.bind("<Leave>", lambda e: [x.config(bg=CARD) for x in parts])
+        return row
+
+    def _set_color(self, hexv):
+        """고른 색을 보여준다. hexv=None 이면 '기본'(블럭 종류별 색)."""
+        self.color = hexv
+        self._color_lbl.config(text="기본" if not hexv else " ",
+                               bg=hexv or CARD)
 
     def _pick(self, key):
         self.result = key
