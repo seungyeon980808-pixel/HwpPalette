@@ -69,11 +69,15 @@ class Dock:
         return win32gui.GetWindowRect(self.host.winfo_id())
 
     def _move(self):
+        # SWP_NOACTIVATE 필수 (실측 2026-07-27, "심각하게 버벅거린다"):
+        # 없으면 SetWindowPos 가 옮길 때마다 한글을 **활성화**해서, 설정 창을
+        # 끄는 동안 60ms 마다 포커스를 뺏고 뺏기는 싸움이 났다.
         left, top, right, bottom = self._host_rect()
         win32gui.SetWindowPos(self.hwnd, win32con.HWND_TOPMOST,
                               left, top,
                               max(right - left, 200), max(bottom - top, 200),
-                              win32con.SWP_SHOWWINDOW)
+                              win32con.SWP_SHOWWINDOW
+                              | win32con.SWP_NOACTIVATE)
 
     def _on_configure(self, e):
         # 자식 위젯의 Configure 도 톱레벨 바인딩으로 온다 — 창 자신 것만

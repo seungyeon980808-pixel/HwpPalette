@@ -742,12 +742,24 @@ class SettingsWindow(tk.Toplevel):
         # ismapped 는 창이 WM 에 실리기 전이면 packed 상태여도 0 을 줘서,
         # 창고를 "안 보임"으로 오판해 접지 않았고 복귀 순서까지 어긋났다.
         self._dock_saved = {
-            "store_packed": self._store_card.winfo_manager() == "pack"}
+            "store_packed": self._store_card.winfo_manager() == "pack",
+            "zoom_h": int(self.zoom_pane.cget("height"))}
         self._main_card.pack_forget()
         self._store_grip.pack_forget()
         if self._dock_saved["store_packed"]:
             self._store_card.pack_forget()
-        self.zoom_pane.configure(width=hwp_dock.EDIT_PANE_W)
+        # 높이를 **반드시 함께** 정한다 (실측 2026-07-27, 사용자 버그): 판은
+        # 폭만 지정돼 있고 높이는 옆의 격자·창고가 정해 줬다. 그 둘을 접는
+        # 순간 높이를 정해 줄 것이 없어져 **창이 제목줄만 남기고 쪼그라들었고**
+        # — 덮어쓰기 버튼도 그 0px 안에 눌려 안 보였다 — 높이 0짜리 캔버스가
+        # 레이아웃 재계산을 반복시켜 심하게 버벅였다.
+        try:
+            _l, _t, _r, _b = screens.monitor_bounds(self)
+            avail = (_b - _t) - 160     # 제목줄·바닥 버튼줄·창 테두리 몫
+        except Exception:
+            avail = 900
+        edit_h = max(480, min(1050, avail))
+        self.zoom_pane.configure(width=hwp_dock.EDIT_PANE_W, height=edit_h)
         self._fit_window()
         self.update_idletasks()         # 판이 최종 자리를 잡은 뒤에 도킹한다
         hwnd = hwp_engine.connected_hwnd()
@@ -760,8 +772,8 @@ class SettingsWindow(tk.Toplevel):
         if self._dock is not None:
             self._dock.stop()
             self._dock = None
-        self.zoom_pane.configure(width=ZOOM_W)
         saved = getattr(self, "_dock_saved", None) or {}
+        self.zoom_pane.configure(width=ZOOM_W, height=saved.get("zoom_h", 0))
         # 원래 순서(격자·손잡이·창고·판)로 — 각각 판 앞에 차례로 끼우면 된다
         self._main_card.pack(side="left", fill="both", expand=True,
                              before=self.zoom_pane)
