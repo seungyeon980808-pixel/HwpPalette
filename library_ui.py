@@ -18,7 +18,8 @@ r"""개인 라이브러리(물감 설정) 창 — 2026-07-25 재구축.
 
 import pathlib
 import tkinter as tk
-from tkinter import filedialog, messagebox, simpledialog, ttk
+from tkinter import filedialog, simpledialog, ttk
+import dialogs as messagebox   # 윈도우 기본 대화상자 대신 프로그램과 같은 얼굴 (2026-07-27)
 
 import applog
 import chip                      # 물감·팔레트 파일 만들기·읽기·등록
@@ -50,6 +51,8 @@ ROWBG = _C["subbg"]
 SOFT = _C["yellow"]            # 옅은 회색 버튼 바탕 (예전 #e8e8ed 하드코딩)
 ACCENT_SOFT = _C["accent_soft"]    # 선택 행·켜진 칩의 옅은 파랑
 FONT = theme.FONT
+SP = theme.SP        # 간격 토큰 (4의 배수)
+FS = theme.FS        # 글자 위계 (역할 이름)
 
 # 탭 정의 — key 는 저장 데이터(library.json)의 키라 **절대 불변**,
 # label 만 화면에 보인다. '문자'→'특수기호' 개명이 표시만 바뀌는 이유다.
@@ -91,10 +94,10 @@ SIDE_W_PX = 132          # 왼쪽 분류 목록의 폭 (특수기호 탭)
 
 def _dialog_btn(parent, text, command, primary=False, zone_bg=None):
     """대화상자 공용 버튼 — 저장/확인은 파랑, 취소는 옅은 회색 (애플 A안)."""
-    font = (FONT, theme.fs(9), "bold") if primary else (FONT, theme.fs(9))
+    font = (FONT, theme.fs(FS["body"]), "bold") if primary else (FONT, theme.fs(FS["body"]))
     b = RoundButton(parent, text=text, command=command,
                     bg=ACCENT if primary else SOFT,
-                    fg="white" if primary else TEXT, radius=7, font=font,
+                    fg="white" if primary else TEXT, radius=theme.RADIUS["ctl"], font=font,
                     outline="", zone_bg=zone_bg or parent.cget("bg"))
     return b.fit(pad_x=16, pad_y=6)
 
@@ -170,10 +173,10 @@ class StyleFieldDialog(tk.Toplevel):
         self.attributes("-topmost", True)
 
         tk.Label(self, text="선택 영역에서 어떤 항목을 저장할까요?",
-                 font=(FONT, theme.fs(10), "bold"), bg=BG, fg=TEXT).pack(
+                 font=(FONT, theme.fs(FS["head"]), "bold"), bg=BG, fg=TEXT).pack(
                  anchor="w", padx=16, pady=(14, 2))
         tk.Label(self, text="체크한 항목만 저장돼, 나중에 그 항목만 다른 글자에 입혀집니다.",
-                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(anchor="w", padx=16, pady=(0, 10))
+                 font=(FONT, theme.fs(FS["sub"])), bg=BG, fg=MUTED).pack(anchor="w", padx=16, pady=(0, 10))
 
         self.vars = {}
         body = tk.Frame(self, bg=BG, padx=16)
@@ -181,7 +184,7 @@ class StyleFieldDialog(tk.Toplevel):
         for label in engine_library.CHARSHAPE_FIELD_LABELS:
             v = tk.BooleanVar(value=False)
             self.vars[label] = v
-            tk.Checkbutton(body, text=label, variable=v, font=(FONT, theme.fs(10)),
+            tk.Checkbutton(body, text=label, variable=v, font=(FONT, theme.fs(FS["head"])),
                            bg=BG, fg=TEXT, activebackground=BG,
                            selectcolor=CARD, cursor="hand2").pack(anchor="w", pady=2)
 
@@ -221,11 +224,11 @@ class MetaDialog(tk.Toplevel):
         body.pack(fill="x")
 
         # ── 이름만 물어본다. 라벨·태그는 대부분 기본값이면 충분하므로 접어둠 ──
-        tk.Label(body, text="이름", font=(FONT, theme.fs(9)), bg=BG, fg=TEXT).grid(
+        tk.Label(body, text="이름", font=(FONT, theme.fs(FS["body"])), bg=BG, fg=TEXT).grid(
             row=0, column=0, sticky="w", pady=3)
         self.name_var = tk.StringVar(value=name)
         name_entry = tk.Entry(body, textvariable=self.name_var, width=26,
-                              font=(FONT, theme.fs(10)), relief="solid", bd=1)
+                              font=(FONT, theme.fs(FS["head"])), relief="solid", bd=1)
         name_entry.grid(row=0, column=1, pady=3, padx=(8, 0))
         name_entry.focus_set()
         name_entry.bind("<Return>", lambda e: self._ok())
@@ -238,13 +241,13 @@ class MetaDialog(tk.Toplevel):
 
         self.label_var = tk.StringVar(value=label)
         self.tags_var = tk.StringVar(value="")
-        self._preview = tk.Label(body, text="", font=(FONT, theme.fs(8)), bg=BG, fg=ACCENT)
+        self._preview = tk.Label(body, text="", font=(FONT, theme.fs(FS["sub"])), bg=BG, fg=ACCENT)
         self._preview.grid(row=1, column=1, sticky="w", padx=(8, 0))
         self.name_var.trace_add("write", lambda *a: self._update_preview())
         self.label_var.trace_add("write", lambda *a: self._update_preview())
 
         if extra_note:
-            tk.Label(body, text=extra_note, font=(FONT, theme.fs(8)), bg=BG, fg=MUTED,
+            tk.Label(body, text=extra_note, font=(FONT, theme.fs(FS["sub"])), bg=BG, fg=MUTED,
                      wraplength=320, justify="left").grid(
                 row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
@@ -254,16 +257,16 @@ class MetaDialog(tk.Toplevel):
         # 두 개를 따로 두니 이름만 고쳤을 때 라벨이 옛 이름으로 남는 사고가 났다.
         adv = tk.Frame(self, bg=BG, padx=16)
         adv.pack(fill="x")
-        tk.Label(adv, text="태그", font=(FONT, theme.fs(9)), bg=BG, fg=TEXT).pack(
+        tk.Label(adv, text="태그", font=(FONT, theme.fs(FS["body"])), bg=BG, fg=TEXT).pack(
             anchor="w", pady=(4, 2))
-        self.tag_entry = tk.Entry(adv, width=26, font=(FONT, theme.fs(10)),
+        self.tag_entry = tk.Entry(adv, width=26, font=(FONT, theme.fs(FS["head"])),
                                   relief="solid", bd=1)
         self.tag_entry.pack(anchor="w", fill="x")
         # 엔터로 담는다 (사용자 결정 2026-07-27) — 띄어쓰기로 나열하는 방식은
         # 무엇이 이미 담겼는지 눈에 안 보이고, 지우려면 글자를 찾아 지워야 했다.
         self.tag_entry.bind("<Return>", lambda e: self._commit_tag())
         tk.Label(adv, text="적고 Enter — 담긴 태그는 ✕ 로 뺍니다 (한글 5글자 이내)",
-                 font=(FONT, theme.fs(7)), bg=BG, fg=MUTED).pack(anchor="w")
+                 font=(FONT, theme.fs(FS["caption"])), bg=BG, fg=MUTED).pack(anchor="w")
         self._tag_box = tk.Frame(adv, bg=BG)
         self._tag_box.pack(anchor="w", fill="x", pady=(4, 0))
         # 이미 쓰고 있는 태그는 눌러서 담는다 — **오타로 태그가 번식하는 것을
@@ -273,10 +276,10 @@ class MetaDialog(tk.Toplevel):
         if known:
             row = tk.Frame(adv, bg=BG)
             row.pack(anchor="w", fill="x", pady=(4, 0))
-            tk.Label(row, text="쓰던 태그", font=(FONT, theme.fs(7)),
+            tk.Label(row, text="쓰던 태그", font=(FONT, theme.fs(FS["caption"])),
                      bg=BG, fg=MUTED).pack(side="left", padx=(0, 4))
             for t in known:
-                c = tk.Label(row, text=f"#{t}", font=(FONT, theme.fs(8)),
+                c = tk.Label(row, text=f"#{t}", font=(FONT, theme.fs(FS["sub"])),
                              bg=SOFT, fg=ACCENT, padx=6, pady=2, cursor="hand2")
                 c.pack(side="left", padx=(0, 4))
                 c.bind("<Button-1>", lambda e, tag=t: self._add_tag(tag))
@@ -327,9 +330,9 @@ class MetaDialog(tk.Toplevel):
             chip = tk.Frame(self._tag_box, bg=ACCENT_SOFT,
                             highlightbackground=ACCENT, highlightthickness=1)
             chip.pack(side="left", padx=(0, 4), pady=2)
-            tk.Label(chip, text=f"#{t}", font=(FONT, theme.fs(8)),
+            tk.Label(chip, text=f"#{t}", font=(FONT, theme.fs(FS["sub"])),
                      bg=ACCENT_SOFT, fg=ACCENT).pack(side="left", padx=(6, 2))
-            x = tk.Label(chip, text="✕", font=(FONT, theme.fs(7)),
+            x = tk.Label(chip, text="✕", font=(FONT, theme.fs(FS["caption"])),
                          bg=ACCENT_SOFT, fg=MUTED, cursor="hand2")
             x.pack(side="left", padx=(0, 5))
             x.bind("<Button-1>", lambda e, tag=t: self._remove_tag(tag))
@@ -516,10 +519,10 @@ class TextInputDialog(tk.Toplevel):
         self.attributes("-topmost", True)
 
         tk.Label(self, text="저장할 내용을 입력하세요 (한글에서 선택했다면 자동으로 채워집니다)",
-                 font=(FONT, theme.fs(9)), bg=BG, fg=MUTED, justify="left").pack(
+                 font=(FONT, theme.fs(FS["body"])), bg=BG, fg=MUTED, justify="left").pack(
                  anchor="w", padx=16, pady=(14, 6))
 
-        self.text = tk.Text(self, width=44, height=5, font=(FONT, theme.fs(10)),
+        self.text = tk.Text(self, width=44, height=5, font=(FONT, theme.fs(FS["head"])),
                              wrap="word", relief="solid", bd=1)
         self.text.pack(padx=16)
         self.text.insert("1.0", prefill)
@@ -552,7 +555,7 @@ class LibraryManager(tk.Toplevel):
         self._sel = None                # 지금 선택된 행 {"cat","item","row"}
         self._builtin_group = "전체"     # 특수기호 탭의 묶음 칩 선택
 
-        tk.Label(self, text="물감 설정", font=(FONT, theme.fs(12), "bold"),
+        tk.Label(self, text="물감 설정", font=(FONT, theme.fs(FS["title"]), "bold"),
                  bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(14, 2))
 
         # 탭 버튼 — 표시는 label, 내부는 key (저장 데이터 키와 한 몸)
@@ -562,14 +565,14 @@ class LibraryManager(tk.Toplevel):
         for c in CATS:
             b = RoundButton(tab_row, text=c["label"],
                             command=lambda k=c["key"]: self._switch_tab(k),
-                            bg=CARD, fg=TEXT, radius=7,
-                            font=(FONT, theme.fs(9), "bold"), outline="",
+                            bg=CARD, fg=TEXT, radius=theme.RADIUS["ctl"],
+                            font=(FONT, theme.fs(FS["body"]), "bold"), outline="",
                             zone_bg=BG)
             b.fit(pad_x=12, pad_y=6)
             b.pack(side="left", padx=(0, 4))
             self.tab_btns[c["key"]] = b
 
-        self.desc_label = tk.Label(self, font=(FONT, theme.fs(8)), bg=BG, fg=MUTED,
+        self.desc_label = tk.Label(self, font=(FONT, theme.fs(FS["sub"])), bg=BG, fg=MUTED,
                                     justify="left", wraplength=440)
         self.desc_label.pack(anchor="w", padx=16, pady=(6, 8))
 
@@ -583,14 +586,14 @@ class LibraryManager(tk.Toplevel):
         #     #수능 사진 → 둘 다 만족하는 물감
         filter_row = tk.Frame(self, bg=BG, padx=16)
         filter_row.pack(fill="x")
-        tk.Label(filter_row, text="검색", font=(FONT, theme.fs(8)), fg=MUTED, bg=BG).pack(side="left")
+        tk.Label(filter_row, text="검색", font=(FONT, theme.fs(FS["sub"])), fg=MUTED, bg=BG).pack(side="left")
         self.search_var = tk.StringVar(value="")
         se = tk.Entry(filter_row, textvariable=self.search_var, width=20,
-                      font=(FONT, theme.fs(9)), relief="solid", bd=1)
+                      font=(FONT, theme.fs(FS["body"])), relief="solid", bd=1)
         se.pack(side="left", padx=(6, 8))
         self.search_var.trace_add("write", lambda *a: self._refresh())
         tk.Label(filter_row, text="#태그 로 태그만 골라 볼 수 있습니다",
-                 font=(FONT, theme.fs(7)), fg=MUTED, bg=BG).pack(side="left")
+                 font=(FONT, theme.fs(FS["caption"])), fg=MUTED, bg=BG).pack(side="left")
 
         # 특수기호 탭은 칩 대신 **왼쪽 분류 목록**을 쓴다 (사용자 결정 2026-07-26).
         # 기호가 200개를 넘으면서 칩 줄이 여러 줄로 접혔다 — 한글 문자표처럼
@@ -598,7 +601,7 @@ class LibraryManager(tk.Toplevel):
         self._chip_btns = {}
 
         # 추가 버튼(탭마다 동작이 다름) — 자리는 항상 구분선 앞 (앵커 = _sep)
-        self.add_btn = tk.Button(self, font=(FONT, theme.fs(9), "bold"), bg=SOFT,
+        self.add_btn = tk.Button(self, font=(FONT, theme.fs(FS["body"]), "bold"), bg=SOFT,
                                   fg=TEXT, bd=0, padx=10, pady=8, cursor="hand2")
         self.add_btn.pack(fill="x", padx=16, pady=(8, 0))
 
@@ -619,7 +622,10 @@ class LibraryManager(tk.Toplevel):
         wrap.pack(side="left", fill="both", expand=True)
         self._canvas = tk.Canvas(wrap, bg=BG, highlightthickness=0,
                                  height=LIST_H_PX, width=LIST_W_PX)
-        sb = tk.Scrollbar(wrap, orient="vertical", command=self._canvas.yview)
+        messagebox.style_scrollbars(self)
+        sb = ttk.Scrollbar(wrap, orient="vertical",
+                           style="App.Vertical.TScrollbar",
+                           command=self._canvas.yview)
         self.list_area = tk.Frame(self._canvas, bg=BG)
         self._canvas_win = self._canvas.create_window(
             (0, 0), window=self.list_area, anchor="nw")
@@ -643,7 +649,7 @@ class LibraryManager(tk.Toplevel):
         # ── 하단 동작바 — 행마다 버튼을 반복하지 않고 여기 한 벌만 ──
         bar = tk.Frame(self, bg=BG, padx=16, pady=10)
         bar.pack(fill="x")
-        self.sel_hint = tk.Label(bar, text="", font=(FONT, theme.fs(8)),
+        self.sel_hint = tk.Label(bar, text="", font=(FONT, theme.fs(FS["sub"])),
                                  bg=BG, fg=MUTED, anchor="w")
         self.sel_hint.pack(side="left", fill="x", expand=True)
         # 주 동작(삽입/적용/열기)이 맨 오른쪽 — 먼저 pack 할수록 오른쪽에 붙는다
@@ -797,8 +803,8 @@ class LibraryManager(tk.Toplevel):
             b = RoundButton(inner, text=g,
                             command=lambda gg=g: self._pick_chip(gg),
                             bg=ACCENT if on else CARD,
-                            fg="white" if on else TEXT, radius=6,
-                            font=(FONT, theme.fs(8)), outline="",
+                            fg="white" if on else TEXT, radius=theme.RADIUS["ctl"],
+                            font=(FONT, theme.fs(FS["sub"])), outline="",
                             zone_bg=CARD, justify="left")
             b.fit(pad_x=8, pad_y=5, min_w=SIDE_W_PX - 12)
             b.pack(anchor="w", padx=4, pady=1)
@@ -838,7 +844,7 @@ class LibraryManager(tk.Toplevel):
             self._render_row(cat, item)
 
     def _empty_note(self, text):
-        tk.Label(self.list_area, text=text, font=(FONT, theme.fs(9)),
+        tk.Label(self.list_area, text=text, font=(FONT, theme.fs(FS["body"])),
                  bg=BG, fg=MUTED).pack(anchor="w", pady=8)
 
     def _search_blob(self, cat, item):
@@ -915,24 +921,24 @@ class LibraryManager(tk.Toplevel):
             title_font = (FONT, theme.fs(11))
         else:
             title = item["name"]
-            title_font = (FONT, theme.fs(9), "bold")
+            title_font = (FONT, theme.fs(FS["body"]), "bold")
         tk.Label(info, text=title, font=title_font,
                  bg=ROWBG, fg=TEXT, anchor="w").pack(side="left")
         summary = self._summary(cat, item)
         if summary:
-            tk.Label(info, text=summary, font=(FONT, theme.fs(8)),
+            tk.Label(info, text=summary, font=(FONT, theme.fs(FS["sub"])),
                      bg=ROWBG, fg=MUTED, anchor="w").pack(side="left",
                                                           padx=(8, 0))
         # 라벨은 오른쪽 끝에 — 반복되는 꼬리표 대신 호출 이름만 조용히 보여준다
         lab = item.get("label") or item.get("name", "")
-        tk.Label(row, text=f"\\{lab}\\", font=(FONT, theme.fs(8)), bg=ROWBG,
+        tk.Label(row, text=f"\\{lab}\\", font=(FONT, theme.fs(FS["sub"])), bg=ROWBG,
                  fg=MUTED, padx=10).pack(side="right")
         # 태그 칩 — **누르면 그 태그로 걸러진다** (2026-07-26).
         # 태그를 보여주기만 하면 "그래서 어쩌라고"가 된다. 누르는 순간
         # 검색칸에 #태그 가 들어가므로, 따로 태그 목록 화면을 만들지 않아도
         # 태그가 눈에 띄고 바로 쓰인다.
         for t in (item.get("tags") or [])[:3]:
-            chip = tk.Label(row, text=f"#{t}", font=(FONT, theme.fs(7)),
+            chip = tk.Label(row, text=f"#{t}", font=(FONT, theme.fs(FS["caption"])),
                             bg=ROWBG, fg=ACCENT, padx=4, cursor="hand2")
             chip.pack(side="right")
             chip.bind("<Button-1>", lambda e, tag=t: self._filter_by_tag(tag))
@@ -1004,7 +1010,7 @@ class LibraryManager(tk.Toplevel):
         # 내가 등록한 것과 내장 기호가 섞이므로, 무엇이 무엇인지 아래 줄이 말한다
         tk.Label(self.list_area,
                  text=f"{len(entries)}개  ·  누르면 아래에 부르는 법이 나옵니다",
-                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(anchor="w",
+                 font=(FONT, theme.fs(FS["sub"])), bg=BG, fg=MUTED).pack(anchor="w",
                                                                  pady=(6, 0))
 
     def _wire_cell(self, f, entry):
@@ -1031,7 +1037,7 @@ class LibraryManager(tk.Toplevel):
         tk.Label(self.list_area,
                  text="연결한 순서대로 찾습니다 — 같은 이름의 그림이 여러 폴더에 "
                       "있으면 위쪽 폴더가 이깁니다.",
-                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED,
+                 font=(FONT, theme.fs(FS["sub"])), bg=BG, fg=MUTED,
                  wraplength=LIST_W_PX - 20, justify="left").pack(
                  anchor="w", pady=(2, 6))
         for i, f in enumerate(folders):
@@ -1042,17 +1048,17 @@ class LibraryManager(tk.Toplevel):
             info.pack(side="left", fill="both", expand=True)
             name = pathlib.Path(f["path"]).name or f["path"]
             tk.Label(info, text=f"{i + 1}. {name}",
-                     font=(FONT, theme.fs(9), "bold"), bg=ROWBG,
+                     font=(FONT, theme.fs(FS["body"]), "bold"), bg=ROWBG,
                      fg=TEXT, anchor="w").pack(anchor="w")
             detail = (f"그림 {f['count']}장" if f["exists"]
                       else "⚠ 폴더를 찾을 수 없습니다 (옮겼거나 지워짐)")
             tk.Label(info, text=f"{detail}   ·   {f['path']}",
-                     font=(FONT, theme.fs(8)), bg=ROWBG,
+                     font=(FONT, theme.fs(FS["sub"])), bg=ROWBG,
                      fg=MUTED if f["exists"] else "#9b1c1c",
                      anchor="w").pack(anchor="w")
             RoundButton(row, text="연결 해제",
                         command=lambda p=f["path"]: self._unlink_photo_dir(p),
-                        bg=SOFT, fg=TEXT, radius=6, font=(FONT, theme.fs(8)),
+                        bg=SOFT, fg=TEXT, radius=theme.RADIUS["ctl"], font=(FONT, theme.fs(FS["sub"])),
                         outline="", zone_bg=ROWBG).fit(pad_x=10, pad_y=4).pack(
                         side="right", padx=10)
 
@@ -1456,17 +1462,22 @@ class _RecaptureCoach(tk.Toplevel):
     다른 문서로 갈아탔을 수도 있으므로 문구로 분명히 말해 둔다.
     """
 
-    def __init__(self, master, item, cat="템플릿", on_saved=None):
+    def __init__(self, master, item, cat="템플릿", on_saved=None,
+                 master_was_topmost=False):
         super().__init__(master)
         self._manager = master
         self._item = item
         self._cat = cat
         self._on_saved = on_saved
+        self._master_was_topmost = master_was_topmost
         self.title(appinfo.WINDOW_TITLE)
         self.configure(bg=BG)
         self.resizable(False, False)
         self.attributes("-topmost", True)
-        self.bind("<Escape>", lambda e: self.destroy())
+        self.bind("<Escape>", lambda e: self._close())
+        # X 로 닫아도 topmost 를 되돌려야 한다 — 기본 동작(그냥 destroy)에
+        # 맡기면 master 가 계속 꺼진 채로 남는다.
+        self.protocol("WM_DELETE_WINDOW", self._close)
         tk.Label(self, text=f"'{item['name']}' 고치는 중",
                  font=(FONT, theme.fs(11), "bold"), bg=BG, fg=TEXT).pack(
                  anchor="w", padx=16, pady=(14, 2))
@@ -1476,15 +1487,24 @@ class _RecaptureCoach(tk.Toplevel):
                       "고친 뒤 아래 [이 내용으로 덮어쓰기]를 누르세요.\n"
                       f"지금 한글에 보이는 문서 전체가 이 {cat}으로 저장되고,\n"
                       "고치던 탭은 저장이 끝나면 알아서 닫힙니다.",
-                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED,
+                 font=(FONT, theme.fs(FS["sub"])), bg=BG, fg=MUTED,
                  justify="left").pack(anchor="w", padx=16, pady=(0, 10))
         foot = tk.Frame(self, bg=BG, padx=16, pady=12)
         foot.pack(fill="x")
         _dialog_btn(foot, "이 내용으로 덮어쓰기", self._overwrite,
                     primary=True).pack(side="right")
-        _dialog_btn(foot, "취소", self.destroy).pack(side="right", padx=(0, 6))
+        _dialog_btn(foot, "취소", self._close).pack(side="right", padx=(0, 6))
         self.update_idletasks()
         self.geometry(f"+{master.winfo_rootx()+40}+{master.winfo_rooty()+80}")
+
+    def _close(self):
+        """되돌리고 닫는다 — 취소·Esc·X·덮어쓰기 완료가 전부 이 길을 거친다."""
+        if self._master_was_topmost:
+            try:
+                self._manager.attributes("-topmost", True)
+            except Exception:
+                pass
+        self.destroy()
 
     def _overwrite(self):
         if not _ensure_hwp(self):
@@ -1510,12 +1530,12 @@ class _RecaptureCoach(tk.Toplevel):
             messagebox.showerror("덮어쓰기 실패",
                                  "이 템플릿이 라이브러리에서 사라졌습니다.",
                                  parent=self)
-            self.destroy()
+            self._close()
             return
         # 고치던 탭은 프로그램이 닫는다 (사용자 결정 2026-07-26) — 저장이
         # 끝난 뒤에도 남아 있으면 "이건 저장된 건가?" 하고 헷갈린다.
         closed = engine_library.close_active_doc()
-        self.destroy()
+        self._close()
         # 이 창은 관리 창의 자식이라, 여기가 살아 있으면 관리 창도 살아 있다
         try:
             self._manager._refresh(self._cat)
@@ -1559,13 +1579,13 @@ class ShareDialog(tk.Toplevel):
 
         self.bind("<Escape>", lambda e: self.destroy())      # Esc 로 닫기
         tk.Label(self, text="물감 나누기",
-                 font=(FONT, theme.fs(12), "bold"), bg=BG, fg=TEXT).pack(
+                 font=(FONT, theme.fs(FS["title"]), "bold"), bg=BG, fg=TEXT).pack(
                  anchor="w", padx=16, pady=(14, 2))
         tk.Label(self, text="내가 만든 것을 파일 하나로 묶어 동료와 주고받습니다.",
-                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED,
+                 font=(FONT, theme.fs(FS["sub"])), bg=BG, fg=MUTED,
                  justify="left").pack(anchor="w", padx=16, pady=(0, 10))
 
-        tk.Label(self, text="무엇을 보낼까요?", font=(FONT, theme.fs(9), "bold"),
+        tk.Label(self, text="무엇을 보낼까요?", font=(FONT, theme.fs(FS["body"]), "bold"),
                  bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(0, 4))
         self._card("물감 보내기",
                    "등록한 서식·기호·템플릿·양식 중 골라서", self._send_paints)
@@ -1580,12 +1600,12 @@ class ShareDialog(tk.Toplevel):
         # 입구는 하나 — 팔레트가 들었든 물감만 들었든 같은 버튼이다.
         # 받는 사람은 파일이 어느 쪽인지 모르는 게 정상이라, 열어 보고
         # 프로그램이 판단한다 (사용자 결정 2026-07-26).
-        tk.Label(row2, text="받은 것을", font=(FONT, theme.fs(9)), bg=BG,
+        tk.Label(row2, text="받은 것을", font=(FONT, theme.fs(FS["body"])), bg=BG,
                  fg=TEXT).pack(side="left")
         _dialog_btn(row2, "불러오기…", self._import).pack(side="left",
                                                         padx=(8, 0))
         tk.Label(row2, text="(내 물감·팔레트는 덮어쓰지 않습니다)",
-                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(
+                 font=(FONT, theme.fs(FS["sub"])), bg=BG, fg=MUTED).pack(
                  side="left", padx=(8, 0))
 
         self.update_idletasks()
@@ -1603,9 +1623,9 @@ class ShareDialog(tk.Toplevel):
         row.pack(fill="x", padx=16, pady=3)
         info = tk.Frame(row, bg=ROWBG, padx=12, pady=8)
         info.pack(side="left", fill="both", expand=True)
-        tk.Label(info, text=title, font=(FONT, theme.fs(10), "bold"),
+        tk.Label(info, text=title, font=(FONT, theme.fs(FS["head"]), "bold"),
                  bg=ROWBG, fg=TEXT, anchor="w").pack(anchor="w")
-        tk.Label(info, text=desc, font=(FONT, theme.fs(8)), bg=ROWBG,
+        tk.Label(info, text=desc, font=(FONT, theme.fs(FS["sub"])), bg=ROWBG,
                  fg=MUTED, anchor="w", justify="left").pack(anchor="w")
         for wdg in (row, info, *info.winfo_children()):
             wdg.config(cursor="hand2")
@@ -1710,16 +1730,16 @@ class ChipInstallDialog(tk.Toplevel):
 
         tab = info.get("tab")
         kind = "팔레트" if tab else "물감"
-        tk.Label(self, text=f"{kind} 등록", font=(FONT, theme.fs(12), "bold"),
+        tk.Label(self, text=f"{kind} 등록", font=(FONT, theme.fs(FS["title"]), "bold"),
                  bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(14, 2))
-        tk.Label(self, text=info["name"], font=(FONT, theme.fs(10), "bold"),
+        tk.Label(self, text=info["name"], font=(FONT, theme.fs(FS["head"]), "bold"),
                  bg=BG, fg=ACCENT).pack(anchor="w", padx=16)
         sub = " · ".join(x for x in (info.get("author"), info.get("made_with"),
                                      filename) if x)
-        tk.Label(self, text=sub, font=(FONT, theme.fs(7)), bg=BG, fg=MUTED,
+        tk.Label(self, text=sub, font=(FONT, theme.fs(FS["caption"])), bg=BG, fg=MUTED,
                  wraplength=380, justify="left").pack(anchor="w", padx=16)
         if info.get("note"):
-            tk.Label(self, text=f"“{info['note']}”", font=(FONT, theme.fs(8)),
+            tk.Label(self, text=f"“{info['note']}”", font=(FONT, theme.fs(FS["sub"])),
                      bg=BG, fg=TEXT, wraplength=380, justify="left").pack(
                      anchor="w", padx=16, pady=(6, 0))
 
@@ -1764,7 +1784,7 @@ class ChipInstallDialog(tk.Toplevel):
         tk.Label(self, text="받은 물감은 태그 없이 들어오고, 어느 파일에서 "
                             "왔는지 꼬리표가 남습니다.\n"
                             "내 물감·팔레트는 덮어쓰지 않습니다.",
-                 font=(FONT, theme.fs(7)), bg=BG, fg=MUTED,
+                 font=(FONT, theme.fs(FS["caption"])), bg=BG, fg=MUTED,
                  justify="left").pack(anchor="w", padx=16)
 
         foot = tk.Frame(self, bg=BG, padx=16, pady=12)
@@ -1781,9 +1801,9 @@ class ChipInstallDialog(tk.Toplevel):
     def _line(parent, head, text, faint=False, warn=False):
         row = tk.Frame(parent, bg=ROWBG)
         row.pack(fill="x", pady=1)
-        tk.Label(row, text=head, font=(FONT, theme.fs(8), "bold"), bg=ROWBG,
+        tk.Label(row, text=head, font=(FONT, theme.fs(FS["sub"]), "bold"), bg=ROWBG,
                  fg=MUTED, width=5, anchor="w").pack(side="left")
-        tk.Label(row, text=text, font=(FONT, theme.fs(8)), bg=ROWBG,
+        tk.Label(row, text=text, font=(FONT, theme.fs(FS["sub"])), bg=ROWBG,
                  fg=(ACCENT if warn else MUTED if faint else TEXT),
                  anchor="w", justify="left", wraplength=330).pack(side="left")
 
@@ -1808,11 +1828,11 @@ class PaintPickDialog(tk.Toplevel):
         self.attributes("-topmost", True)
         self.bind("<Escape>", lambda e: self.destroy())
 
-        tk.Label(self, text="물감 보내기", font=(FONT, theme.fs(12), "bold"),
+        tk.Label(self, text="물감 보내기", font=(FONT, theme.fs(FS["title"]), "bold"),
                  bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(14, 2))
         tk.Label(self, text="보낼 것에 체크하세요. 태그는 함께 가지 않습니다 "
                             "(내 정리 습관이라 남에게는 뜻이 없습니다).",
-                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED,
+                 font=(FONT, theme.fs(FS["sub"])), bg=BG, fg=MUTED,
                  wraplength=380, justify="left").pack(anchor="w", padx=16,
                                                       pady=(0, 8))
 
@@ -1820,7 +1840,9 @@ class PaintPickDialog(tk.Toplevel):
         wrap.pack(fill="both", expand=True)
         canvas = tk.Canvas(wrap, bg=BG, highlightthickness=0,
                            height=int(280 * (theme.FONT_SCALE or 1)))
-        sb = tk.Scrollbar(wrap, orient="vertical", command=canvas.yview)
+        sb = ttk.Scrollbar(wrap, orient="vertical",
+                           style="App.Vertical.TScrollbar",
+                           command=canvas.yview)
         body = tk.Frame(canvas, bg=BG)
         win = canvas.create_window((0, 0), window=body, anchor="nw")
         body.bind("<Configure>",
@@ -1845,23 +1867,23 @@ class PaintPickDialog(tk.Toplevel):
                 continue
             head = tk.Frame(body, bg=BG)
             head.pack(fill="x", pady=(8, 2))
-            tk.Label(head, text=c["label"], font=(FONT, theme.fs(9), "bold"),
+            tk.Label(head, text=c["label"], font=(FONT, theme.fs(FS["body"]), "bold"),
                      bg=BG, fg=MUTED).pack(side="left")
-            tk.Label(head, text=f"{len(items)}개", font=(FONT, theme.fs(8)),
+            tk.Label(head, text=f"{len(items)}개", font=(FONT, theme.fs(FS["sub"])),
                      bg=BG, fg=MUTED).pack(side="left", padx=(6, 0))
             for it in items:
                 v = tk.BooleanVar(value=False)
                 self.vars.append((c["key"], it, v))
                 tk.Checkbutton(
                     body, text=f"{it['name']}   \\{it.get('label') or it['name']}\\",
-                    variable=v, font=(FONT, theme.fs(9)), bg=BG, fg=TEXT,
+                    variable=v, font=(FONT, theme.fs(FS["body"])), bg=BG, fg=TEXT,
                     activebackground=BG, activeforeground=TEXT,
                     selectcolor=CARD, anchor="w", cursor="hand2").pack(
                     anchor="w", fill="x")
 
         if not self.vars:
             tk.Label(body, text="아직 등록한 물감이 없습니다.",
-                     font=(FONT, theme.fs(9)), bg=BG, fg=MUTED).pack(
+                     font=(FONT, theme.fs(FS["body"])), bg=BG, fg=MUTED).pack(
                      anchor="w", pady=10)
 
         foot = tk.Frame(self, bg=BG, padx=16, pady=12)
@@ -1932,11 +1954,11 @@ class PalettePickDialog(tk.Toplevel):
         self.attributes("-topmost", True)
         self.bind("<Escape>", lambda e: self.destroy())
 
-        tk.Label(self, text="팔레트 보내기", font=(FONT, theme.fs(12), "bold"),
+        tk.Label(self, text="팔레트 보내기", font=(FONT, theme.fs(FS["title"]), "bold"),
                  bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(14, 2))
         tk.Label(self, text="보낼 팔레트를 고르세요. 그 팔레트가 쓰는 물감도 "
                             "함께 담깁니다.",
-                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED,
+                 font=(FONT, theme.fs(FS["sub"])), bg=BG, fg=MUTED,
                  wraplength=380, justify="left").pack(anchor="w", padx=16,
                                                       pady=(0, 8))
 
@@ -1945,7 +1967,7 @@ class PalettePickDialog(tk.Toplevel):
         if not tabs:
             tk.Label(self, text="보낼 팔레트가 없습니다.\n"
                                 "팔레트 설정에서 먼저 만들어 주세요.",
-                     font=(FONT, theme.fs(9)), bg=BG, fg=MUTED,
+                     font=(FONT, theme.fs(FS["body"])), bg=BG, fg=MUTED,
                      justify="left").pack(anchor="w", padx=16, pady=8)
         for tab in tabs:
             n = len(tab.get("blocks", []))
@@ -1968,9 +1990,9 @@ class PalettePickDialog(tk.Toplevel):
         info = tk.Frame(row, bg=ROWBG, padx=12, pady=8)
         info.pack(side="left", fill="both", expand=True)
         tk.Label(info, text=tab.get("name", "이름 없음"),
-                 font=(FONT, theme.fs(10), "bold"), bg=ROWBG, fg=TEXT,
+                 font=(FONT, theme.fs(FS["head"]), "bold"), bg=ROWBG, fg=TEXT,
                  anchor="w").pack(anchor="w")
-        tk.Label(info, text=desc, font=(FONT, theme.fs(8)), bg=ROWBG,
+        tk.Label(info, text=desc, font=(FONT, theme.fs(FS["sub"])), bg=ROWBG,
                  fg=MUTED, anchor="w").pack(anchor="w")
         for wdg in (row, info, *info.winfo_children()):
             wdg.config(cursor="hand2")
@@ -2109,10 +2131,35 @@ def edit_content(master, cat, item, on_saved=None):
                              parent=master)
         return False
     # 고칠 문서를 **눈앞에** 띄운다 — 우리 창 뒤에 있으면 무엇을 고치라는
-    # 것인지 모른다 (사용자 지적 2026-07-27)
+    # 것인지 모른다 (사용자 지적 2026-07-27).
+    #
+    # 실측(2026-07-27): "한글 창을 열면 한글창이 나오지 않는다" — bring_to_front
+    # 로 한글에 초점을 줘도, master(물감·팔레트 설정 창)가 **-topmost** 라서
+    # 한글 창이 그 뒤에 완전히 가려졌다. 윈도우의 topmost 는 '초점'과 무관하게
+    # z-순서를 최상단에 고정하는 속성이라, 초점만 옮겨선 그 뒤에서 못 나온다.
+    # 게다가 이 창은 최근 개편으로(창고·미리보기 확장) 화면 대부분을 덮을 만큼
+    # 넓어져 이 문제가 더 두드러진다. 편집하는 동안만 master 의 topmost 를 끄고,
+    # 안내 창이 닫힐 때 되돌린다 — _RecaptureCoach 자체는 계속 topmost 로 둔다
+    # (작아서 화면을 덮지 않고, 편집 중 돌아올 자리를 보여줘야 한다).
+    master_was_topmost = _pop_topmost(master)
     hwp_engine.bring_to_front()
-    _RecaptureCoach(master, item, cat=cat, on_saved=on_saved)
+    _RecaptureCoach(master, item, cat=cat, on_saved=on_saved,
+                    master_was_topmost=master_was_topmost)
     return True
+
+
+def _pop_topmost(win):
+    """창의 topmost 를 끄고, 원래 켜져 있었는지를 돌려준다 (되돌릴 때 씀)."""
+    try:
+        was = bool(win.attributes("-topmost"))
+    except Exception:
+        return False
+    if was:
+        try:
+            win.attributes("-topmost", False)
+        except Exception:
+            pass
+    return was
 
 
 def open_share(master, on_saved=None):

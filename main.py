@@ -52,7 +52,8 @@ CONVERT_HOTKEY_LABEL = "Ctrl+Alt+T"
 
 import pathlib
 import tkinter as tk
-from tkinter import messagebox, filedialog
+from tkinter import filedialog
+import dialogs as messagebox   # 윈도우 기본 대화상자 대신 프로그램과 같은 얼굴 (2026-07-27)
 
 import applog
 import paths
@@ -768,7 +769,7 @@ _BAR_BTN_PX = int(round(26 * SCALE))     # 정사각 한 변
 
 def _bar_btn(text, cmd, tip):
     b = RoundButton(misc_row, text=text, command=cmd, bg=CARD, fg=MUTED,
-                    radius=6, font=_font(9), outline="", zone_bg=CARD)
+                    radius=theme.RADIUS["ctl"], font=_font(9), outline="", zone_bg=CARD)
     b.config(width=_BAR_BTN_PX, height=_BAR_BTN_PX)   # fit() 대신 정사각 고정
     # 기호만 있으므로 이름은 툴팁이 맡는다. _add_tooltip 은 이 줄보다 아래에서
     # 정의되므로(파일 순서), 화면이 다 만들어진 뒤에 붙인다.
@@ -1251,7 +1252,7 @@ tk.Label(pal_head, text="개인 팔레트", font=_font(7), fg=MUTED,
 _PAL_NAME_MAX = 12      # 이름이 길어도 이 창 폭을 끌고 다니지 않게
 
 pal_pick = RoundButton(pal_head, text="", command=lambda: _pal_menu(),
-                       bg=CARD, fg=TEXT, radius=6, font=_font(8),
+                       bg=CARD, fg=TEXT, radius=theme.RADIUS["ctl"], font=_font(8),
                        outline=BORDER, focus_color=ACCENT, zone_bg=SUBBG)
 pal_pick.pack(side="left", padx=(6, 0))
 
@@ -1311,6 +1312,7 @@ def _select_pal_tab(i):
     _pal_state["tab"] = i
     _sync_pal_pick()                    # 고르개에 새 이름을 써 넣는다
     _render_current_tab()
+    refresh_status()                    # 상태 표시줄의 팔레트 이름도 따라간다
     root.after_idle(_fit_window)        # 탭마다 격자 크기가 달라 창도 맞춘다
 
 
@@ -1653,7 +1655,7 @@ def _make_block_button(parent, blk, span=1):
     # 초점 테두리(키보드 Tab 이동)는 RoundButton 이 자체로 그린다.
     btn = RoundButton(parent, text=label,
                       command=lambda b=blk: run_palette_block(b),
-                      bg=bg, fg=theme.text_on(bg), radius=8, font=_font(size),
+                      bg=bg, fg=theme.text_on(bg), radius=theme.RADIUS["ctl"], font=_font(size),
                       outline=BORDER, focus_color=ACCENT,
                       zone_bg=parent.cget("bg"))
     # 도구 블럭은 이름표를 달아 둔다 — 튜토리얼이 '마크다운 변환' 버튼을
@@ -1689,8 +1691,30 @@ _footer.pack_propagate(False)        # 안의 라벨이 높이를 바꾸지 못�
 # 산술 중앙(expand)으로도 눈에는 아래로 처져 보였다 (사용자 확인 2026-07-25) —
 # 글자의 시각 무게가 베이스라인 쪽에 쏠려서다. 아래에만 여백을 더해 약 1mm(4px)
 # 올린다: pack 은 '라벨+아래 4px' 묶음을 중앙에 놓으므로 글자는 그만큼 위로 간다.
-tk.Label(_footer, text=appinfo.COPYRIGHT, font=_font(7), fg=FAINT, bg=BG,
-         anchor="center").pack(expand=True, pady=(0, 4))
+# 2026-07-27 디자인 개편: 저작권 한 줄을 **상태 표시줄**로 바꿨다.
+# 늘 같은 글자만 있던 자리에 '지금 어떤 상태인가'(한글 연결·고른 팔레트)를
+# 놓는다 — 장식이 정보로 바뀌면 화면이 조용해지면서 쓸모는 늘어난다.
+# 저작권은 도움말 안에 그대로 있다.
+_status_var = tk.StringVar(value="")
+tk.Label(_footer, textvariable=_status_var, font=_font(7), fg=FAINT, bg=BG,
+         anchor="w").pack(side="left", expand=True, fill="x",
+                          padx=theme.SP["m"], pady=(0, 4))
+tk.Label(_footer, text=f"v{VERSION}", font=_font(7), fg=FAINT, bg=BG,
+         anchor="e").pack(side="right", padx=theme.SP["m"], pady=(0, 4))
+
+
+def refresh_status():
+    """상태 표시줄 갱신 — 한글 연결 여부와 지금 보고 있는 팔레트."""
+    try:
+        tab = ""
+        tabs = palette.load_tabs()
+        idx = _pal_state.get("tab", 0)
+        if 0 <= idx < len(tabs):
+            tab = tabs[idx].get("name") or ""
+    except Exception:
+        tab = ""
+    linked = "한글 연결됨" if hwp_engine.is_connected() else "한글 연결 안 됨"
+    _status_var.set(f"{linked}   ·   {tab}" if tab else linked)
 
 def _pos_on_screen(x, y):
     """그 위치가 지금 화면 안인가 — 모니터를 뺐을 때 창이 사라지는 것 방지.
@@ -1917,5 +1941,22 @@ root.protocol("WM_DELETE_WINDOW", _remember_pos)
 # 첫 실행 안내 (UI 제안 11) — exe 를 받은 사람은 여기서 쓰는 법을 배운다.
 # mainloop 전에 부르면 창이 아직 안 그려져 위치 계산이 틀어지므로 after_idle.
 root.after_idle(lambda: onboarding.maybe_show(root, _font))
+root.after_idle(refresh_status)     # 상태 표시줄 첫 값
+
+
+def _status_tick():
+    """한글이 켜지거나 꺼지는 것을 상태 표시줄에 반영한다.
+
+    3초는 일부러 느리게 잡았다 — 이 줄은 곁눈으로 보는 정보라 즉각성이
+    필요 없고, 자주 갱신하면 그 자체가 화면의 소음이 된다.
+    """
+    try:
+        refresh_status()
+    except Exception:
+        pass
+    root.after(3000, _status_tick)
+
+
+root.after(3000, _status_tick)
 
 root.mainloop()

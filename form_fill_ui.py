@@ -13,7 +13,8 @@ AI 호출은 이 프로그램이 하지 않는다. 사람이 복사·붙여넣�
 
 import pathlib
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
+import dialogs as messagebox   # 윈도우 기본 대화상자 대신 프로그램과 같은 얼굴 (2026-07-27)
 
 import applog
 import clipboard                  # 윈도우 클립보드 (Tk 클립보드 금지)

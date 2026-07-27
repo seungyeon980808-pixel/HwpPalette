@@ -171,10 +171,40 @@ def load_tabs():
             if (b.get("type") == "template" and not b.get("ref")
                     and b.get("template") and _migrate_template_ref(b)):
                 migrated = True
+            # 2026-07-27 디자인 개편: 자유 색 고르개로 골라 둔 원색을 12색
+            # 파스텔 중 가장 가까운 것으로 옮긴다. 안 옮기면 새 화면 안에
+            # 네온 초록 하나가 남아 그것만 튄다.
+            if _migrate_block_color(b):
+                migrated = True
     if migrated:
         # 하위호환 이전은 사용자의 편집이 아니므로 실행취소에 쌓지 않는다
         save_tabs(tabs, _record=False)
     return tabs
+
+
+def _migrate_block_color(block):
+    r"""블럭의 사용자 지정 색을 12색 파스텔로 맞춘다. 바꿨으면 True.
+
+    이미 파스텔 중 하나면 그대로 둔다 — 매번 저장을 부르지 않기 위함.
+    theme 를 최상위에서 import 하지 않는 이유: palette 는 화면이 없는
+    저장소 모듈이라 테스트에서 Tk 없이 임포트된다.
+    """
+    color = block.get("color")
+    if not color:
+        return False
+    try:
+        import theme
+        if any(color.lower() == hexv.lower()
+               for _n, hexv in theme.PASTELS + theme.PASTELS_DARK):
+            return False
+        near = theme.nearest_pastel(color)
+    except Exception as e:
+        applog.exc(f"블럭 색 이관 실패 (그대로 둠) — {color!r}", e)
+        return False
+    if not near or near.lower() == color.lower():
+        return False
+    block["color"] = near
+    return True
 
 
 def _migrate_positions(tab):

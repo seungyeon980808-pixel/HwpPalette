@@ -99,11 +99,108 @@ def fs(size):
     """UI 글자 크기 → 실제 pt (배율 + Pretendard 보정)."""
     return max(7, int(round(size * FONT_SCALE)) + FONT_BOOST)
 
+
+# ── 디자인 토큰 (2026-07-27 개편) ──────────────────────
+# 왜 필요한가: padx 가 6/8/10/12/14/16 으로 파일마다 제각각이었고 모서리도
+# 6/7/8 이 섞여 있었다. 사람 눈은 이런 어긋남을 하나씩은 못 알아채도 **모아
+# 놓으면 '손으로 대충 그린 것' 으로 읽는다**. 숫자를 몇 개로 못박아 두면
+# 서른 개 화면이 한 손으로 그린 것처럼 보인다.
+#
+# 규칙: 간격은 4의 배수 다섯 개, 이 밖의 숫자는 쓰지 않는다.
+SP = {"xs": 4, "s": 8, "m": 12, "l": 16, "xl": 24}
+
+# 모서리 — 컨트롤(버튼·입력칸) / 카드(타일·대화상자) / 판(창 안 큰 구획)
+RADIUS = {"ctl": 6, "card": 10, "pane": 12}
+
+# 글자 위계 — 자리마다 고르지 않고 **역할**로 정한다.
+# fs() 를 거치기 전의 논리 크기다: fs(FS["body"]) 처럼 쓴다.
+FS = {"title": 12, "head": 10, "body": 9, "sub": 8, "caption": 7}
+
+# 모션 — 늘리는 게 아니라 금지를 명문화한 값이다 (docs/DESIGN_개편.md).
+#   블럭 클릭처럼 하루 수백 번 하는 일에는 **애니메이션을 넣지 않는다**.
+#   호버는 ui_fx 가 130ms ease-out 으로 보간하고, 누름은 0ms 즉시 반응한다.
+MOTION = {"hover_ms": 130, "press_ms": 0, "enter_ms": 0}
+
+# 블럭 사용자 색 — 자유 선택(colorchooser)을 대신하는 12색.
+#
+# 왜 좁히나: 자유 선택은 네온 초록(#00e050) 같은 원색을 허용해, 화면에서
+# 제일 시끄러운 것이 **내용이 아니라 장식**이 됐다. 열두 개는 어느 조합으로
+# 골라도 화면이 안 깨지도록 채도를 맞춰 둔 값이다.
+PASTELS = [
+    ("파랑", "#eef4fb"), ("초록", "#eef7ef"), ("주황", "#fdf3e7"),
+    ("분홍", "#fbeef0"), ("보라", "#f3eefb"), ("청록", "#eff8f6"),
+    ("노랑", "#f8f4e8"), ("모래", "#f1efe9"), ("회청", "#eff1f4"),
+    ("살구", "#f6efe9"), ("하늘", "#edf6fb"), ("회색", "#f2f2f4"),
+]
+# 어두운 모드에서 같은 자리에 쓸 짝 (색상은 같고 명도만 뒤집는다)
+PASTELS_DARK = [
+    ("파랑", "#1e2b3f"), ("초록", "#18321f"), ("주황", "#3a2f1c"),
+    ("분홍", "#3a1f28"), ("보라", "#2b2740"), ("청록", "#14332f"),
+    ("노랑", "#3a3520"), ("모래", "#332f26"), ("회청", "#26292e"),
+    ("살구", "#382b22"), ("하늘", "#1b2d3a"), ("회색", "#2c2c2e"),
+]
+
+
+def pastels():
+    """지금 모드의 12색 [(이름, 색)]."""
+    return list(PASTELS_DARK if is_dark() else PASTELS)
+
+
+def _rgb_of(hex_color):
+    h = (hex_color or "").lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    if len(h) != 6:
+        raise ValueError(hex_color)
+    return tuple(int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+
+
+def nearest_pastel(hex_color):
+    r"""자유롭게 고른 색 → 가장 가까운 12색 중 하나.
+
+    **색상(hue)으로 고른다.** RGB 거리로 재면 네온 초록(#00e050)이 모래색으로
+    가 버린다 (실측 2026-07-27) — 파스텔은 전부 밝아서, 채도 높은 원색과는
+    밝기 차이가 색상 차이를 덮어 버리기 때문이다. 사람은 "초록을 골랐으면
+    옅은 초록" 을 기대하므로 색상을 먼저 맞추는 것이 옳다.
+
+    채도가 거의 없는 색(회색·검정·흰색)은 색상이 뜻을 잃으므로 회색으로 보낸다.
+    """
+    import colorsys
+    try:
+        r, g, b = _rgb_of(hex_color)
+    except ValueError:
+        return None
+    table = pastels()
+    # 이미 12색 중 하나면 그대로 — 채도가 낮은 파스텔(초록 0.036)이 무채색
+    # 판정에 걸려 회색으로 옮겨지던 버그를 여기서 원천 차단한다 (테스트가 잡음).
+    for _name, cand in table:
+        if cand.lower() == (hex_color or "").lower():
+            return cand
+    hue, sat, _val = colorsys.rgb_to_hsv(r, g, b)
+    # 문턱 값의 근거 (실측 2026-07-27): 파스텔 채도는 0.008(회색)~0.087(주황).
+    # 0.014 는 회색만 갈라내고 나머지 열하나는 모두 색상 짝으로 남긴다.
+    # 예전에 0.06 으로 뒀더니 후보 대부분이 탈락해 전부 '노랑'이 됐다.
+    GRAY_SAT = 0.014
+    if sat < GRAY_SAT:
+        return table[-1][1]                 # 회색 — 색상이 뜻을 잃는 구간
+    best, best_d = None, None
+    for _name, cand in table:
+        cr, cg, cb = _rgb_of(cand)
+        chue, csat, _cv = colorsys.rgb_to_hsv(cr, cg, cb)
+        if csat < GRAY_SAT:
+            continue                        # 회색 칸은 색상 짝으로 쓰지 않는다
+        d = abs(hue - chue)
+        d = min(d, 1.0 - d)                 # 색상환은 둥글다 (빨강 0 ≒ 1)
+        if best_d is None or d < best_d:
+            best, best_d = cand, d
+    return best or table[-1][1]
+
 # 블럭 종류별 배경 — 밝은 쪽은 옅은 파스텔, 어두운 쪽은 같은 색상의 어두운 판.
 # 색상(파랑=템플릿, 주황=서식조합, 초록=양식)은 두 모드에서 같아야 한다.
-BLOCK_LIGHT = {"char": "#ffffff", "template": "#eef4ff",
-               "function": "#fff4e6", "form": "#eafaf1",
-               "builtin": "#f0eefc"}      # 프로그램 기능 (사진·특수문자 등)
+# 2026-07-27: 채도를 한 단계 낮췄다 — 강조색(변환)만 화면에서 튀어야 한다.
+BLOCK_LIGHT = {"char": "#ffffff", "template": "#eef4fb",
+               "function": "#f1efe9", "form": "#eef7ef",
+               "builtin": "#f3eefb"}      # 프로그램 기능 (사진·특수문자 등)
 BLOCK_DARK = {"char": "#2c2c2e", "template": "#1e2b3f",
               "function": "#3a2f1c", "form": "#18321f",
               "builtin": "#2b2740"}

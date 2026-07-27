@@ -19,7 +19,8 @@ r"""양식 채우기 표 — 채울 자리를 표로 보여주고, 손으로 채
 
 import pathlib
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import ttk
+import dialogs as messagebox   # 윈도우 기본 대화상자 대신 프로그램과 같은 얼굴 (2026-07-27)
 
 import applog
 import clipboard                  # 윈도우 클립보드 (Tk 클립보드 금지 — clipboard.py 머리말)
@@ -45,6 +46,8 @@ BORDER = _C["border"]
 ROWBG = _C["subbg"]
 SOFT = _C["yellow"]
 FONT = theme.FONT
+SP = theme.SP
+FS = theme.FS
 
 PREVIEW_W, PREVIEW_H = 300, 420
 ROW_H = 30
@@ -64,20 +67,20 @@ class FormTableWindow(tk.Toplevel):
         self._photo = None              # ⚠ 참조를 붙들어야 그림이 안 사라진다
 
         tk.Label(self, text=f"양식 채우기 — {self.form_name}",
-                 font=(FONT, theme.fs(12), "bold"), bg=BG, fg=TEXT
-                 ).pack(anchor="w", padx=16, pady=(12, 2))
+                 font=(FONT, theme.fs(FS["title"]), "bold"), bg=BG, fg=TEXT
+                 ).pack(anchor="w", padx=SP["l"], pady=(SP["m"], 2))
         self.sub = tk.Label(self, text="채울 자리를 읽는 중…",
-                            font=(FONT, theme.fs(8)), bg=BG, fg=MUTED)
+                            font=(FONT, theme.fs(FS["sub"])), bg=BG, fg=MUTED)
         self.sub.pack(anchor="w", padx=16)
 
-        body = tk.Frame(self, bg=BG, padx=16, pady=8)
+        body = tk.Frame(self, bg=BG, padx=SP["l"], pady=SP["s"])
         body.pack(fill="both", expand=True)
 
         # 왼쪽 — 한글이 그려둔 미리보기 그림
         left = tk.Frame(body, bg=CARD, highlightbackground=BORDER,
                         highlightthickness=1)
         left.pack(side="left", fill="y")
-        self.pv_label = tk.Label(left, bg=CARD, fg=MUTED, font=(FONT, theme.fs(8)),
+        self.pv_label = tk.Label(left, bg=CARD, fg=MUTED, font=(FONT, theme.fs(FS["sub"])),
                                  text="미리보기 없음", width=34, height=22)
         self.pv_label.pack(padx=8, pady=8)
 
@@ -86,16 +89,19 @@ class FormTableWindow(tk.Toplevel):
         right.pack(side="left", fill="both", expand=True, padx=(12, 0))
         head = tk.Frame(right, bg=BG)
         head.pack(fill="x")
-        tk.Label(head, text="칸", font=(FONT, theme.fs(8), "bold"), bg=BG,
+        tk.Label(head, text="칸", font=(FONT, theme.fs(FS["sub"]), "bold"), bg=BG,
                  fg=MUTED, width=16, anchor="w").pack(side="left")
-        tk.Label(head, text="값", font=(FONT, theme.fs(8), "bold"), bg=BG,
+        tk.Label(head, text="값", font=(FONT, theme.fs(FS["sub"]), "bold"), bg=BG,
                  fg=MUTED, anchor="w").pack(side="left")
 
         # 자리가 많으면 스크롤이 필요하다 (원안지는 7개지만 양식마다 다르다)
         wrap = tk.Frame(right, bg=BG)
         wrap.pack(fill="both", expand=True)
         self.canvas = tk.Canvas(wrap, bg=BG, highlightthickness=0, width=380)
-        bar = tk.Scrollbar(wrap, orient="vertical", command=self.canvas.yview)
+        messagebox.style_scrollbars(self)
+        bar = ttk.Scrollbar(wrap, orient="vertical",
+                            style="App.Vertical.TScrollbar",
+                            command=self.canvas.yview)
         self.rows = tk.Frame(self.canvas, bg=BG)
         self.rows.bind("<Configure>", lambda e: self.canvas.configure(
             scrollregion=self.canvas.bbox("all")))
@@ -104,23 +110,23 @@ class FormTableWindow(tk.Toplevel):
         self.canvas.pack(side="left", fill="both", expand=True)
         bar.pack(side="right", fill="y")
 
-        foot = tk.Frame(self, bg=BG, padx=16, pady=12)
+        foot = tk.Frame(self, bg=BG, padx=SP["l"], pady=SP["m"])
         foot.pack(fill="x")
         RoundButton(foot, text="채워서 한글로 열기", command=self._apply,
-                    bg=ACCENT, fg="white", radius=8,
-                    font=(FONT, theme.fs(10), "bold"), outline="", zone_bg=BG
+                    bg=ACCENT, fg="white", radius=theme.RADIUS["ctl"],
+                    font=(FONT, theme.fs(FS["head"]), "bold"), outline="", zone_bg=BG
                     ).fit(pad_x=16, pad_y=8).pack(side="right")
         RoundButton(foot, text="마크다운 붙여넣기", command=self._paste_md,
-                    bg=SOFT, fg=TEXT, radius=8, font=(FONT, theme.fs(9)),
+                    bg=SOFT, fg=TEXT, radius=theme.RADIUS["ctl"], font=(FONT, theme.fs(FS["body"])),
                     outline="", zone_bg=BG).fit(pad_x=12, pad_y=7).pack(side="left")
         RoundButton(foot, text="마크다운으로 복사", command=self._copy_md,
-                    bg=SOFT, fg=TEXT, radius=8, font=(FONT, theme.fs(9)),
+                    bg=SOFT, fg=TEXT, radius=theme.RADIUS["ctl"], font=(FONT, theme.fs(FS["body"])),
                     outline="", zone_bg=BG).fit(pad_x=12, pad_y=7).pack(
                     side="left", padx=(8, 0))
 
         self.status = tk.StringVar(value="")
-        tk.Label(self, textvariable=self.status, font=(FONT, theme.fs(8)),
-                 bg=BG, fg=MUTED, anchor="w").pack(fill="x", padx=16, pady=(0, 10))
+        tk.Label(self, textvariable=self.status, font=(FONT, theme.fs(FS["sub"])),
+                 bg=BG, fg=MUTED, anchor="w").pack(fill="x", padx=SP["l"], pady=(0, SP["s"]))
 
         screens.place_beside(self, master)
         ui_fx.attach_all(self)
@@ -205,14 +211,16 @@ class FormTableWindow(tk.Toplevel):
             row = tk.Frame(self.rows, bg=ROWBG if i % 2 else BG)
             row.pack(fill="x")
             label = name + (f"  ×{n}" if n > 1 else "")
-            tk.Label(row, text=label, font=(FONT, theme.fs(9)),
+            tk.Label(row, text=label, font=(FONT, theme.fs(FS["body"])),
                      bg=row["bg"], fg=TEXT, width=16, anchor="w"
                      ).pack(side="left", padx=(2, 6), pady=3)
             var = tk.StringVar()
             self.vars[name] = var
-            ent = tk.Entry(row, textvariable=var, font=(FONT, theme.fs(9)),
-                           relief="solid", bd=1, bg="white", fg=TEXT)
-            ent.pack(side="left", fill="x", expand=True, padx=(0, 4), pady=3)
+            # 포커스 링이 있는 입력칸 — 키보드로 옮겨 다닐 때 지금 어느 칸에
+            # 있는지 보여야 한다 (2026-07-27 디자인 개편)
+            box, ent = messagebox.field(row, textvariable=var)
+            box.pack(side="left", fill="x", expand=True, padx=(0, SP["xs"]),
+                     pady=2)
             # 표처럼 위아래로 옮겨 다니게 — 손으로 채울 때 손이 마우스로 안 가게
             ent.bind("<Return>", lambda e: e.widget.tk_focusNext().focus())
             ent.bind("<Down>", lambda e: e.widget.tk_focusNext().focus())
@@ -265,6 +273,11 @@ class FormTableWindow(tk.Toplevel):
             applog.exc(f"양식 채우기 실패 ({self.src.name})", e)
             messagebox.showerror("실패", f"{type(e).__name__}: {e}", parent=self)
             return
+        # 이 창이 -topmost 라 방금 연 한글 문서가 그 뒤에 가려 안 보이는
+        # 문제와 같은 원인이다 (library_ui.edit_content 진단 참고, 2026-07-27).
+        # 채우기가 끝나면 이 창의 역할도 끝난 것이므로 그냥 꺼 둔다.
+        self.attributes("-topmost", False)
+        hwp_engine.bring_to_front()
         msg = f"{filled}자리를 채워 열었습니다."
         if wiped:
             msg += f" (안 채운 자리 {wiped}개는 지웠습니다)"
@@ -301,19 +314,19 @@ class TemplateTableWindow(tk.Toplevel):
         self._photo = None
 
         tk.Label(self, text=f"채우기 — {item.get('name', '')}",
-                 font=(FONT, theme.fs(12), "bold"), bg=BG, fg=TEXT
-                 ).pack(anchor="w", padx=16, pady=(12, 2))
+                 font=(FONT, theme.fs(FS["title"]), "bold"), bg=BG, fg=TEXT
+                 ).pack(anchor="w", padx=SP["l"], pady=(SP["m"], 2))
         tk.Label(self, text="채우면 한글 커서 자리에 완성된 채로 들어갑니다. "
                             "빈 칸은 비워진 채 들어갑니다.",
-                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED
+                 font=(FONT, theme.fs(FS["sub"])), bg=BG, fg=MUTED
                  ).pack(anchor="w", padx=16)
 
-        body = tk.Frame(self, bg=BG, padx=16, pady=8)
+        body = tk.Frame(self, bg=BG, padx=SP["l"], pady=SP["s"])
         body.pack(fill="both", expand=True)
         left = tk.Frame(body, bg=CARD, highlightbackground=BORDER,
                         highlightthickness=1)
         left.pack(side="left", fill="y")
-        pv = tk.Label(left, bg=CARD, fg=MUTED, font=(FONT, theme.fs(8)),
+        pv = tk.Label(left, bg=CARD, fg=MUTED, font=(FONT, theme.fs(FS["sub"])),
                       text="미리보기 없음", width=30, height=16)
         pv.pack(padx=8, pady=8)
         try:
@@ -344,13 +357,15 @@ class TemplateTableWindow(tk.Toplevel):
             row.pack(fill="x")
             n = counts.get(key, 1)
             tk.Label(row, text=key + (f"  ×{n}" if n > 1 else ""),
-                     font=(FONT, theme.fs(9)), bg=row["bg"], fg=TEXT,
+                     font=(FONT, theme.fs(FS["body"])), bg=row["bg"], fg=TEXT,
                      width=14, anchor="w").pack(side="left", padx=(2, 6), pady=3)
             var = tk.StringVar()
             self.vars[key] = var
-            ent = tk.Entry(row, textvariable=var, font=(FONT, theme.fs(9)),
-                           relief="solid", bd=1, bg="white", fg=TEXT)
-            ent.pack(side="left", fill="x", expand=True, padx=(0, 4), pady=3)
+            # 포커스 링이 있는 입력칸 — 키보드로 옮겨 다닐 때 지금 어느 칸에
+            # 있는지 보여야 한다 (2026-07-27 디자인 개편)
+            box, ent = messagebox.field(row, textvariable=var)
+            box.pack(side="left", fill="x", expand=True, padx=(0, SP["xs"]),
+                     pady=2)
             ent.bind("<Return>", lambda e: e.widget.tk_focusNext().focus())
             ent.bind("<Down>", lambda e: e.widget.tk_focusNext().focus())
             ent.bind("<Up>", lambda e: e.widget.tk_focusPrev().focus())
@@ -358,14 +373,14 @@ class TemplateTableWindow(tk.Toplevel):
         if first:
             first.focus_set()
 
-        foot = tk.Frame(self, bg=BG, padx=16, pady=12)
+        foot = tk.Frame(self, bg=BG, padx=SP["l"], pady=SP["m"])
         foot.pack(fill="x")
         RoundButton(foot, text="커서 자리에 넣기", command=self._apply,
-                    bg=ACCENT, fg="white", radius=8,
-                    font=(FONT, theme.fs(10), "bold"), outline="", zone_bg=BG
+                    bg=ACCENT, fg="white", radius=theme.RADIUS["ctl"],
+                    font=(FONT, theme.fs(FS["head"]), "bold"), outline="", zone_bg=BG
                     ).fit(pad_x=16, pad_y=8).pack(side="right")
         self.status = tk.StringVar(value="")
-        tk.Label(self, textvariable=self.status, font=(FONT, theme.fs(8)),
+        tk.Label(self, textvariable=self.status, font=(FONT, theme.fs(FS["sub"])),
                  bg=BG, fg=MUTED, anchor="w").pack(fill="x", padx=16,
                                                    pady=(0, 10))
         screens.place_beside(self, master)
@@ -391,6 +406,9 @@ class TemplateTableWindow(tk.Toplevel):
             applog.exc(f"템플릿 채워 넣기 실패 — {self.item.get('name')}", e)
             messagebox.showerror("실패", f"{type(e).__name__}: {e}", parent=self)
             return
+        # 같은 이유로(이 창의 -topmost 가 방금 채운 문서를 가림) 끄고 앞으로.
+        self.attributes("-topmost", False)
+        hwp_engine.bring_to_front()
         self.status.set(f"{filled}자리를 채워 넣었습니다.")
 
 

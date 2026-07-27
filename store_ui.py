@@ -23,7 +23,8 @@ r"""물감 창고 — 팔레트 설정 창 왼쪽에 붙는 서랍 (2026-07-27).
 """
 
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import ttk
+import dialogs as messagebox   # 윈도우 기본 대화상자 대신 프로그램과 같은 얼굴 (2026-07-27)
 
 import applog
 import library
@@ -42,6 +43,8 @@ BORDER = _C["border"]
 SOFT = _C["yellow"]
 ACCENT_SOFT = _C["accent_soft"]
 FONT = theme.FONT
+SP = theme.SP
+FS = theme.FS
 
 # 파랑 = 안 놓임 / 코랄 = 이 탭에 있음 / 초록 = 지금 고른 것.
 # 셋 다 색상환에서 멀리 떨어져 있어 나란히 놓여도 구별된다.
@@ -61,7 +64,7 @@ class StorePanel(tk.Frame):
     # 창고는 스크롤이라 내용 높이가 0에 가깝다. 그대로 두면 창고가 두 줄만
     # 보이게 창이 납작해진다.
     def __init__(self, master, on_place, tab_name_fn, on_select=None,
-                 width=272, height=430):
+                 width=326, height=430):  # 20% 더 넓게 (사용자 결정 2026-07-27)
         super().__init__(master, bg=CARD, width=width, height=height)
         self.pack_propagate(False)
         self.on_place = on_place            # 블럭 dict → 팔레트에 놓기
@@ -74,9 +77,9 @@ class StorePanel(tk.Frame):
 
         head = tk.Frame(self, bg=CARD)
         head.pack(fill="x", padx=8, pady=(6, 2))
-        tk.Label(head, text="물감 창고", font=(FONT, theme.fs(10), "bold"),
+        tk.Label(head, text="물감 창고", font=(FONT, theme.fs(FS["head"]), "bold"),
                  bg=CARD, fg=TEXT).pack(side="left")
-        self.hint = tk.Label(head, text="", font=(FONT, theme.fs(7)),
+        self.hint = tk.Label(head, text="", font=(FONT, theme.fs(FS["caption"])),
                              bg=CARD, fg=MUTED)
         self.hint.pack(side="left", padx=(6, 0))
 
@@ -93,14 +96,17 @@ class StorePanel(tk.Frame):
             dot = tk.Label(legend, text="  ", bg=col, font=(FONT, theme.fs(6)),
                            highlightbackground=BORDER, highlightthickness=1)
             dot.pack(side="left")
-            tk.Label(legend, text=text, font=(FONT, theme.fs(7)), bg=CARD,
+            tk.Label(legend, text=text, font=(FONT, theme.fs(FS["caption"])), bg=CARD,
                      fg=MUTED).pack(side="left", padx=(3, 8))
 
         # 물감이 스무 개를 넘으면 스크롤이 필요하다
         wrap = tk.Frame(self, bg=CARD)
         wrap.pack(fill="both", expand=True, padx=(6, 0), pady=(0, 6))
         self.canvas = tk.Canvas(wrap, bg=CARD, highlightthickness=0)
-        bar = tk.Scrollbar(wrap, orient="vertical", command=self.canvas.yview)
+        messagebox.style_scrollbars(self)
+        bar = ttk.Scrollbar(wrap, orient="vertical",
+                            style="App.Vertical.TScrollbar",
+                            command=self.canvas.yview)
         self.body = tk.Frame(self.canvas, bg=CARD)
         self.body.bind("<Configure>", lambda e: self.canvas.configure(
             scrollregion=self.canvas.bbox("all")))
@@ -111,13 +117,16 @@ class StorePanel(tk.Frame):
         self.canvas.configure(yscrollcommand=bar.set)
         self.canvas.pack(side="left", fill="both", expand=True)
         bar.pack(side="right", fill="y")
-        self.canvas.bind_all("<MouseWheel>", self._wheel)
+        # 마우스 휠은 여기서 bind_all 하지 않는다 (2026-07-27) — bind_all 은
+        # Tk 의 "all" 태그 하나를 **덮어쓴다.** 옆의 미리보기 판도 같은 식으로
+        # bind_all 하면 나중 것만 남고 먼저 것은 조용히 죽는다. 창고와 미리보기
+        # 판을 함께 담은 SettingsWindow 가 한 곳(_route_wheel)에서 모아 이
+        # 메서드를 불러 준다.
 
         self.refresh()
 
-    def _wheel(self, e):
-        # 창고 위에 있을 때만 굴린다 — 팔레트 격자 쪽에서 굴렸는데 창고가
-        # 움직이면 엉뚱하다
+    def on_wheel(self, e):
+        """마우스 휠 — 커서가 창고 위일 때만 굴린다. 부모가 한 곳에서 불러 준다."""
         try:
             x, y = e.x_root, e.y_root
             if not (self.winfo_rootx() <= x <= self.winfo_rootx() + self.winfo_width()
@@ -203,7 +212,7 @@ class StorePanel(tk.Frame):
             self._tiles[key] = tile
         if not items:
             tk.Label(self.body, text="이 분류에 물감이 없습니다.",
-                     font=(FONT, theme.fs(8)), bg=CARD, fg=MUTED).pack(pady=20)
+                     font=(FONT, theme.fs(FS["sub"])), bg=CARD, fg=MUTED).pack(pady=SP["xl"])
         self._paint_selection()
 
     def _draw_chips(self):
@@ -218,7 +227,7 @@ class StorePanel(tk.Frame):
             on = (self.filter == key)
             chip = tk.Label(self.chip_box,
                             text=f"#{label} {counts.get(key, 0)}",
-                            font=(FONT, theme.fs(7)),
+                            font=(FONT, theme.fs(FS["caption"])),
                             bg=ACCENT_SOFT if on else CARD,
                             fg=FREE_FG if on else MUTED,
                             padx=5, pady=2, cursor="hand2",
@@ -248,11 +257,11 @@ class StorePanel(tk.Frame):
         tile = tk.Frame(parent, cursor="hand2", highlightthickness=1)
         name = item.get("name", "?")
         nm = tk.Label(tile, text=name if len(name) <= 12 else name[:12] + "…",
-                      font=(FONT, theme.fs(8), "bold"), anchor="w")
+                      font=(FONT, theme.fs(FS["sub"]), "bold"), anchor="w")
         nm.pack(fill="x", padx=6, pady=(5, 0))
         slots = int(item.get("slot_count") or 0)
         sub = tk.Label(tile, text=(f"빈칸 {slots}" if slots else " "),
-                       font=(FONT, theme.fs(7)), anchor="w")
+                       font=(FONT, theme.fs(FS["caption"])), anchor="w")
         sub.pack(fill="x", padx=6, pady=(0, 5))
         tile._parts = (nm, sub)
         tile._state = state
