@@ -302,8 +302,8 @@ def build(ctx):
               "text": "만들어 둔 템플릿은 나중에 얼마든지 고칠 수 있습니다.\n"
                       "다음을 누르면 물감 설정을 다시 열어 드릴게요.",
               "next_action": ctx.open_library_template},
-             {"widget": ctx.library_edit_btn, "title": "내용 고치기",
-              "text": "템플릿을 고른 뒤 이 [수정] → '내용 고치기'.\n"
+             {"widget": ctx.library_edit_btn, "title": "양식 수정",
+              "text": "템플릿을 고른 뒤 이 [수정] → '양식 수정'.\n"
                       "한글에 펼쳐지고, 고친 뒤 [덮어쓰기] 하면 끝입니다 —\n"
                       "팔레트에 올려 둔 버튼은 그대로 연결됩니다."},
          ]},

@@ -64,12 +64,15 @@ class StorePanel(tk.Frame):
     # 창고는 스크롤이라 내용 높이가 0에 가깝다. 그대로 두면 창고가 두 줄만
     # 보이게 창이 납작해진다.
     def __init__(self, master, on_place, tab_name_fn, on_select=None,
+                 on_drop=None,
                  width=326, height=430):  # 20% 더 넓게 (사용자 결정 2026-07-27)
         super().__init__(master, bg=CARD, width=width, height=height)
         self.pack_propagate(False)
         self.on_place = on_place            # 블럭 dict → 팔레트에 놓기
         self.on_select = on_select          # (분류, 항목) → 오른쪽 미리보기 판
+        self.on_drop = on_drop              # (블럭, x_root, y_root) → 격자에 놓기
         self.tab_name_fn = tab_name_fn      # 지금 보고 있는 탭 이름
+        self._drag = None                   # 끌기 상태 (타일 → 팔레트 격자)
         self.filter = None                  # None = 전체
         self.sel_key = None                 # 고른 물감 (분류, id)
         self._tiles = {}
@@ -272,10 +275,68 @@ class StorePanel(tk.Frame):
         sub.pack(fill="x", padx=6, pady=(0, 5))
         tile._parts = (nm, sub)
         tile._state = state
+        # 누르면 고르고, 그대로 끌면 팔레트 격자로 가져간다 (사용자 결정
+        # 2026-07-28 — '팔레트에 놓기' 버튼 대신 끌어다 놓기)
         for w in (tile, nm, sub):
-            w.bind("<Button-1>", lambda e, c=cat, i=item: self._select(c, i))
+            w.bind("<ButtonPress-1>",
+                   lambda e, c=cat, i=item: self._tile_press(e, c, i))
+            w.bind("<B1-Motion>", self._tile_motion)
+            w.bind("<ButtonRelease-1>", self._tile_release)
         self._paint_tile(tile, state, selected=False)
         return tile
+
+    # ── 타일 끌어서 팔레트에 놓기 ─────────────────────
+    def _tile_press(self, e, cat, item):
+        self._select(cat, item)             # 누르는 것 자체는 '고르기'
+        block = self.block_of(cat, item)
+        if self.on_drop is None or block is None:
+            self._drag = None               # 놓을 수 없는 분류 (서식)
+            return
+        self._drag = {"block": block, "name": item.get("name", ""),
+                      "x": e.x_root, "y": e.y_root, "ghost": None}
+
+    def _tile_motion(self, e):
+        d = self._drag
+        if d is None:
+            return
+        if d["ghost"] is None:
+            # 4px 넘게 움직인 뒤에야 든다 — 그냥 클릭과 구분 (팔레트 격자의
+            # 타일 끌기와 같은 규칙)
+            if abs(e.x_root - d["x"]) <= 4 and abs(e.y_root - d["y"]) <= 4:
+                return
+            try:
+                ghost = tk.Toplevel(self.winfo_toplevel())
+                ghost.wm_overrideredirect(True)
+                ghost.attributes("-topmost", True)
+                try:
+                    ghost.attributes("-alpha", 0.85)
+                except Exception:
+                    pass
+                tk.Label(ghost, text=d["name"], bg=SEL_BG, fg=SEL_FG,
+                         font=(FONT, theme.fs(FS["sub"]), "bold"),
+                         padx=10, pady=6,
+                         highlightbackground=SEL_LINE,
+                         highlightthickness=1).pack()
+                d["ghost"] = ghost
+            except Exception as ex:
+                applog.exc("끌기 유령 만들기 실패 — 끌기 취소", ex)
+                self._drag = None
+                return
+        try:
+            d["ghost"].geometry(f"+{e.x_root + 8}+{e.y_root + 8}")
+        except Exception:
+            pass
+
+    def _tile_release(self, e):
+        d, self._drag = self._drag, None
+        if d is None or d["ghost"] is None:
+            return                          # 끌지 않았다 — 그냥 클릭
+        try:
+            d["ghost"].destroy()
+        except Exception:
+            pass
+        if self.on_drop:
+            self.on_drop(dict(d["block"]), e.x_root, e.y_root)
 
     def _paint_tile(self, tile, state, selected):
         """타일 하나의 색만 바꾼다 — 위젯을 다시 만들지 않으므로 안 깜빡인다."""
