@@ -97,16 +97,44 @@ def deep_merge(base, override):
 
 
 # ── config.json 입출력 ─────────────────────────────────
+# mtime 캐시 (2026-07-28, 버벅임 1단계): 여태 **매 호출마다** 파일을 읽고
+# 파싱했다. 렌더·드래그·3초 폴링이 전부 이 길을 지나 상호작용 한 번에
+# 파일 파싱이 수십 번 일어났다 (실측 조사). 파일이 안 바뀌었으면(mtime·크기
+# 동일) 파싱해 둔 것을 그대로 쓴다. 다른 프로세스가 파일을 바꿔도 mtime 이
+# 달라지므로 다음 호출에서 바로 알아챈다.
+_cfg_cache = {"tok": None, "data": None}
+
+
+def config_token():
+    """config.json 의 '세대' 표식 — (mtime_ns, 크기). 캐시 무효화의 열쇠."""
+    try:
+        st = CONFIG_PATH.stat()
+        return (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return None
+
+
 def load_config():
+    r"""설정 전체(dict). **읽기 전용으로 다룰 것** — 캐시가 공유된다.
+
+    고칠 때는 set_config_value/save_config 를 지나야 캐시와 파일이 함께
+    맞는다. (settings 모듈 안의 cfg 수정→save_config 패턴은 그 규칙을 따른다.)
+    """
     if not CONFIG_PATH.exists():
         return {}                      # 첫 실행 — 정상
+    tok = config_token()
+    if tok is not None and _cfg_cache["tok"] == tok:
+        return _cfg_cache["data"]
     try:
-        return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
         # 설정이 깨졌는데 조용히 {} 를 돌려주면 사용자의 팔레트가 통째로
         # 사라진 것처럼 보인다 → 반드시 기록을 남긴다.
         applog.exc(f"설정 파일을 읽지 못함 ({CONFIG_PATH.name}) — 기본값으로 시작", e)
         return {}
+    _cfg_cache["tok"] = tok
+    _cfg_cache["data"] = data
+    return data
 
 
 def save_config(cfg):
@@ -114,6 +142,8 @@ def save_config(cfg):
         backup.rotate(CONFIG_PATH)      # 저장 직전 상태를 .bak1 로 보관
         CONFIG_PATH.write_text(
             json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+        _cfg_cache["tok"] = config_token()
+        _cfg_cache["data"] = cfg
         return True
     except (OSError, TypeError) as e:
         applog.exc(f"설정 저장 실패 ({CONFIG_PATH.name}) — 변경이 유실됨", e)
@@ -403,7 +433,11 @@ def set_window_pos(x, y):
 
 
 def get_config_value(key, default=None):
-    return load_config().get(key, default)
+    # 사본을 준다 (2026-07-28) — load_config 가 캐시를 공유하게 되면서,
+    # 돌려준 값을 호출부가 그 자리에서 고치면 "저장 없이 캐시만 바뀌는"
+    # 새 버그가 생길 수 있다. 이 함수는 호출 빈도가 낮아 사본 비용이 없다시피
+    # 하다 (뜨거운 길이던 palette.load_tabs 는 자체 캐시를 갖는다).
+    return copy.deepcopy(load_config().get(key, default))
 
 
 def set_config_value(key, value):

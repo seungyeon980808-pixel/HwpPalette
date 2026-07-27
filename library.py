@@ -143,7 +143,25 @@ def set_tags(category, item_id, tags):
     return True
 
 
+# load 결과 캐시 (2026-07-28, 버벅임 1단계): 창고 갱신 한 번이 list_items 를
+# 8~9번 부르고, 그때마다 파일 전체를 읽고 파싱하고 이전(migration) 스캔까지
+# 돌았다. 파일이 안 바뀌었으면(mtime·크기 동일) 이전 결과의 깊은 사본을
+# 돌려준다 — 사본이어야 "부를 때마다 새 객체"라는 기존 약속이 유지된다.
+_load_cache = {"tok": None, "data": None}
+
+
+def _library_token():
+    try:
+        st = LIBRARY_PATH.stat()
+        return (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return None
+
+
 def load():
+    tok = _library_token()
+    if tok is not None and _load_cache["tok"] == tok:
+        return copy.deepcopy(_load_cache["data"])
     try:
         data = json.loads(LIBRARY_PATH.read_text(encoding="utf-8"))
     except Exception:
@@ -177,7 +195,10 @@ def load():
                 # 되살아났다 — 이름 있는 자리(\학년\)의 순서 목록이다
                 it.setdefault("slot_names", [])
     if migrated:
-        save(out)          # id를 새로 부여했으면 즉시 영속화
+        save(out)          # id를 새로 부여했으면 즉시 영속화 (캐시도 갱신됨)
+    else:
+        _load_cache["tok"] = tok
+        _load_cache["data"] = copy.deepcopy(out)
     return out
 
 
@@ -207,6 +228,8 @@ def save(data):
     backup.rotate(LIBRARY_PATH)         # 저장 직전 상태를 .bak1 로 보관
     LIBRARY_PATH.write_text(
         json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    _load_cache["tok"] = _library_token()
+    _load_cache["data"] = copy.deepcopy(data)
 
 
 def list_items(category):

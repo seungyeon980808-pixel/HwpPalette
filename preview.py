@@ -66,18 +66,56 @@ def cached_path(item_id):
     return cache_dir() / f"{item_id}.png"
 
 
+def _evict_half(cache, limit):
+    """캐시가 차면 **절반만** 비운다 — 통째로 비우면 그 직후 화면의 그림
+    전부를 다시 읽어 한 번에 몰아서 버벅였다 (2026-07-28)."""
+    if len(cache) >= limit:
+        for k in list(cache)[:limit // 2]:
+            cache.pop(k, None)
+
+
 def image_of_item(item, fragment_path):
     """물감 하나의 미리보기 — 다듬어 둔 그림이 있으면 그것, 없으면 파일 안의 것."""
     png = cached_path(item.get("id"))
     if png.exists():
+        # 다듬은 png 도 (경로, 수정시각) 캐시를 태운다 (2026-07-28) — 여태
+        # 이 길만 캐시가 없어서 물감을 고를 때마다 디스크에서 다시 읽었다.
         try:
-            return Image.open(png).convert("RGB")
+            key = (str(png), os.stat(png).st_mtime)
+        except OSError:
+            key = None
+        if key is not None and key in _cache:
+            return _cache[key]
+        try:
+            im = Image.open(png).convert("RGB")
+            if key is not None:
+                _evict_half(_cache, _CACHE_MAX)
+                _cache[key] = im
+            return im
         except Exception as e:
             applog.exc(f"다듬은 미리보기 읽기 실패 — {png.name}", e)
     return image_of(fragment_path)
 
 
+# 축소 완성본(PhotoImage) 캐시 — LANCZOS 축소는 CPU 를 꽤 먹어서, 물감을
+# 고를 때마다 다시 하면 클릭이 무겁다. 같은 그림·같은 크기면 그대로 쓴다.
+_photo_cache = {}
+_PHOTO_MAX = 32
+
+
 def tk_photo_for_item(item, fragment_path, max_w, max_h):
+    src = cached_path(item.get("id"))
+    if not src.exists():
+        src = fragment_path
+    try:
+        mtime = os.stat(src).st_mtime
+    except OSError:
+        mtime = 0
+    key = (item.get("id"), str(src), mtime, int(max_w), int(max_h))
+    photo = _photo_cache.get(key)
+    if photo is not None:
+        return photo
+
     im = image_of_item(item, fragment_path)
     if im is None:
         return None
@@ -86,7 +124,10 @@ def tk_photo_for_item(item, fragment_path, max_w, max_h):
         im = im.resize((max(int(im.width * scale), 1),
                         max(int(im.height * scale), 1)), Image.LANCZOS)
     from PIL import ImageTk
-    return ImageTk.PhotoImage(im)
+    photo = ImageTk.PhotoImage(im)
+    _evict_half(_photo_cache, _PHOTO_MAX)
+    _photo_cache[key] = photo
+    return photo
 
 
 def save_cache(item_id, src_hwp):
@@ -126,8 +167,7 @@ def image_of(path):
     except Exception as e:
         applog.exc(f"미리보기 그림 읽기 실패 — {path}", e)
         im = None
-    if len(_cache) >= _CACHE_MAX:
-        _cache.clear()
+    _evict_half(_cache, _CACHE_MAX)
     _cache[key] = im
     return im
 

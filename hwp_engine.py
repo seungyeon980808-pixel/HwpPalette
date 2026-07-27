@@ -72,8 +72,8 @@ def _diag(tag):
         applog.exc("진단 로그 기록 실패", e)
 
 
-def _hwp_window_handles():
-    """현재 떠 있는 한글 창 핸들 목록."""
+def _hwp_window_handles(include_hidden=False):
+    """현재 떠 있는 한글 창 핸들 목록 (기본은 보이는 창만)."""
     try:
         import win32gui
     except ImportError:
@@ -84,7 +84,7 @@ def _hwp_window_handles():
         try:
             # 클래스명은 'HwndWrapper[Hwp.exe;;...]' — 대소문자가 환경마다 다르므로
             # 반드시 소문자로 비교한다 (실측: Hwp.exe 로 나와 매칭 실패했던 버그)
-            if (win32gui.IsWindowVisible(hwnd)
+            if ((include_hidden or win32gui.IsWindowVisible(hwnd))
                     and "hwp.exe" in win32gui.GetClassName(hwnd).lower()):
                 found.append(hwnd)
         except Exception as e:
@@ -95,6 +95,23 @@ def _hwp_window_handles():
         applog.exc("창 목록 열거 실패", e)
         return []
     return found
+
+
+def is_connected_cheap():
+    r"""상태 표시등용 어림 판정 — **COM 을 건드리지 않는다** (2026-07-28).
+
+    표시등은 3초마다 갱신되는데, 여태 is_connected(COM 왕복)를 썼다.
+    COM 은 한글이 바쁠 때(모달 대화상자·인쇄·큰 문서 저장) 응답할 때까지
+    **우리 UI 스레드를 통째로 붙들어**, 아무것도 안 해도 3초마다 앱이
+    걸리는 잰크가 됐다. 창 열거는 우리 프로세스 안에서 끝나 즉시 돌아온다.
+
+    어림이므로 한글이 '떠 있지만 연결이 죽은' 경우를 놓칠 수 있다 — 그건
+    다음 실제 조작(변환 등)의 connect() 가 바로잡고, 표시등은 곁눈 정보라
+    몇 초 늦어도 된다 (main.py 의 3초 주기 설명과 같은 논리).
+    """
+    if hwp is None:
+        return False
+    return bool(_hwp_window_handles(include_hidden=True))
 
 
 def _active_window_com():

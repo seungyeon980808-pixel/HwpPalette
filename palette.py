@@ -140,7 +140,18 @@ def _ensure_protected_blocks(tabs):
     return changed
 
 
+# load_tabs 결과 캐시 (2026-07-28, 버벅임 1단계): 렌더·드래그 놓기·창고
+# 갱신·3초 폴링이 전부 load_tabs 를 불러, 상호작용 한 번에 파일 파싱과
+# 하위호환 이전 스캔이 수십 번 돌았다. config.json 세대(config_token)가
+# 같으면 이전 결과의 **깊은 사본**을 돌려준다 — 사본이어야 예전처럼
+# "부를 때마다 새 객체"라는 약속이 유지된다 (호출부가 고쳐도 서로 안 샌다).
+_tabs_cache = {"tok": None, "tabs": None}
+
+
 def load_tabs():
+    tok = settings.config_token()
+    if tok is not None and _tabs_cache["tok"] == tok:
+        return copy.deepcopy(_tabs_cache["tabs"])
     tabs = settings.get_config_value(TABS_KEY, None)
     if not isinstance(tabs, list) or not tabs:
         tabs = _seed_tabs()
@@ -179,6 +190,10 @@ def load_tabs():
     if migrated:
         # 하위호환 이전은 사용자의 편집이 아니므로 실행취소에 쌓지 않는다
         save_tabs(tabs, _record=False)
+    # 이전(migration)까지 끝난 최종 모습을 캐시한다 — save_tabs 를 탔다면
+    # 세대 표식도 그 뒤의 것이어야 다음 호출이 캐시를 쓴다
+    _tabs_cache["tok"] = settings.config_token()
+    _tabs_cache["tabs"] = copy.deepcopy(tabs)
     return tabs
 
 
@@ -302,6 +317,8 @@ def save_tabs(tabs, _record=True):
             del _undo_stack[:-_UNDO_LIMIT]
             _redo_stack.clear()     # 새 편집이 생기면 '다시 실행'은 무효
     settings.set_config_value(TABS_KEY, tabs)
+    _tabs_cache["tok"] = settings.config_token()
+    _tabs_cache["tabs"] = copy.deepcopy(tabs)
 
 
 def can_undo():

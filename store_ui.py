@@ -293,6 +293,33 @@ class StorePanel(tk.Frame):
         for key, tile in getattr(self, "_tiles", {}).items():
             self._paint_tile(tile, tile._state, selected=(key == self.sel_key))
 
+    def refresh_states(self):
+        r"""배치 색(안 씀/이 팔레트에 있음)만 다시 칠한다 — 위젯 재생성 없음.
+
+        블럭 하나를 옮길 때마다 창고를 통째로 파괴·재생성하던 것이 버벅임의
+        큰 몫이었다 (2026-07-28, 버벅임 1단계). 물감 **목록** 자체가 바뀔 때만
+        refresh(전체)를 쓰고, 배치만 바뀌면 이걸로 충분하다.
+
+        '안 쓰는 물감이 위' 정렬은 다음 전체 refresh 때 맞춰진다 — 누른
+        타일이 눈앞에서 자리를 옮겨 다니면 안 된다는 규칙(_select 머리말)과
+        같은 이유로, 여기서는 일부러 재정렬하지 않는다.
+        """
+        where = self._placement()
+        here = self.tab_name_fn()
+        free_n = 0
+        for cat, item in getattr(self, "_order", []):
+            state = self._state(cat, item, where, here)
+            if state == "free":
+                free_n += 1
+            key = (cat, item.get("id"))
+            tile = self._tiles.get(key)
+            if tile is None:
+                continue
+            tile._state = state
+            self._paint_tile(tile, state, selected=(key == self.sel_key))
+        self.hint.config(text=(f"안 쓰는 물감 {free_n}개"
+                               if free_n else "모두 팔레트에 놓여 있습니다"))
+
     def _select(self, cat, item):
         r"""물감 고르기 — **화면을 다시 그리지 않는다.**
 

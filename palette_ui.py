@@ -324,6 +324,8 @@ class SettingsWindow(tk.Toplevel):
         self._edit_ctx = None      # '내용 고치는 중' 상태 (세션·창 목록·topmost)
         self._dock = None          # 편집 중 한글 창 도킹
         self._edit_form = None     # 판에 심은 이름·태그 폼 (수정 상태)
+        self._notify_job = None    # 메인 창 반영 디바운스 (400ms 모아 한 번)
+        self._last_req = None      # _fit_window 가 마지막으로 잡은 요청 크기
 
         # 창 제목·설명 줄은 없앴다 (사용자 지적 2026-07-27: "윗부분에 남는
         # 공간이 너무 많다"). 판마다 머리말이 이미 있어서 — '팔레트',
@@ -676,7 +678,7 @@ class SettingsWindow(tk.Toplevel):
         label = library.resolve_edited_label(
             item["name"], item.get("label", ""), name, label)
         library.update_item(cat, item["id"], name=name, label=label, tags=tags)
-        self._notify()              # 창고 색·메인 창 라벨이 함께 바뀐다
+        self._notify(items_changed=True)   # 이름·태그가 바뀜 — 창고 통째 갱신
         fresh = library.find_by_id(cat, item["id"]) or item
         self._show_detail(cat, fresh)
 
@@ -819,7 +821,8 @@ class SettingsWindow(tk.Toplevel):
                 pass
         self.bind("<Escape>", lambda e: self._close())      # Esc 원복
         if save:
-            self._notify()          # 창고 미리보기·메인 창이 새 내용을 반영
+            # 내용·미리보기가 바뀜 — 창고 통째 갱신
+            self._notify(items_changed=True)
         fresh = library.find_by_id(ctx["cat"], ctx["item"]["id"])
         if fresh is not None:
             self._show_detail(ctx["cat"], fresh)
@@ -1195,8 +1198,17 @@ class SettingsWindow(tk.Toplevel):
         한 번 더 update_idletasks() 한다.
 
         폭은 사용자가 늘려 둘 수 있으므로 줄이지 않는다.
+
+        요청 크기가 그대로면 아무것도 안 한다 (2026-07-28, 버벅임 1단계) —
+        geometry("") + update_idletasks 두 번은 강제 재배치라, 렌더마다
+        무조건 돌면 편집할 때마다 창이 미세하게 들썩였다. 덤으로 사용자가
+        창을 늘려 둔 것도 내용이 안 바뀌었으면 더는 되돌리지 않는다.
         """
         self.update_idletasks()
+        req = (self.winfo_reqwidth(), self.winfo_reqheight())
+        if req == self._last_req:
+            return
+        self._last_req = req
         # 최소 크기도 내용에 맞춰 갱신한다 — 안 하면 한 번 커진 뒤로는 minsize 가
         # 창을 붙들어, 칸을 줄여도 오른쪽에 빈 여백이 남는다 (2026-07-25).
         try:
@@ -1286,8 +1298,18 @@ class SettingsWindow(tk.Toplevel):
             return
         row, col, span, rows = self._drag_area()
         self._new_from = self._new_to = None
-        self._render_blocks()           # 범위 표시 지우기
+        # 범위 표시는 **칠만 되돌린다** (2026-07-28) — 통째 재렌더는 격자
+        # 위젯 수백 개를 다시 만들어, 빈 칸을 끌 때마다 화면이 출렁였다.
+        # 블럭이 실제로 생기면 _place 가 어차피 다시 그린다.
+        self._clear_range_paint()
         self._pick_tool(row, col, span, rows)
+
+    def _clear_range_paint(self):
+        for key in self._empty_map:
+            try:
+                self.nametowidget(key).config(bg=EMPTY_BG)
+            except Exception:
+                pass
 
     def _paint_range(self):
         """지금 끌고 있는 사각형을 칠하고, 크기·자리를 글로도 알려준다."""
@@ -2026,14 +2048,49 @@ class SettingsWindow(tk.Toplevel):
             # 고치는 중에 창을 닫으면 — 취소로 마무리해 한글 창·topmost 를
             # 되돌린 뒤 닫는다 (도킹된 한글이 판 자리에 버려지지 않게)
             self._finish_content_edit(save=False)
-        self._notify()
+        self._notify(immediate=True)     # 미룬 반영이 있으면 지금 마저 한다
+        # bind_all 은 창이 죽어도 앱 전역에 남는다 (2026-07-28) — 안 걷으면
+        # 파괴된 위젯을 잡는 유령 핸들러가 이벤트마다 예외를 삼키며 돈다.
+        for seq in ("<MouseWheel>", "<Control-z>", "<Control-Z>",
+                    "<Control-y>", "<Control-Y>"):
+            try:
+                self.unbind_all(seq)
+            except Exception:
+                pass
         self.destroy()
 
-    def _notify(self):
-        # 팔레트가 바뀌면 창고의 색(놓임/안 놓임)도 따라 바뀌어야 한다
-        self._refresh_store()
-        if self.on_saved:
+    def _notify(self, items_changed=False, immediate=False):
+        r"""팔레트 변경을 창고·메인 창에 알린다 (2026-07-28 부분 갱신).
+
+        여태 블럭 하나만 옮겨도 ①창고 통째 재생성 ②메인 창 통째 재렌더가
+        즉시 돌았다 — 편집이 잦은 창에서 이것이 버벅임의 큰 몫이었다.
+        이제 창고는 배치 색만 다시 칠하고(목록이 바뀐 때만 통째로), 메인 창
+        반영은 400ms 모아 한 번만 한다. 창을 닫을 때는 immediate 로 마저 쏜다.
+        """
+        if items_changed:
+            self._refresh_store()        # 물감 목록 자체가 바뀜 — 통째로
+        else:
+            try:
+                self.store.refresh_states()
+            except Exception as e:
+                applog.exc("창고 상태 칠하기 실패 — 통째로 다시 그림", e)
+                self._refresh_store()
+        if not self.on_saved:
+            return
+        if self._notify_job is not None:
+            try:
+                self.after_cancel(self._notify_job)
+            except Exception:
+                pass
+            self._notify_job = None
+        if immediate:
             self.on_saved()
+            return
+
+        def fire():
+            self._notify_job = None
+            self.on_saved()
+        self._notify_job = self.after(400, fire)
 
 
 class _PastelDialog(tk.Toplevel):

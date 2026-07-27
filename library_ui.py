@@ -361,11 +361,19 @@ class MetaForm(tk.Frame):
         self._preview.config(text=f"문서에 이렇게 쓰세요:  \\{lab}\\" if lab else "")
 
     def _poll_preview(self):
-        """조합 상태는 이벤트만으로 다 못 잡아서(마우스로 후보 선택 등) 주기적으로도 그린다."""
+        """조합 상태는 이벤트만으로 다 못 잡아서(마우스로 후보 선택 등) 주기적으로도 그린다.
+
+        입력칸에 초점이 있을 때만 촘촘히(150ms) 돌고, 아니면 늦춘다(500ms) —
+        폼이 떠 있는 내내 타이머가 도는 것 자체가 배경 소음이었다 (2026-07-28).
+        """
         if not self.winfo_exists():
             return
         self._update_preview()
-        self.after(150, self._poll_preview)
+        try:
+            fast = self.focus_get() in (self.name_entry, self.tag_entry)
+        except Exception:
+            fast = False
+        self.after(150 if fast else 500, self._poll_preview)
 
     def collect(self):
         r"""검사까지 끝낸 (이름, 라벨, 태그). 통과 못 하면 None (오류창은 여기서)."""
@@ -644,7 +652,11 @@ class LibraryManager(tk.Toplevel):
         se = tk.Entry(filter_row, textvariable=self.search_var, width=20,
                       font=(FONT, theme.fs(FS["body"])), relief="solid", bd=1)
         se.pack(side="left", padx=(6, 8))
-        self.search_var.trace_add("write", lambda *a: self._refresh())
+        # 검색은 디바운스한다 (2026-07-28, 버벅임 1단계) — 여태 한 글자
+        # 칠 때마다 목록을 통째로 파괴·재생성했다. 특수기호 탭이면 셀 200개가
+        # 매 키마다 다시 만들어져 타이핑이 뚝뚝 끊겼다.
+        self._search_job = None
+        self.search_var.trace_add("write", lambda *a: self._search_soon())
         tk.Label(filter_row, text="#태그 로 태그만 골라 볼 수 있습니다",
                  font=(FONT, theme.fs(FS["caption"])), fg=MUTED, bg=BG).pack(side="left")
 
@@ -869,6 +881,19 @@ class LibraryManager(tk.Toplevel):
             on = g == group
             b.retint(bg=ACCENT if on else CARD, fg="white" if on else TEXT)
         self._refresh()
+
+    def _search_soon(self):
+        """검색어 입력을 200ms 모아 한 번만 다시 그린다 (타이핑 끊김 방지)."""
+        if self._search_job is not None:
+            try:
+                self.after_cancel(self._search_job)
+            except Exception:
+                pass
+
+        def fire():
+            self._search_job = None
+            self._refresh()
+        self._search_job = self.after(200, fire)
 
     def _refresh(self, cat=None):
         cat = cat or self.current_cat

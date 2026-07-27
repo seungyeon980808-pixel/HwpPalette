@@ -1713,7 +1713,10 @@ def refresh_status():
             tab = tabs[idx].get("name") or ""
     except Exception:
         tab = ""
-    linked = "한글 연결됨" if hwp_engine.is_connected() else "한글 연결 안 됨"
+    # is_connected(COM 왕복)가 아니라 **어림 판정**을 쓴다 (2026-07-28) —
+    # 한글이 모달·인쇄로 바쁘면 COM 이 UI 스레드를 붙들어, 가만히 있어도
+    # 3초마다 앱이 걸리던 잰크의 1순위 원인이었다 (버벅임 조사).
+    linked = "한글 연결됨" if hwp_engine.is_connected_cheap() else "한글 연결 안 됨"
     _status_var.set(f"{linked}   ·   {tab}" if tab else linked)
 
 def _pos_on_screen(x, y):
