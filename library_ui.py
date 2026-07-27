@@ -31,6 +31,7 @@ import builtin_chars
 import settings
 
 import appinfo
+import form_fill                   # 자리 토큰 규칙 (\\ · \이름\)
 import form_markdown               # 양식→AI 프롬프트 (기획 18번)
 import screens                     # 창 자리 규칙 (메인 창 옆)
 import theme                       # 색은 theme.py 한 곳에서 (밝게/어둡게)
@@ -247,50 +248,44 @@ class MetaDialog(tk.Toplevel):
                      wraplength=320, justify="left").grid(
                 row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
-        # ── 자세히 (라벨·태그) — 필요할 때만 펼침 ──
-        self._adv_open = False
-        self._adv = tk.Frame(self, bg=BG, padx=16)
-        tk.Label(self._adv, text="마크다운 라벨", font=(FONT, theme.fs(9)), bg=BG,
-                 fg=TEXT).grid(row=0, column=0, sticky="w", pady=3)
-        self.label_entry = tk.Entry(self._adv, textvariable=self.label_var,
-                                    width=24, font=(FONT, theme.fs(10)), relief="solid", bd=1)
-        self.label_entry.grid(row=0, column=1, pady=3, padx=(8, 0))
-        self.label_entry.bind("<KeyRelease>", lambda e: self._update_preview())
-        tk.Label(self._adv, text="비우면 이름을 그대로 씁니다.",
-                 font=(FONT, theme.fs(7)), bg=BG, fg=MUTED).grid(
-            row=1, column=1, sticky="w", padx=(8, 0))
-        # 태그 — 여러 개를 띄어쓰기로 (예전의 '분류'는 하나만 고를 수 있어
-        # 아무도 안 골랐다, 2026-07-26 사용자 결정)
-        tk.Label(self._adv, text="태그", font=(FONT, theme.fs(9)), bg=BG, fg=TEXT).grid(
-            row=2, column=0, sticky="w", pady=3)
-        tk.Entry(self._adv, textvariable=self.tags_var, width=24,
-                 font=(FONT, theme.fs(10)), relief="solid", bd=1).grid(
-            row=2, column=1, pady=3, padx=(8, 0))
-        tk.Label(self._adv, text="한글 5글자 이내. 띄어쓰기로 여러 개.",
-                 font=(FONT, theme.fs(7)), bg=BG, fg=MUTED).grid(
-            row=3, column=1, sticky="w", padx=(8, 0))
+        # ── 태그 — 늘 펼쳐 둔다 (2026-07-27) ──
+        # '자세히'로 접어 뒀더니 태그가 있다는 것 자체를 모르고 지나쳤다.
+        # 마크다운 라벨 칸은 없앴다 — **이름이 곧 라벨**로 통일했다(사용자 결정).
+        # 두 개를 따로 두니 이름만 고쳤을 때 라벨이 옛 이름으로 남는 사고가 났다.
+        adv = tk.Frame(self, bg=BG, padx=16)
+        adv.pack(fill="x")
+        tk.Label(adv, text="태그", font=(FONT, theme.fs(9)), bg=BG, fg=TEXT).pack(
+            anchor="w", pady=(4, 2))
+        self.tag_entry = tk.Entry(adv, width=26, font=(FONT, theme.fs(10)),
+                                  relief="solid", bd=1)
+        self.tag_entry.pack(anchor="w", fill="x")
+        # 엔터로 담는다 (사용자 결정 2026-07-27) — 띄어쓰기로 나열하는 방식은
+        # 무엇이 이미 담겼는지 눈에 안 보이고, 지우려면 글자를 찾아 지워야 했다.
+        self.tag_entry.bind("<Return>", lambda e: self._commit_tag())
+        tk.Label(adv, text="적고 Enter — 담긴 태그는 ✕ 로 뺍니다 (한글 5글자 이내)",
+                 font=(FONT, theme.fs(7)), bg=BG, fg=MUTED).pack(anchor="w")
+        self._tag_box = tk.Frame(adv, bg=BG)
+        self._tag_box.pack(anchor="w", fill="x", pady=(4, 0))
         # 이미 쓰고 있는 태그는 눌러서 담는다 — **오타로 태그가 번식하는 것을
         # 막는 장치**다(#수능 / #수능문제 / #수능_문제 가 따로 생기면 안 쓰느니만
-        # 못하다). 자동완성 대신 이 방식을 쓰는 이유: 목록이 눈에 보여야
-        # "아, 저 이름으로 통일하자"가 된다.
+        # 못하다).
         known = library.list_tags()[:8]
         if known:
-            chips = tk.Frame(self._adv, bg=BG)
-            chips.grid(row=4, column=1, sticky="w", padx=(8, 0), pady=(4, 0))
+            row = tk.Frame(adv, bg=BG)
+            row.pack(anchor="w", fill="x", pady=(4, 0))
+            tk.Label(row, text="쓰던 태그", font=(FONT, theme.fs(7)),
+                     bg=BG, fg=MUTED).pack(side="left", padx=(0, 4))
             for t in known:
-                c = tk.Label(chips, text=f"#{t}", font=(FONT, theme.fs(8)),
+                c = tk.Label(row, text=f"#{t}", font=(FONT, theme.fs(8)),
                              bg=SOFT, fg=ACCENT, padx=6, pady=2, cursor="hand2")
                 c.pack(side="left", padx=(0, 4))
                 c.bind("<Button-1>", lambda e, tag=t: self._add_tag(tag))
-
-        self._adv_btn = tk.Button(self, text="▸ 자세히 (라벨·태그)",
-                                  command=self._toggle_adv, font=(FONT, theme.fs(8)),
-                                  fg=MUTED, bg=BG, activebackground=BG,
-                                  bd=0, cursor="hand2", anchor="w")
-        self._adv_btn.pack(fill="x", padx=16)
+        self.tags_var.trace_add("write", lambda *a: self._draw_tags())
+        self._draw_tags()
 
         foot = tk.Frame(self, bg=BG, padx=16, pady=12)
         foot.pack(fill="x")
+        self.foot = foot            # 부르는 쪽이 버튼을 더 붙일 수 있게 (수정 창)
         _dialog_btn(foot, "저장", self._ok, primary=True).pack(side="right")
         _dialog_btn(foot, "취소", self.destroy).pack(side="right", padx=(0, 6))
 
@@ -301,21 +296,43 @@ class MetaDialog(tk.Toplevel):
         self.grab_set()
         ui_fx.attach_all(self)   # 창 안 모든 버튼에 호버 보간
 
-    def _toggle_adv(self):
-        if self._adv_open:
-            self._adv.pack_forget()
-            self._adv_btn.config(text="▸ 자세히 (라벨·태그)")
-        else:
-            self._adv.pack(fill="x", before=self._adv_btn)
-            self._adv_btn.config(text="▾ 자세히 (라벨·태그)")
-        self._adv_open = not self._adv_open
+    def _commit_tag(self):
+        """입력칸의 글자를 태그로 담는다 (Enter). 칸은 비워 다음 것을 받는다."""
+        commit_ime(self)
+        text = self.tag_entry.get().strip()
+        self.tag_entry.delete(0, "end")
+        if text:
+            self._add_tag(text)
 
     def _add_tag(self, tag):
-        """이미 쓰는 태그 칩을 눌렀을 때 — 입력칸에 더한다 (중복은 무시)."""
+        """태그 하나를 담는다 (중복은 무시)."""
         cur = library.normalize_tags(self.tags_var.get())
-        if tag not in cur:
-            cur.append(tag)
+        for t in library.split_tag_input(tag):
+            if t not in cur:
+                cur.append(t)
         self.tags_var.set(" ".join(cur))
+
+    def _remove_tag(self, tag):
+        cur = [t for t in library.normalize_tags(self.tags_var.get())
+               if t != tag]
+        self.tags_var.set(" ".join(cur))
+
+    def _draw_tags(self):
+        """담긴 태그를 칩으로 — 각 칩의 ✕ 로 뺀다."""
+        if not hasattr(self, "_tag_box"):
+            return
+        for w in self._tag_box.winfo_children():
+            w.destroy()
+        for t in library.normalize_tags(self.tags_var.get()):
+            chip = tk.Frame(self._tag_box, bg=ACCENT_SOFT,
+                            highlightbackground=ACCENT, highlightthickness=1)
+            chip.pack(side="left", padx=(0, 4), pady=2)
+            tk.Label(chip, text=f"#{t}", font=(FONT, theme.fs(8)),
+                     bg=ACCENT_SOFT, fg=ACCENT).pack(side="left", padx=(6, 2))
+            x = tk.Label(chip, text="✕", font=(FONT, theme.fs(7)),
+                         bg=ACCENT_SOFT, fg=MUTED, cursor="hand2")
+            x.pack(side="left", padx=(0, 5))
+            x.bind("<Button-1>", lambda e, tag=t: self._remove_tag(tag))
 
     def _live_value(self, var, entry):
         """위젯 값 + 그 칸에서 지금 조합 중인 IME 글자. 미리보기 전용."""
@@ -334,9 +351,7 @@ class MetaDialog(tk.Toplevel):
         '기본문항'을 치는 동안 미리보기가 '기본문'에서 멈춰 한 글자 늦어 보인다.
         """
         lab = library.normalize_label(
-            self._live_value(self.label_var, getattr(self, "label_entry", None))) \
-            or library.normalize_label(
-                self._live_value(self.name_var, getattr(self, "name_entry", None)))
+            self._live_value(self.name_var, getattr(self, "name_entry", None)))
         self._preview.config(text=f"문서에 이렇게 쓰세요:  \\{lab}\\" if lab else "")
 
     def _poll_preview(self):
@@ -352,7 +367,8 @@ class MetaDialog(tk.Toplevel):
         if not name:
             messagebox.showwarning("이름 없음", "이름을 입력해주세요.", parent=self)
             return
-        label = self.label_var.get().strip() or name
+        # 이름이 곧 라벨이다 (2026-07-27) — 따로 두지 않는다
+        label = name
         if not self._confirm_label(label):
             return
         tags = self._checked_tags()
@@ -419,20 +435,29 @@ def capture_template_dialog(parent):
                 "한글에서 템플릿으로 저장할 영역을 드래그로 선택하거나,\n"
                 "표를 저장하려면 표 안을 클릭만 해둬도 됩니다.", parent=parent)
             return None
-    # 빈칸 스캔 — \ 하나가 빈칸 하나
+    # 자리 스캔 — \\ (또는 \이름\) 하나가 자리 하나. 홑 \ 는 옛 문법.
     captured = hwp_engine.read_selection_text(retries=6)
-    slot_count = captured.count("\\")
+    slot_count = library.count_slots(captured)
+    tokens = form_fill.token_list(captured)
+    names = [t for t in tokens if t]
+    singles = sum(1 for m in form_fill.TOKEN_RE.finditer(captured)
+                  if m.group(1) is None and len(m.group(0)) == 1)
     if slot_count:
-        note = (f"빈칸(\\) {slot_count}개 발견 — 마크다운 변환 시 아랫줄 "
-                f"{slot_count}줄이 위에서부터 순서대로 채워집니다.\n"
-                "   (비울 칸에는 '-' 한 줄)")
+        note = (f"자리 {slot_count}개 발견 — 마크다운 변환 시 아랫줄이 "
+                "위에서부터 순서대로 채워집니다. (비울 칸에는 '-' 한 줄)")
+        if names:
+            note += ("\n칸 이름: " + " · ".join(dict.fromkeys(names))
+                     + "\n→ 이름이 있어 팔레트에서 누르면 채우기 표가 뜹니다.")
+        if singles:
+            note += (f"\n옛 표시(홑 \\) {singles}개는 \\\\ 로 정리해 저장합니다.")
     elif "/" in captured:
-        # 실제로 겪은 혼동: 빈칸을 슬래시(/)로 찍으면 인식 안 됨 (2026-07-16)
-        note = ("⚠ 빈칸 표시가 없습니다. 혹시 슬래시(/)를 쓰셨나요?\n"
-                "   빈칸은 역슬래시(\\)여야 합니다 — 한글에서 ₩ 로 보이는 그 키입니다.")
+        # 실제로 겪은 혼동: 자리를 슬래시(/)로 찍으면 인식 안 됨 (2026-07-16)
+        note = ("⚠ 자리 표시가 없습니다. 혹시 슬래시(/)를 쓰셨나요?\n"
+                "   자리는 \\\\ 로 표시합니다 — 한글에서 ₩₩ 로 보이는 그 키입니다.")
     else:
-        note = ("빈칸 표시(\\)가 없습니다. 글자가 들어갈 자리에 \\ 를 넣어두면\n"
-                "마크다운 변환 때 아랫줄 내용이 순서대로 채워집니다.")
+        note = ("자리 표시(\\\\)가 없습니다. 글자가 들어갈 자리에 \\\\ 를 넣으면\n"
+                "마크다운 변환 때 아랫줄 내용이 순서대로 채워집니다.\n"
+                "이름을 넣어 \\배점\\ 처럼 쓰면 누를 때 채우기 표가 뜹니다.")
     meta = MetaDialog(parent, title="템플릿 등록", extra_note=note)
     parent.wait_window(meta)
     if not meta.result:
@@ -449,6 +474,7 @@ def capture_template_dialog(parent):
         applog.exc("템플릿 캡처 실패", e)
         messagebox.showerror("캡처 실패", str(e), parent=parent)
         return None
+    make_clean_preview("템플릿", item_id)
     # 구버전이 한글에 열어둔 _tmp 문서가 있으면 닫고 디스크에서도 청소
     try:
         engine_library.close_stale_temp_docs()
@@ -456,6 +482,26 @@ def capture_template_dialog(parent):
     except Exception as e:
         applog.exc("임시 파일 청소 실패 (무해)", e)
     return item_id
+
+
+def make_clean_preview(cat, item_id):
+    r"""물감을 저장한 직후, 자리표시(\) 없는 미리보기 그림을 만들어 둔다.
+
+    실패해도 조용히 넘어간다 — 그림이 없으면 파일 안의 것(표시가 찍힌)을
+    쓰면 되고, 등록 자체가 실패로 보여서는 안 된다.
+    """
+    try:
+        # 옛 그림을 먼저 지운다 — 새로 만들다 실패했을 때 **고치기 전 모습**이
+        # 남아 있으면 내용과 다른 미리보기를 보여주게 된다. 그림이 없으면
+        # 파일 안의 것으로 물러나므로 내용은 항상 맞는다.
+        import preview
+        preview.cached_path(item_id).unlink(missing_ok=True)
+        item = library.find_by_id(cat, item_id)
+        if item:
+            engine_library.build_clean_preview(library.template_path(item),
+                                               item_id)
+    except Exception as e:
+        applog.exc(f"미리보기 만들기 실패 (무해) — {item_id}", e)
 
 
 class TextInputDialog(tk.Toplevel):
@@ -1139,11 +1185,13 @@ class LibraryManager(tk.Toplevel):
         # 처음에는 '내용 수정'과 '양식(빈칸) 수정'을 나눴는데, 실제로 하는 일이
         # 똑같았다 — 둘 다 한글에 펼쳐 고치고 덮어쓰는 것이고, 빈칸 \ 도 그
         # 화면에서 함께 보인다. 갈래만 늘고 고르는 부담만 생겨 하나로 합쳤다.
-        if cat == "템플릿":
+        # 양식도 내용을 고칠 수 있어야 한다 (사용자 지적 2026-07-27) —
+        # 여태 양식은 이름·라벨만 고칠 수 있고 안에 든 내용은 손댈 수 없었다.
+        if cat in ("템플릿", "양식"):
             (Popover(self, self.act_edit)
              .add("이름·라벨 수정", lambda: self._edit(cat, item))
              .add("내용 고치기  (한글에 펼쳐서 수정)",
-                  lambda: self._extract_edit())
+                  lambda: edit_content(self, cat, item))
              .show())
             return
         self._edit(cat, item)
@@ -1168,9 +1216,9 @@ class LibraryManager(tk.Toplevel):
             return
         cat = self._sel["cat"]
         pop = Popover(self, self.act_more)
-        if cat == "템플릿":
+        if cat in ("템플릿", "양식"):
             pop.add("내용 고치기  (한글에 펼쳐서 수정)",
-                    lambda: self._extract_edit())
+                    lambda: edit_content(self, cat, self._sel["item"]))
             pop.separator()
         pop.add("AI 프롬프트 복사  (빈칸을 AI 에게 채우게)",
                 self._copy_ai_prompt)
@@ -1189,24 +1237,12 @@ class LibraryManager(tk.Toplevel):
     ]
 
     def _extract_edit(self):
-        r"""템플릿 꺼내서 고치기 (기획 15번).
+        r"""꺼내서 고치기 (기획 15번) — 실제 일은 모듈 함수 edit_content 가 한다.
 
-        조각을 한글 **새 탭**에 펼치고 문서 맨 위에 안내문을 붙인다. 다 고치면
-        떠 있는 안내 창의 [덮어쓰기]가 안내문을 걷어낸 뒤 문서 전체를 다시
-        캡처해 같은 항목에 저장한다. id 가 유지되므로 팔레트 연결이 안 끊긴다.
+        본체를 밖으로 뺀 이유(2026-07-27): 물감 창고에서도 같은 일을 해야 하는데,
+        이 창의 메서드로 두면 창고가 관리 창을 띄워야만 쓸 수 있다.
         """
-        item = self._sel["item"]
-        if not _ensure_hwp(self):
-            return
-        try:
-            engine_library.open_template_copy(
-                library.template_path(item), self._EDIT_NOTE)
-        except Exception as e:
-            applog.exc("템플릿 꺼내기 실패", e)
-            messagebox.showerror("꺼내기 실패", f"{type(e).__name__}: {e}",
-                                 parent=self)
-            return
-        _RecaptureCoach(self, item)
+        edit_content(self, self._sel["cat"], self._sel["item"])
 
     def _copy_ai_prompt(self):
         r"""AI 프롬프트 복사 (기획 18번) — 양식 구조(표 포함)를 보여주고,
@@ -1315,14 +1351,21 @@ class LibraryManager(tk.Toplevel):
         # 빈칸 개수는 안내용일 뿐 등록에 필수가 아니므로, 못 세면 그냥 넘어간다.
         # (예전엔 except: pass 라 실패해도 아무 단서가 안 남았다 → 반드시 기록한다)
         slot_count = None               # None = 못 셈, 0 = 세어 봤더니 없음
+        slot_names = []
         if hwp_engine.is_connected():
             try:
-                slot_count = engine_library.count_slots_in_file(path)
+                tokens = engine_library.slot_tokens_in_file(path)
+                slot_names = tokens
+                slot_count = len(tokens)
             except Exception as e:
                 applog.exc(f"양식 등록: 빈칸 세기 실패 — {path}", e)
         if slot_count:
-            note = (f"빈칸(\\) {slot_count}개 발견 — \\라벨\\ 변환 시 아랫줄 "
+            note = (f"자리 {slot_count}개 발견 — \\라벨\\ 변환 시 아랫줄 "
                     f"{slot_count}줄이 순서대로 채워집니다. (비울 칸엔 '-')")
+            names = [t for t in slot_names if t]
+            if names:
+                note += ("\n칸 이름: " + " · ".join(dict.fromkeys(names))
+                         + " — 누르면 채우기 표가 뜹니다.")
         elif slot_count == 0:
             note = ("빈칸(\\)이 없습니다. 양식에 \\ 를 넣어두면 변환 때 채울 수 있습니다.\n"
                     "지금 등록해도 '새 문서로 열기'는 됩니다.")
@@ -1338,11 +1381,14 @@ class LibraryManager(tk.Toplevel):
             return
         name, label, tags = meta.result
         try:
-            library.add_form_from_file(name, path, label=label, tags=tags,
-                                       slot_count=slot_count)
+            item_id = library.add_form_from_file(name, path, label=label,
+                                                 tags=tags,
+                                                 slot_count=slot_count,
+                                                 slot_names=slot_names)
         except Exception as e:
             messagebox.showerror("등록 실패", str(e), parent=self)
             return
+        make_clean_preview("양식", item_id)
         self._refresh("양식")
         self._notify()
 
@@ -1410,10 +1456,12 @@ class _RecaptureCoach(tk.Toplevel):
     다른 문서로 갈아탔을 수도 있으므로 문구로 분명히 말해 둔다.
     """
 
-    def __init__(self, master, item):
+    def __init__(self, master, item, cat="템플릿", on_saved=None):
         super().__init__(master)
         self._manager = master
         self._item = item
+        self._cat = cat
+        self._on_saved = on_saved
         self.title(appinfo.WINDOW_TITLE)
         self.configure(bg=BG)
         self.resizable(False, False)
@@ -1423,10 +1471,10 @@ class _RecaptureCoach(tk.Toplevel):
                  font=(FONT, theme.fs(11), "bold"), bg=BG, fg=TEXT).pack(
                  anchor="w", padx=16, pady=(14, 2))
         tk.Label(self,
-                 text="한글 새 탭에 템플릿을 펼쳐 두었습니다 "
+                 text=f"한글에 {cat}을(를) 펼쳐 두었습니다 "
                       "(자세한 안내는 그 문서 맨 위에 있습니다).\n"
                       "고친 뒤 아래 [이 내용으로 덮어쓰기]를 누르세요.\n"
-                      "지금 한글에 보이는 문서 전체가 이 템플릿으로 저장되고,\n"
+                      f"지금 한글에 보이는 문서 전체가 이 {cat}으로 저장되고,\n"
                       "고치던 탭은 저장이 끝나면 알아서 닫힙니다.",
                  font=(FONT, theme.fs(8)), bg=BG, fg=MUTED,
                  justify="left").pack(anchor="w", padx=16, pady=(0, 10))
@@ -1443,9 +1491,16 @@ class _RecaptureCoach(tk.Toplevel):
             return
         try:
             engine_library.strip_edit_note()   # 안내문은 저장물에 넣지 않는다
-            engine_library.select_all()     # 지금 문서 전체를 캡처 대상으로
+            if self._cat == "양식":
+                # 양식은 용지·여백·머리말까지가 내용이라 **문서를 통째로** 저장한다
+                save_to = engine_library.save_active_as
+            else:
+                engine_library.select_all()  # 지금 문서 전체를 캡처 대상으로
+                save_to = engine_library.capture_fragment
             ok = library.replace_template_fragment(
-                self._item["id"], engine_library.capture_fragment)
+                self._item["id"], save_to, category=self._cat)
+            if ok:
+                make_clean_preview(self._cat, self._item["id"])
         except Exception as e:
             applog.exc("템플릿 덮어쓰기 실패", e)
             messagebox.showerror("덮어쓰기 실패", f"{type(e).__name__}: {e}",
@@ -1463,10 +1518,15 @@ class _RecaptureCoach(tk.Toplevel):
         self.destroy()
         # 이 창은 관리 창의 자식이라, 여기가 살아 있으면 관리 창도 살아 있다
         try:
-            self._manager._refresh("템플릿")
+            self._manager._refresh(self._cat)
             self._manager._notify()
         except Exception:
-            pass
+            pass                      # 창고에서 부른 경우엔 관리 창이 없다
+        if self._on_saved:
+            try:
+                self._on_saved()
+            except Exception as e:
+                applog.exc("고치기 후 새로 그리기 실패", e)
         tail = ("" if closed else
                 "\n(고치던 한글 탭은 직접 닫아 주세요)")
         messagebox.showinfo("덮어쓰기 완료",
@@ -1979,6 +2039,79 @@ def export_palette_flow(parent, tab):
         parent=parent)
     if items and not r["items"]:
         applog.warn("팔레트 내보내기: 담긴 물감이 없습니다")
+    return True
+
+
+# 양식을 고칠 때 문서 맨 위에 붙는 안내 (템플릿용과 말이 다르다 — 양식은
+# 파일 통째라 '이 문서가 곧 양식'이고, 빈칸 대신 이름표를 설명해야 한다)
+_FORM_EDIT_NOTE = [
+    "이 문서가 곧 양식입니다 — 용지·여백·머리말까지 그대로 저장됩니다.",
+    "채울 자리는 역슬래시(\\) 로 표시합니다.",
+    "이름을 붙이면 채우기 표에 그 이름이 나옵니다 — 예: \\학년\\",
+    "이름표는 값으로 통째로 바뀌므로, 단위 글자는 밖에 두세요 (\\월\\월).",
+    "다 고쳤으면 HwpPalette 의 [이 내용으로 덮어쓰기]를 누르세요.",
+    "(이 안내 줄들은 저장할 때 자동으로 빠집니다)",
+]
+
+
+def edit_item_dialog(master, cat, item, on_saved=None):
+    r"""물감 '수정' — 이름 창을 띄우고, 그 안에서 내용까지 고칠 수 있게 한다.
+
+    왜 이렇게 묶었나 (사용자 지적 2026-07-27): 버튼 이름이 '고치기' 하나였을 때
+    **템플릿 자체를 고친다는 것인지 이름을 고친다는 것인지** 알 수 없었다.
+    이제 입구는 '수정' 하나이고, 흔한 일(이름 바꾸기)이 먼저 보이며,
+    내용은 그 창 안의 버튼으로 한 걸음 더 들어간다.
+    """
+    meta = MetaDialog(master, title=f"{CAT_LABEL.get(cat, cat)} 수정",
+                      name=item["name"], label=item.get("label", ""),
+                      exclude_id=item["id"])
+    try:
+        meta.tags_var.set(" ".join(item.get("tags") or []))
+    except Exception:
+        pass
+    if cat in ("템플릿", "양식"):
+        _dialog_btn(meta.foot, "내용 고치기…",
+                    lambda: (meta.destroy(),
+                             edit_content(master, cat, item, on_saved))
+                    ).pack(side="left")
+    master.wait_window(meta)
+    if not meta.result:
+        return
+    name, label, tags = meta.result
+    label = library.resolve_edited_label(
+        item["name"], item.get("label", ""), name, label)
+    library.update_item(cat, item["id"], name=name, label=label, tags=tags)
+    if on_saved:
+        on_saved()
+
+
+def edit_content(master, cat, item, on_saved=None):
+    r"""물감 내용을 한글에 펼쳐 고치게 한다 (템플릿·양식 공용, 2026-07-27).
+
+    물감 설정 창 안에만 있던 '꺼내서 고치기'를 밖으로 뺐다 — 물감 창고에서도
+    같은 일을 해야 하기 때문. 창고가 설정 메뉴의 물감 설정을 대신한다.
+
+    템플릿은 새 탭에 펼치고(원본 잠금 회피), 양식은 사본을 연다
+    (용지·여백·머리말이 내용의 일부라 insert 로는 안 따라온다).
+    """
+    if not _ensure_hwp(master):
+        return False
+    try:
+        if cat == "양식":
+            engine_library.open_form_copy(library.template_path(item),
+                                          _FORM_EDIT_NOTE)
+        else:
+            engine_library.open_template_copy(
+                library.template_path(item), LibraryManager._EDIT_NOTE)
+    except Exception as e:
+        applog.exc(f"{cat} 꺼내기 실패", e)
+        messagebox.showerror("꺼내기 실패", f"{type(e).__name__}: {e}",
+                             parent=master)
+        return False
+    # 고칠 문서를 **눈앞에** 띄운다 — 우리 창 뒤에 있으면 무엇을 고치라는
+    # 것인지 모른다 (사용자 지적 2026-07-27)
+    hwp_engine.bring_to_front()
+    _RecaptureCoach(master, item, cat=cat, on_saved=on_saved)
     return True
 
 

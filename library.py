@@ -20,6 +20,7 @@ import uuid
 
 import applog
 import backup
+import form_fill                # 채울 자리 토큰 규칙 (이름표 \학년\)
 import paths
 
 LIBRARY_PATH = paths.DATA_DIR / "library.json"
@@ -172,7 +173,9 @@ def load():
             it["label"] = normalize_label(it.get("label")) or it.get("name", "")
             if cat in _FILE_CATEGORIES:
                 it.setdefault("slot_count", 0)
-                it.pop("slot_names", None)   # 이름 빈칸 기능 폐지 (2026-07-16)
+                # slot_names 는 2026-07-16 폐지됐다가 2026-07-27 자리 이름표로
+                # 되살아났다 — 이름 있는 자리(\학년\)의 순서 목록이다
+                it.setdefault("slot_names", [])
     if migrated:
         save(out)          # id를 새로 부여했으면 즉시 영속화
     return out
@@ -329,14 +332,20 @@ def add_template_from_capture(name, save_to, label=None, tags=None,
     if not dest.exists():
         raise RuntimeError("조각 저장에 실패했습니다 (파일이 생성되지 않음)")
     item["file"] = fname
-    item["slot_count"] = int(slot_count or 0)
+    # 자리 수·이름은 저장된 본문에서 다시 센다 — 저장 시 홑 \ 가 \\ 로
+    # 정리되므로(normalize_marks_to_pairs) 넘겨받은 값보다 이쪽이 정확하다.
+    # save_to 가 글자를 안 돌려주면(테스트 더미 등) 넘겨받은 값을 쓴다.
+    text = preview if isinstance(preview, str) else ""
+    item["slot_count"] = count_slots(text) if text else int(slot_count or 0)
+    item["slot_names"] = form_fill.token_list(text)
     item["preview"] = make_preview(preview)
     data["템플릿"].append(item)
     save(data)
     return item["id"]
 
 
-def add_form_from_file(name, src_path, label=None, tags=None, slot_count=0):
+def add_form_from_file(name, src_path, label=None, tags=None,
+                       slot_count=0, slot_names=None):
     r"""양식(.hwp 파일 통째)을 등록한다.
 
     템플릿과의 차이:
@@ -352,6 +361,7 @@ def add_form_from_file(name, src_path, label=None, tags=None, slot_count=0):
     shutil.copy2(str(src_path), str(FRAGMENTS_DIR / fname))
     item["file"] = fname
     item["slot_count"] = int(slot_count or 0)
+    item["slot_names"] = list(slot_names or [])
     item["origin"] = str(src_path)      # 어디서 가져왔는지 (참고용)
     data["양식"].append(item)
     save(data)
@@ -377,17 +387,32 @@ def update_item(category, item_id, name=None, label=None, tags=None):
     return True
 
 
-def replace_template_fragment(item_id, save_to, slot_count=None):
-    r"""템플릿의 조각 파일만 새로 캡처한 것으로 교체 (id·이름·라벨 유지).
+def count_slots(text):
+    r"""글자 안의 채울 자리 개수 — 이름표(`\학년\`)는 하나로 센다.
+
+    engine_library.count_slots_in_text 와 같은 규칙이다. 여기에도 둔 이유:
+    library 는 한글(engine)에 기대지 않아야 하고, 저장 시점에 개수를 적어야 한다.
+    """
+    rest = (text or "").replace("\\본문\\", "")
+    return sum(1 for m in form_fill.TOKEN_RE.finditer(rest)
+               if m.group(1) not in form_fill.RESERVED_NAMES)
+
+
+def replace_template_fragment(item_id, save_to, slot_count=None,
+                              category="템플릿"):
+    r"""조각 파일만 새로 저장한 것으로 교체 (id·이름·라벨 유지).
 
     save_to: 목적지 경로를 받아 조각을 저장하는 함수
              (add_template_from_capture 와 같은 방식 — WinError 32 회피).
     '꺼내서 고치기'(2026-07-25)가 쓴다. 미리보기도 새 본문으로 갱신하고,
-    slot_count 를 안 주면 새 본문의 빈칸(\) 수를 세어 넣는다 — 고치면서
+    slot_count 를 안 주면 새 본문의 빈칸 수를 세어 넣는다 — 고치면서
     빈칸을 늘리거나 줄여도 안내가 어긋나지 않게.
+    양식도 같은 길을 쓴다 (2026-07-27) — 양식은 이름만 고칠 수 있고 내용은
+    못 고치던 것이 사용자 지적이었다.
     """
     data = load()
-    target = next((it for it in data["템플릿"] if it.get("id") == item_id), None)
+    target = next((it for it in data.get(category, [])
+                   if it.get("id") == item_id), None)
     if target is None:
         return False
     old = FRAGMENTS_DIR / target["file"]
@@ -399,8 +424,9 @@ def replace_template_fragment(item_id, save_to, slot_count=None):
     target["file"] = fname
     target["preview"] = make_preview(text)
     if slot_count is None:
-        slot_count = str(text).count("\\")
+        slot_count = count_slots(text)
     target["slot_count"] = int(slot_count)
+    target["slot_names"] = form_fill.token_list(text)
     save(data)
     try:
         old.unlink(missing_ok=True)

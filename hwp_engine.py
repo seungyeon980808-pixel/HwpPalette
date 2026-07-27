@@ -97,6 +97,34 @@ def _hwp_window_handles():
     return found
 
 
+def bring_to_front():
+    """한글 창을 앞으로 끌어온다. 성공 여부.
+
+    양식·템플릿을 '꺼내서 고치기' 할 때 필요하다 (사용자 지적 2026-07-27) —
+    한글에 문서를 펼쳐 놨는데 창이 우리 창 뒤에 있으면, 사용자는 무엇을
+    고치라는 것인지 모른 채 안내 창만 보게 된다.
+    """
+    handles = _hwp_window_handles()
+    if not handles:
+        return False
+    try:
+        import win32gui
+        import win32con
+    except ImportError:
+        return False
+    hwnd = handles[0]
+    try:
+        if win32gui.IsIconic(hwnd):          # 최소화돼 있으면 먼저 편다
+            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+        win32gui.SetForegroundWindow(hwnd)
+        return True
+    except Exception as e:
+        # 윈도우는 '지금 앞에 있는 앱'이 아니면 SetForegroundWindow 를 거절한다.
+        # 실패해도 문서는 열려 있으니 안내만 하면 된다.
+        applog.exc("한글 창을 앞으로 가져오지 못했습니다", e)
+        return False
+
+
 def _connection_error(h):
     r"""연결이 살아 있으면 None, 죽었으면 그 예외를 돌려준다.
 
@@ -561,3 +589,32 @@ def find_text(query, direction="Forward"):
     r = bool(act.Execute("RepeatFind", pset.HSet))
     _diag("find_text 후")
     return r
+
+
+def replace_all(find, repl):
+    r"""문서 전체에서 find → repl 모두 바꾸기. 성공 여부.
+
+    find_text 와 같은 이유로 대화상자 없는 AllReplace 액션을 직접 쓴다.
+    자리 표시 정리(홑 \ → \\)가 쓴다 — 실패해도 저장은 계속돼야 하므로
+    호출부는 결과를 확인만 하고 막지 않는다.
+    """
+    act = hwp.HAction
+    pset = hwp.HParameterSet.HFindReplace
+    act.GetDefault("AllReplace", pset.HSet)
+    pset.MatchCase = 1
+    pset.SeveralWords = 0
+    pset.UseWildCards = 0
+    pset.WholeWordOnly = 0
+    pset.AutoSpell = 1
+    pset.Direction = hwp.FindDir("AllDoc")
+    pset.FindString = find
+    pset.ReplaceString = repl
+    pset.IgnoreMessage = 1
+    pset.ReplaceMode = 1
+    pset.FindRegExp = 0
+    pset.FindType = 1
+    try:
+        return bool(act.Execute("AllReplace", pset.HSet))
+    except Exception as e:
+        applog.exc(f"모두 바꾸기 실패 — {find!r} → {repl!r}", e)
+        return False

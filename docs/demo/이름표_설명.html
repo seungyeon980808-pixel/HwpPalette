@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<title>이름표 방식 설명 — 물감에 자리 이름 붙이기</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono&display=swap" rel="stylesheet">
+<style>
+:root{--accent:#0969da;--soft:#ddf4ff;--line:#54aeff;--bg:#f6f8fa;--card:#fff;
+      --sub:#f0f2f5;--text:#0d1117;--muted:#656d76;--border:#d0d7de;
+      --warn:#9b1c1c;--warnbg:#fff1f0;--ok:#116329;--okbg:#e6f6ea;}
+*{box-sizing:border-box}
+body{margin:0;padding:28px 20px 60px;background:#eef1f4;color:var(--text);
+     font-family:'IBM Plex Sans KR',sans-serif;line-height:1.7}
+.wrap{max-width:920px;margin:0 auto}
+h1{font-size:24px;font-weight:600;margin:0 0 6px}
+.lead{color:#57606a;font-size:14px;margin:0 0 26px}
+section{background:var(--card);border:1px solid var(--border);border-radius:10px;
+        padding:20px 22px;margin-bottom:16px}
+h2{font-size:17px;font-weight:600;margin:0 0 4px}
+h2 .n{display:inline-block;width:24px;height:24px;line-height:24px;text-align:center;
+      background:var(--accent);color:#fff;border-radius:6px;font-size:13px;margin-right:8px}
+.sub{color:var(--muted);font-size:13px;margin:0 0 14px}
+code,.mono{font-family:'IBM Plex Mono',monospace;font-size:13px}
+.hwp{background:var(--sub);border:1px solid var(--border);border-radius:6px;
+     padding:10px 12px;font-family:'IBM Plex Mono',monospace;font-size:13px;
+     white-space:pre-wrap;margin:6px 0}
+.tag{color:var(--accent);font-weight:600}
+.plain{color:#8250df;font-weight:600}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.col h3{font-size:13px;margin:0 0 6px;color:var(--muted);font-weight:500}
+.arrow{text-align:center;color:var(--muted);font-size:18px;margin:2px 0}
+.bad{background:var(--warnbg);border-color:#f0b4b4}
+.good{background:var(--okbg);border-color:#a3d3b3}
+.badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;
+       background:var(--sub);color:var(--muted);margin-left:6px}
+.badge.b{background:var(--soft);color:#0550ae}
+.badge.g{background:var(--okbg);color:var(--ok)}
+.badge.r{background:var(--warnbg);color:var(--warn)}
+table{border-collapse:collapse;width:100%;font-size:13.5px;margin-top:8px}
+th,td{border:1px solid var(--border);padding:8px 10px;text-align:left;vertical-align:top}
+th{background:var(--sub);font-weight:500;font-size:12.5px;color:#424a53}
+.tbl{border:1px solid var(--border);border-radius:6px;overflow:hidden;margin:8px 0}
+.trow{display:grid;grid-template-columns:110px 1fr;border-bottom:1px solid var(--border)}
+.trow:last-child{border-bottom:0}
+.trow div{padding:6px 10px;font-size:13px}
+.trow .k{background:var(--sub);color:#424a53}
+.trow .v{background:#fff;color:var(--muted)}
+.note{font-size:13px;color:var(--muted);border-left:3px solid var(--border);
+      padding:2px 0 2px 12px;margin:12px 0 0}
+.mini{font-size:14px;font-weight:600;margin:22px 0 6px;padding-top:14px;
+      border-top:1px solid var(--border)}
+.mini:first-of-type{border-top:0;padding-top:0;margin-top:14px}
+.para{font-size:13.5px;margin:0 0 10px}
+.cap{font-size:12.5px;color:var(--muted);margin:4px 0 0}
+.chars{display:flex;gap:4px;margin:8px 0}
+.ch{width:34px;height:38px;display:flex;align-items:center;justify-content:center;
+    border:1px solid var(--border);border-radius:5px;background:var(--sub);
+    font-family:'IBM Plex Mono',monospace;font-size:15px}
+.ch.tagc{background:var(--soft);border-color:var(--line);color:var(--accent)}
+.steps{display:flex;flex-direction:column;gap:10px;margin:10px 0 4px}
+.stepbox{display:grid;grid-template-columns:28px 1fr;gap:10px;align-items:start}
+.stepno{width:24px;height:24px;line-height:24px;text-align:center;border-radius:50%;
+        background:var(--sub);color:#424a53;font-size:12px;margin-top:3px}
+.stept{font-size:13.5px}
+.hit{background:#fff3b0;border-radius:3px;padding:1px 2px;
+     outline:2px solid #d4a72c;outline-offset:-1px}
+.flow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0}
+.step{background:var(--sub);border:1px solid var(--border);border-radius:6px;
+      padding:6px 11px;font-size:13px}
+.step.on{background:var(--soft);border-color:var(--line);color:#0550ae}
+.sep{color:var(--muted)}
+</style></head>
+<body><div class="wrap">
+
+<h1>물감 자리에 이름 붙이기 — 무엇이 어떻게 바뀌나</h1>
+<p class="lead">지금 정한 규칙과, 그 규칙이 기존 사용 방식을 건드리지 않는다는 것을 화면으로 정리했습니다.</p>
+
+<section>
+<h2><span class="n">1</span>지금까지 — 자리에 이름이 없었다</h2>
+<p class="sub">물감 안의 역슬래시는 전부 "여기에 뭔가 들어간다"는 표시일 뿐, 무엇이 들어갈지는 순서로만 정해졌습니다.</p>
+<div class="two">
+  <div class="col">
+    <h3>물감 안 (한글)</h3>
+    <div class="hwp">1. <span class="plain">\</span> [<span class="plain">\</span>점]</div>
+  </div>
+  <div class="col">
+    <h3>문서에 이렇게 씁니다</h3>
+    <div class="hwp">\발문\
+탄소의 순환으로 옳은 것은?
+3</div>
+  </div>
+</div>
+<div class="arrow">↓ 변환</div>
+<div class="hwp good">1. 탄소의 순환으로 옳은 것은? [3점]</div>
+<p class="note">아랫줄이 <b>위에서부터 순서대로</b> 빈칸에 들어갑니다. 이 방식은 앞으로도 그대로입니다.</p>
+</section>
+
+<section>
+<h2><span class="n">2</span>앞으로 — 저장할 때 이름을 붙일 수 있다</h2>
+<p class="sub">역슬래시 사이에 이름을 적으면, 그 이름이 곧 칸 이름이 됩니다. 한글에서는 <code>₩</code> 로 보이는 그 키입니다.</p>
+<div class="two">
+  <div class="col">
+    <h3>이름 없이 (지금까지)</h3>
+    <div class="hwp">2026년 <span class="plain">\</span>월 <span class="plain">\</span>일 <span class="plain">\</span>교시</div>
+  </div>
+  <div class="col">
+    <h3>이름을 붙이면</h3>
+    <div class="hwp">2026년 <span class="tag">\월\</span>월 <span class="tag">\일\</span>일 <span class="tag">\교시\</span>교시</div>
+  </div>
+</div>
+<p class="note"><b>파란 부분이 통째로 사라지고 값이 들어갑니다.</b> 그래서 단위 글자(월·일·교시)는 이름표 <b>밖에</b> 둡니다.
+저장할 때 프로그램이 이름 목록을 물감에 적어 둡니다 — <span class="mono">["월","일","교시"]</span></p>
+</section>
+
+<section>
+<h2><span class="n">3</span>이름이 있으면 — 누를 때 표가 뜬다</h2>
+<p class="sub">이름을 붙였다는 것 자체가 "이건 표로 채울 물건"이라는 선언입니다. 따로 켜고 끄는 설정은 두지 않습니다.</p>
+<div class="flow">
+  <span class="step on">물감 누름</span><span class="sep">→</span>
+  <span class="step">표가 뜬다</span><span class="sep">→</span>
+  <span class="step">칸을 채운다</span><span class="sep">→</span>
+  <span class="step on">문서에 들어간다</span>
+</div>
+<div class="tbl">
+  <div class="trow"><div class="k">월</div><div class="v">6</div></div>
+  <div class="trow"><div class="k">일</div><div class="v">20</div></div>
+  <div class="trow"><div class="k">교시</div><div class="v">3</div></div>
+</div>
+<div class="arrow">↓</div>
+<div class="hwp good">2026년 6월 20일 3교시</div>
+</section>
+
+<section>
+<h2><span class="n">4</span>그래도 마크다운은 그대로 된다</h2>
+<p class="sub">이름이 붙어 있어도, 표를 안 쓰고 마크다운으로 순서대로 넣을 수 있어야 합니다. 이번에 정한 핵심입니다.</p>
+<div class="hwp">\원안지머리\
+6
+20
+3</div>
+<div class="arrow">↓ 변환</div>
+<div class="hwp good">2026년 6월 20일 3교시</div>
+<p class="note">표를 쓰든 마크다운을 쓰든 <b>결과가 같습니다.</b> 이름은 표를 그릴 때만 쓰이고, 순서로 채울 때는 쓰이지 않습니다.</p>
+</section>
+
+<section>
+<h2><span class="n">5</span>그런데 지금 코드로는 여기서 깨진다</h2>
+<p class="sub">검토하면서 찾은 문제입니다. 글자 하나씩 따라가 보겠습니다.</p>
+
+<h3 class="mini">먼저 알아야 할 것 — 프로그램은 문서를 이렇게 봅니다</h3>
+<p class="para">한글 문서 안에는 그냥 <b>글자가 쭉</b> 있습니다. 프로그램이 할 수 있는 일은 딱 하나예요.
+<b>"다음 <code>\</code> 를 찾아라"</b> 그리고 <b>"찾은 그 자리를 이 값으로 바꿔라"</b>.</p>
+<p class="para">그런데 <code>\학년\</code> 은 프로그램 눈에 <b>특별한 무엇이 아니라 그냥 글자 네 개</b>입니다.</p>
+<div class="chars">
+  <span class="ch tagc">\</span><span class="ch">학</span><span class="ch">년</span><span class="ch tagc">\</span>
+  <span class="ch">학</span><span class="ch">년</span>
+</div>
+<p class="cap">사람은 "학년이라는 이름표"로 읽지만, 프로그램은 "역슬래시 · 학 · 년 · 역슬래시 · 학 · 년"으로 읽습니다.</p>
+
+<h3 class="mini">그래서 이렇게 깨집니다</h3>
+<div class="steps">
+  <div class="stepbox">
+    <div class="stepno">1</div>
+    <div>
+      <div class="stept">문서에 이 글자들이 있습니다</div>
+      <div class="hwp">2026년 <span class="tag">\</span><span class="tag">학년</span><span class="tag">\</span>학년</div>
+    </div>
+  </div>
+  <div class="stepbox">
+    <div class="stepno">2</div>
+    <div>
+      <div class="stept">프로그램: "다음 <code>\</code> 를 찾아라" → <b>맨 앞 역슬래시 한 글자</b>를 잡습니다</div>
+      <div class="hwp">2026년 <span class="hit">\</span>학년\학년</div>
+      <div class="cap">잡힌 것은 역슬래시 <b>한 글자</b>뿐입니다. 뒤의 '학년\' 은 그냥 글자라 안 잡힙니다.</div>
+    </div>
+  </div>
+  <div class="stepbox">
+    <div class="stepno">3</div>
+    <div>
+      <div class="stept">그 자리를 값 <code>2</code> 로 바꿉니다</div>
+      <div class="hwp bad">2026년 <b>2</b>학년\학년 <span class="badge r">깨짐</span></div>
+      <div class="cap">이름이었던 '학년' 이 문서에 글자로 남고, 역슬래시도 하나 남았습니다.</div>
+    </div>
+  </div>
+  <div class="stepbox">
+    <div class="stepno">4</div>
+    <div>
+      <div class="stept">다음 값 <code>6</code> 은 남아 있는 그 역슬래시로 들어갑니다</div>
+      <div class="hwp bad">2026년 2학년<b>6</b>학년 <span class="badge r">한 칸씩 밀림</span></div>
+      <div class="cap">뒤의 값들이 전부 한 칸씩 밀립니다. 인쇄물을 보기 전엔 모릅니다.</div>
+    </div>
+  </div>
+</div>
+
+<h3 class="mini">고치는 방법 — 꽂자마자 이름을 떼어낸다</h3>
+<p class="para">채우기를 시작하기 <b>전에</b>, 문서에서 <code>\학년\</code> <b>네 글자를 찾아 <code>\</code> 한 글자로 바꿔 둡니다.</b>
+이름을 잃어버릴 걱정은 없습니다 — 이름 목록은 물감을 저장할 때 이미 적어 뒀으니까요.</p>
+<div class="steps">
+  <div class="stepbox">
+    <div class="stepno">1</div>
+    <div>
+      <div class="stept">조각을 문서에 꽂은 직후 <span class="badge b">여기가 새로 넣는 단계</span></div>
+      <div class="hwp">2026년 <span class="hit">\학년\</span>학년</div>
+      <div class="cap">네 글자를 통째로 잡습니다.</div>
+    </div>
+  </div>
+  <div class="stepbox">
+    <div class="stepno">2</div>
+    <div>
+      <div class="stept">홑 역슬래시로 줄입니다</div>
+      <div class="hwp">2026년 <span class="plain">\</span>학년</div>
+      <div class="cap">이제 문서 모습이 <b>이름을 안 쓰던 옛 물감과 완전히 같습니다.</b></div>
+    </div>
+  </div>
+  <div class="stepbox">
+    <div class="stepno">3</div>
+    <div>
+      <div class="stept">그다음부터는 <b>지금 쓰던 코드가 손도 안 대고 그대로</b> 돕니다</div>
+      <div class="hwp good">2026년 <b>2</b>학년 <span class="badge g">정상</span></div>
+    </div>
+  </div>
+</div>
+
+<h3 class="mini">왜 굳이 이렇게 하나 — 길을 하나로 두려고</h3>
+<p class="para">"이름표가 있으면 이름으로 찾아 채우고, 없으면 순서로 채운다"로 만들 수도 있습니다.
+그러면 <b>채우는 코드가 두 벌</b>이 됩니다. 한쪽만 고쳐지는 사고가 나기 딱 좋고,
+표·마크다운·양식이 서로 다르게 동작하기 시작합니다.</p>
+<p class="para">이름을 미리 떼어내면 <b>그 뒤는 언제나 한 가지 상황</b>뿐입니다 — "홑 역슬래시를 순서대로 채운다".
+표로 채우든 마크다운으로 채우든 마지막에 하는 일이 똑같아집니다.</p>
+<div class="two" style="margin-top:12px">
+  <div class="col">
+    <h3>표로 채울 때</h3>
+    <div class="flow" style="margin:0">
+      <span class="step">표에서 값 받기</span><span class="sep">→</span>
+      <span class="step on">이름 떼기</span><span class="sep">→</span>
+      <span class="step">순서대로 채우기</span>
+    </div>
+  </div>
+  <div class="col">
+    <h3>마크다운으로 채울 때</h3>
+    <div class="flow" style="margin:0">
+      <span class="step">아랫줄에서 값 받기</span><span class="sep">→</span>
+      <span class="step on">이름 떼기</span><span class="sep">→</span>
+      <span class="step">순서대로 채우기</span>
+    </div>
+  </div>
+</div>
+<p class="note">가운데 한 걸음만 새로 만들고, 마지막 걸음은 이미 잘 돌고 있는 것을 그대로 씁니다.</p>
+</section>
+
+<section>
+<h2><span class="n">예</span>실제 사례 — '원안지머리' 물감 하나를 끝까지</h2>
+<p class="sub">등록부터 문서에 들어가기까지, 매 단계 문서에 무슨 글자가 있는지 그대로 적었습니다.</p>
+
+<h3 class="mini">1단계 · 한글에서 만들어 저장한다</h3>
+<p class="para">한글에 이렇게 칩니다. <code>₩</code> 키가 역슬래시입니다.</p>
+<div class="hwp">2026학년도 1학기 <span class="tag">\학년\</span>학년 정기시험
+2026년 <span class="tag">\월\</span>월 <span class="tag">\일\</span>일 <span class="tag">\교시\</span>교시</div>
+<p class="para">두 줄을 드래그해서 물감으로 저장하고 이름을 <b>원안지머리</b> 라고 붙입니다.
+이때 프로그램이 물감에 이렇게 적어 둡니다.</p>
+<div class="tbl">
+  <div class="trow"><div class="k">조각 파일</div><div class="v">글꼴·표·여백까지 그대로 담긴 .hwp</div></div>
+  <div class="trow"><div class="k">이름 목록</div><div class="v">학년 · 월 · 일 · 교시 &nbsp;<span class="badge b">이번에 새로 적는 것</span></div></div>
+  <div class="trow"><div class="k">빈칸 수</div><div class="v">4</div></div>
+</div>
+
+<h3 class="mini">2단계 · 마크다운으로 쓴다</h3>
+<p class="para">문서에 이렇게 쓰고 변환을 누릅니다. 값은 <b>위에서부터 순서대로</b> 들어갑니다.</p>
+<div class="hwp">\원안지머리\
+2
+6
+20
+3</div>
+
+<h3 class="mini">3단계 · 지금 코드가 하는 일 <span class="badge r">여기서 깨진다</span></h3>
+<div class="steps">
+  <div class="stepbox"><div class="stepno">1</div><div>
+    <div class="stept">조각을 문서에 꽂습니다. 문서 상태:</div>
+    <div class="hwp">2026학년도 1학기 \학년\학년 정기시험
+2026년 \월\월 \일\일 \교시\교시</div>
+  </div></div>
+  <div class="stepbox"><div class="stepno">2</div><div>
+    <div class="stept">첫 값 <b>2</b> — "다음 <code>\</code>" 를 찾으니 <b>이름표의 앞쪽 역슬래시</b>가 잡힙니다</div>
+    <div class="hwp">2026학년도 1학기 <span class="hit">\</span>학년\학년 정기시험</div>
+    <div class="hwp bad">2026학년도 1학기 <b>2</b>학년\학년 정기시험</div>
+    <div class="cap">이름이던 '학년' 이 문서 글자로 남았습니다. 역슬래시도 하나 남았고요.</div>
+  </div></div>
+  <div class="stepbox"><div class="stepno">3</div><div>
+    <div class="stept">둘째 값 <b>6</b> — 남아 있던 그 역슬래시에 들어갑니다</div>
+    <div class="hwp bad">2026학년도 1학기 2학년<b>6</b>학년 정기시험</div>
+    <div class="cap">6은 원래 '월' 에 들어갈 값이었는데 첫 줄에 박혔습니다.</div>
+  </div></div>
+  <div class="stepbox"><div class="stepno">4</div><div>
+    <div class="stept">셋째 값 <b>20</b> — 이제야 둘째 줄로 넘어가 <code>\월\</code> 의 앞 역슬래시에 들어갑니다</div>
+    <div class="hwp bad">2026년 <b>20</b>월\월 \일\일 \교시\교시</div>
+  </div></div>
+  <div class="stepbox"><div class="stepno">5</div><div>
+    <div class="stept">넷째 값 <b>3</b> — 그 뒤 역슬래시에</div>
+    <div class="hwp bad">2026년 20월<b>3</b>월 \일\일 \교시\교시</div>
+  </div></div>
+  <div class="stepbox"><div class="stepno">6</div><div>
+    <div class="stept">값이 다 떨어졌습니다. 남은 표시는 청소되면서 지워집니다</div>
+    <div class="hwp bad">2026학년도 1학기 2학년6학년 정기시험
+2026년 20월3월 일일 교시교시 <span class="badge r">완전히 뒤죽박죽</span></div>
+    <div class="cap">인쇄물을 보기 전엔 이렇게 된 줄 모릅니다.</div>
+  </div></div>
+</div>
+
+<h3 class="mini">4단계 · 고친 뒤에는 이렇게 됩니다 <span class="badge g">한 걸음만 추가</span></h3>
+<div class="steps">
+  <div class="stepbox"><div class="stepno">1</div><div>
+    <div class="stept">조각을 꽂습니다 <span class="badge">지금과 같음</span></div>
+    <div class="hwp">2026학년도 1학기 \학년\학년 정기시험
+2026년 \월\월 \일\일 \교시\교시</div>
+  </div></div>
+  <div class="stepbox"><div class="stepno">2</div><div>
+    <div class="stept"><b>이름 떼기</b> — 저장해 둔 목록(학년·월·일·교시)을 하나씩 찾아
+      <code>\이름\</code> 네 글자를 <code>\</code> 한 글자로 줄입니다 <span class="badge b">새로 넣는 걸음</span></div>
+    <div class="hwp">2026학년도 1학기 <span class="plain">\</span>학년 정기시험
+2026년 <span class="plain">\</span>월 <span class="plain">\</span>일 <span class="plain">\</span>교시</div>
+    <div class="cap">이제 문서 모습이 <b>이름 안 붙이던 옛날 물감과 똑같습니다.</b> 역슬래시 네 개가 순서대로 있죠.</div>
+  </div></div>
+  <div class="stepbox"><div class="stepno">3</div><div>
+    <div class="stept">값 <b>2 · 6 · 20 · 3</b> 을 순서대로 넣습니다 <span class="badge">지금 코드 그대로</span></div>
+    <div class="hwp good">2026학년도 1학기 <b>2</b>학년 정기시험
+2026년 <b>6</b>월 <b>20</b>일 <b>3</b>교시 <span class="badge g">정상</span></div>
+  </div></div>
+</div>
+
+<h3 class="mini">5단계 · 표로 채울 때도 마지막은 똑같습니다</h3>
+<p class="para">이름 목록이 있으니 이 물감은 누르면 표가 뜹니다.</p>
+<div class="two">
+  <div class="col">
+    <h3>표에 채운다</h3>
+    <div class="tbl">
+      <div class="trow"><div class="k">학년</div><div class="v">2</div></div>
+      <div class="trow"><div class="k">월</div><div class="v">6</div></div>
+      <div class="trow"><div class="k">일</div><div class="v">20</div></div>
+      <div class="trow"><div class="k">교시</div><div class="v">3</div></div>
+    </div>
+  </div>
+  <div class="col">
+    <h3>프로그램이 하는 일</h3>
+    <div class="flow" style="margin:0;flex-direction:column;align-items:flex-start">
+      <span class="step">이름 순서대로 값을 늘어놓는다 → 2, 6, 20, 3</span>
+      <span class="step on">조각 꽂기 → 이름 떼기</span>
+      <span class="step">순서대로 채우기 <span class="badge g">4단계와 같은 코드</span></span>
+    </div>
+  </div>
+</div>
+<p class="note">같은 이름이 두 군데 있으면(예: 학년이 머리말에도) 값을 늘어놓을 때 <b>그 값을 두 번 넣습니다.</b>
+사람은 한 번만 치고, 문서에는 두 자리 모두 채워집니다.</p>
+</section>
+
+<section>
+<h2><span class="n">6</span>정리 — 어떤 물감이 어떻게 동작하나</h2>
+<table>
+  <tr><th style="width:150px">물감 안의 표시</th><th>누르면</th><th>마크다운으로 쓰면</th></tr>
+  <tr>
+    <td><span class="plain">\</span> 만 있음<br><span class="badge">지금 27개 전부</span></td>
+    <td>바로 삽입<br><span class="mono" style="color:#656d76">빈칸은 지워짐</span></td>
+    <td>순서대로 채움 <span class="badge g">그대로</span></td>
+  </tr>
+  <tr>
+    <td><span class="tag">\이름\</span> 이 하나라도 있음</td>
+    <td><b>표가 뜬다</b><br><span class="mono" style="color:#656d76">칸 이름 = 붙인 이름</span></td>
+    <td>순서대로 채움 <span class="badge g">똑같이</span></td>
+  </tr>
+  <tr>
+    <td>둘이 섞여 있음</td>
+    <td>표가 뜬다<br><span class="mono" style="color:#656d76">이름 없는 칸은 '빈칸 1, 2 …'</span></td>
+    <td>순서대로 채움 <span class="badge g">똑같이</span></td>
+  </tr>
+</table>
+<p class="note">기존 물감 27개는 손댈 것이 없습니다 — 전부 첫 줄에 해당하고, 지금과 똑같이 동작합니다.
+이름표를 심어 다시 저장하는 순간부터 그 물감만 두 번째 줄로 바뀝니다.</p>
+</section>
+
+<section>
+<h2><span class="n">7</span>양식과는 어떻게 다른가</h2>
+<p class="sub">이름표 문법은 같지만, 채워 넣는 방식이 다릅니다.</p>
+<table>
+  <tr><th style="width:110px"></th><th>양식</th><th>템플릿</th></tr>
+  <tr><td>무엇인가</td><td>파일 통째 (용지·여백·머리말 포함)</td><td>문서의 일부 조각</td></tr>
+  <tr><td>결과</td><td>새 문서로 열림</td><td>커서 자리에 꽂힘</td></tr>
+  <tr><td>채우는 때</td><td>열기 <b>전</b> (파일을 고쳐서 연다)</td><td>꽂은 <b>뒤</b> (문서 안에서 채운다)</td></tr>
+  <tr><td>지금 상태</td><td><span class="badge g">표 완성</span></td><td><span class="badge r">아직 없음</span> 이번에 만들 것</td></tr>
+</table>
+</section>
+
+</div></body></html>

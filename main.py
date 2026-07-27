@@ -65,6 +65,7 @@ import engine_library
 import exam_engine
 import settings
 import form_fill_ui
+import form_table_ui            # 양식 채우기 표 (이름표 \학년\ 방식)
 import library
 import library_ui
 import palette
@@ -579,6 +580,26 @@ def run_palette_block(block):
         _unbusy()
 
 
+def _form_item(block):
+    return library.get_item("양식", item_id=block.get("ref"),
+                            name=block.get("form"))
+
+
+def _form_has_slots(block):
+    r"""이 양식에 채울 자리(\)가 있는가 — 등록할 때 세어 둔 값을 본다.
+
+    파일을 다시 열어 세지 않는 이유: 그러려면 한글로 HWPX 변환까지 해야 하는데,
+    '표를 띄울지 말지' 하나 정하자고 그 값을 치를 수 없다.
+    """
+    it = _form_item(block)
+    return bool(it and int(it.get("slot_count") or 0) > 0)
+
+
+def _block_form_name(block):
+    it = _form_item(block)
+    return it["name"] if it else block.get("form")
+
+
 def _run_palette_block(block):
     if block.get("type") == "builtin":
         # 프로그램 기능은 한글 연결 없이도 여는 것이 있다(라이브러리·찾기).
@@ -594,6 +615,24 @@ def _run_palette_block(block):
             report_error(f"도구 실행 실패: {builtin_actions.name_of(key)}", e,
                          detail=True)
         return
+    # 채울 자리가 있는 양식은 그냥 열지 않고 '채우기 표'를 먼저 띄운다
+    # (2026-07-27). 자리가 없는 양식은 지금까지처럼 바로 열린다.
+    if block.get("type") == "form" and _form_has_slots(block):
+        if not ensure_hwp(): return
+        path = _form_path_by_ref(block)
+        if path:
+            form_table_ui.open_form_table(root, path,
+                                          title=_block_form_name(block))
+            return
+    # 이름 있는 자리(\학년\)를 가진 템플릿도 표를 띄운다 (2026-07-27) —
+    # 이름을 붙였다는 것 자체가 "표로 채울 물건"이라는 선언이다.
+    if block.get("type") == "template":
+        it = library.get_item("템플릿", item_id=block.get("ref"),
+                              name=block.get("template"))
+        if it and any(n for n in it.get("slot_names") or []):
+            if not ensure_hwp(): return
+            form_table_ui.open_template_table(root, it)
+            return
     if not ensure_hwp(): return
     try:
         ok, msg = engine_library.run_block(
@@ -689,8 +728,12 @@ misc_row.pack(fill="x")
 # '라이브러리'와 '설정'이 나란히 있으면 둘 다 설정인데 이름만 다른 것처럼
 # 보였다. 톱니 하나를 누르면 무엇을 설정할지 고르게 하면, 평소 화면에서는
 # 버튼 한 개만 보이고 관계도 분명해진다.
-#   팔레트 설정 = 버튼(물감)을 어디에 놓을지     (palette_ui)
-#   물감 설정   = 무엇을 넣어 둘지 (서식·문자·템플릿·양식)  (library_ui)
+#   물감·팔레트 설정 = 물감 창고(왼쪽)와 팔레트 격자(오른쪽)가 한 창에
+#                      (palette_ui + store_ui). 2026-07-27 에 둘을 합쳤다 —
+#                      물감을 만들고 어디 둘지 정하는 일이 한 흐름인데
+#                      창이 갈려 있어 오가야 했다.
+#   물감 설정(library_ui)은 메뉴에서 뺐다. 창은 남아 있고 특수기호 도구처럼
+#   특정 분류를 바로 여는 곳에서만 쓴다.
 # 메뉴는 윈도우 기본 tk.Menu 가 아니라 자체 팝오버(popover.py)로 그린다
 # (사용자 지적 2026-07-25: 기본 메뉴가 프로그램의 나머지와 따로 놀았다).
 # 버튼은 메뉴가 떠 있는 동안 켜져 있다가(on_close 로) 닫힐 때 꺼진다.
@@ -700,8 +743,7 @@ def _settings_menu(anchor_widget):
     _bar_active(anchor_widget, True)
     (Popover(root, anchor_widget,
              on_close=lambda: _bar_active(anchor_widget, False))
-     .add("물감 설정", lambda: fn_open_library())
-     .add("팔레트 설정", fn_open_palette_settings)
+     .add("물감·팔레트 설정", fn_open_palette_settings)
      .separator()
      # 내 물감을 남에게 주고받는 일 — 물감 설정 화면이 아니라 여기 하위 기능으로
      # (사용자 결정 2026-07-25). 이름은 '물감 나누기' (2026-07-26) —

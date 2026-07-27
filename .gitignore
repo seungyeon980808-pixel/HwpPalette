@@ -6,6 +6,9 @@ config.json
 # 개인 라이브러리(서식/문자/템플릿) — 사용자별 데이터
 library.json
 fragments/
+미리보기/
+미리보기작업/
+양식작업/
 
 # 자동 백업 (backup.py 가 만든다)
 # config.json 은 막아뒀는데 config.json.bak1 은 안 막혀 있어서, 백업 기능을

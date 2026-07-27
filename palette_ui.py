@@ -26,6 +26,8 @@ import library_ui                  # commit_ime · capture_template_dialog 공�
 
 import appinfo
 import screens                     # 창 자리 규칙 (메인 창 옆)
+import store_ui                    # 왼쪽 물감 창고 패널
+import preview                     # 물감 미리보기 그림
 import theme                       # 색은 theme.py 한 곳에서 (밝게/어둡게)
 import ui_fx                       # 호버 보간 (애플 A안)
 from roundbtn import RoundButton   # 둥근 모서리 버튼
@@ -38,6 +40,7 @@ TEXT = _C["text"]
 MUTED = _C["muted"]
 BORDER = _C["border"]
 ROWBG = _C["subbg"]
+SOFT = _C["yellow"]      # 옅은 회색 버튼 바탕 (물감 상세의 '수정')
 FONT = theme.FONT
 
 TYPE_LABEL = {"char": "특수기호", "template": "템플릿", "function": "서식 조합",
@@ -274,6 +277,11 @@ def _tip(widget, text):
     widget.bind("<ButtonPress-1>", hide, add="+")
 
 
+# 미리보기 판의 폭 — 창고보다 넓어야 '크게 본다'가 성립하지만,
+# 셋이 나란히 서므로 창이 화면을 넘지 않는 선에서 잡는다
+ZOOM_W = 330
+
+
 class SettingsWindow(tk.Toplevel):
     def __init__(self, master, on_saved=None):
         super().__init__(master)
@@ -299,11 +307,12 @@ class SettingsWindow(tk.Toplevel):
         self._grid_origin = None   # 격자 첫 칸의 실측 위치 (_xy_to_cell)
         self._blocks_now = []      # 지금 그려진 블럭 스냅샷 (드래그 중 참조)
         self._size_tip = None      # 크기 조절 중 커서 옆에 뜨는 안내
+        self._pending_block = None  # 창고에서 고른 뒤 '자리 고르는 중'인 물감
 
-        tk.Label(self, text="팔레트 설정", font=(FONT, theme.fs(12), "bold"),
+        tk.Label(self, text="물감 · 팔레트 설정", font=(FONT, theme.fs(12), "bold"),
                  bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(12, 2))
         tk.Label(self,
-                 text="원하는 물감을 짜서, 나만의 팔레트를 구성합니다.",
+                 text="왼쪽 창고에서 물감을 골라, 오른쪽 팔레트에 놓습니다.",
                  font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(
             anchor="w", padx=16, pady=(0, 10))
 
@@ -311,9 +320,59 @@ class SettingsWindow(tk.Toplevel):
         # 고른 팔레트(왼쪽)와 그 내용(오른쪽)이 같은 판 위에 있어야
         # "이 팔레트의 내용이 저것"임이 눈으로 이어진다 — 따로 떠 있으면
         # 둘이 무슨 사이인지 알 수 없다. macOS 설정 창의 사이드바와 같은 짜임이다.
-        main = tk.Frame(self, bg=CARD, highlightbackground=BORDER,
+        # 창고와 팔레트는 **각각 다른 판**이다 (사용자 지적 2026-07-27) —
+        # 한 판 위에 붙여 뒀더니 어디까지가 창고이고 어디부터가 팔레트인지
+        # 구별되지 않았다. 사이를 띄우고 판을 나눈다.
+        outer = tk.Frame(self, bg=BG)
+        outer.pack(fill="both", expand=True, padx=16, pady=(0, 14))
+
+        # 왼쪽부터 **팔레트 → 물감 창고 → 미리보기** (사용자 결정 2026-07-27).
+        # 셋 다 처음부터 자리를 차지한다 — 눌렀을 때 판이 생겼다 없어지면
+        # 창 크기와 위치가 바뀌어 화면이 흔들린다.
+        main = tk.Frame(outer, bg=CARD, highlightbackground=BORDER,
                         highlightthickness=1)
-        main.pack(fill="both", expand=True, padx=16, pady=(0, 14))
+        main.pack(side="left", fill="both", expand=True)
+
+        self._store_grip = tk.Label(outer, text="⟩", bg=BG, fg=MUTED,
+                                    font=(FONT, theme.fs(8)), cursor="hand2",
+                                    padx=4)
+        self._store_grip.pack(side="left", fill="y")
+        self._store_grip.bind("<Button-1>", lambda e: self._toggle_store())
+
+        store_card = tk.Frame(outer, bg=CARD, highlightbackground=BORDER,
+                              highlightthickness=1)
+        store_card.pack(side="left", fill="y")
+        self._store_card = store_card
+        self.store = store_ui.StorePanel(
+            store_card, on_place=self._place_from_store,
+            tab_name_fn=self._cur_tab_name, on_select=self._show_detail)
+        self.store.pack(fill="both", expand=True)
+
+        # 맨 오른쪽 판: 고른 물감의 미리보기와 동작. 늘 떠 있고 내용만 바뀐다.
+        self.zoom_pane = tk.Frame(outer, bg=CARD, width=ZOOM_W,
+                                  highlightbackground=BORDER,
+                                  highlightthickness=1)
+        self.zoom_pane.pack_propagate(False)
+        self.zoom_pane.pack(side="left", fill="y", padx=(8, 0))
+        self._zoom_photo = None
+        self._detail = None
+
+        # 팔레트 판의 머리말 — 창고에도 같은 자리에 머리말이 있다.
+        # 없으면 오른쪽이 무엇을 하는 곳인지 화면이 말해 주지 않는다
+        # (사용자 지적 2026-07-27).
+        phead = tk.Frame(main, bg=CARD)
+        phead.pack(fill="x", padx=8, pady=(6, 2))
+        tk.Label(phead, text="팔레트", font=(FONT, theme.fs(10), "bold"),
+                 bg=CARD, fg=TEXT).pack(side="left")
+        self.pal_hint = tk.Label(phead, text=self._pal_hint_text(),
+                                 font=(FONT, theme.fs(7)),
+                                 bg=CARD, fg=MUTED)
+        self.pal_hint.pack(side="left", padx=(6, 0))
+        tk.Frame(main, bg=BORDER, height=1).pack(fill="x")
+
+        body = tk.Frame(main, bg=CARD)
+        body.pack(fill="both", expand=True)
+        main = body                 # 아래 짜임은 그대로 — 담는 그릇만 바뀐다
 
         # 왼쪽: 팔레트 목록 ('팔레트' 라벨은 뺐다 — 위 제목이 이미 말해 준다)
         # 오른쪽 여백을 0 으로 — 고른 항목이 경계선까지 닿아야 이어져 보인다
@@ -370,6 +429,114 @@ class SettingsWindow(tk.Toplevel):
         self.minsize(self.winfo_reqwidth(), self.winfo_reqheight())
         # 크기는 지정하지 않는다 — _fit_window 가 내용에 맞춰 잡는다(줄이 늘면 커짐)
         screens.place_beside(self, master)
+
+    # ── 물감 창고 ──
+    def _cur_tab_name(self):
+        try:
+            tabs = palette.load_tabs()
+            return tabs[self.sel_tab].get("name") if tabs else ""
+        except Exception:
+            return ""
+
+    def _place_from_store(self, block):
+        r"""창고에서 고른 물감을 놓는다 — **자리를 끌어서 고르게** 한다.
+
+        첫 빈자리에 알아서 넣지 않는 이유 (사용자 결정 2026-07-27):
+        어디에 들어갈지 누른 사람이 정해야 하고, 칸 수(가로 폭)도 그 자리에서
+        정해지기 때문. 격자의 빈 칸을 끄는 동작은 이미 있으므로
+        (_empty_press ~ _empty_release), 그 흐름에 '놓을 물감'만 얹는다.
+        """
+        if not self._need_tab():
+            return
+        self._pending_block = block
+        name = self._block_label(block) or "물감"
+        self.pal_hint.config(
+            text=f"'{name}' 을(를) 놓을 자리를 빈 칸에서 끌어 주세요 (Esc 취소)",
+            fg=ACCENT)
+        self.bind("<Escape>", lambda e: self._cancel_place())
+
+    def _cancel_place(self):
+        """놓을 자리 고르기 취소 — Esc 는 원래 창 닫기라 되돌려 준다."""
+        if getattr(self, "_pending_block", None) is None:
+            self._close()
+            return
+        self._pending_block = None
+        self.pal_hint.config(text=self._pal_hint_text(), fg=MUTED)
+        self.bind("<Escape>", lambda e: self._close())
+
+    def _pal_hint_text(self):
+        return "빈 칸을 끌면 블럭을 놓고, 놓인 블럭은 끌어 옮깁니다"
+
+    def _toggle_store(self):
+        if self._store_card.winfo_ismapped():
+            self._store_card.pack_forget()
+            self.zoom_pane.pack_forget()
+            self._store_grip.config(text="⟨")
+        else:
+            self._store_card.pack(side="left", fill="y")
+            self.zoom_pane.pack(side="left", fill="y", padx=(8, 0))
+            self._store_grip.config(text="⟩")
+        self._fit_window()
+
+    def _show_detail(self, cat, item):
+        r"""오른쪽 판에 고른 물감을 보여준다 — 그림과 할 수 있는 일.
+
+        판 자체는 늘 떠 있고 **내용만 갈아 끼운다**. 판을 붙였다 뗐다 하면
+        창 크기와 위치가 바뀌어 옆의 창고·팔레트가 따라 움직인다
+        (사용자 지적 2026-07-27: "위젯이 자기 마음대로 다른 위치로 이동한다").
+        """
+        self._detail = (cat, item)
+        for w in self.zoom_pane.winfo_children():
+            w.destroy()
+        head = tk.Frame(self.zoom_pane, bg=CARD)
+        head.pack(fill="x", padx=10, pady=(8, 2))
+        tk.Label(head, text=item.get("name", ""), bg=CARD, fg=TEXT,
+                 font=(FONT, theme.fs(10), "bold")).pack(side="left")
+        tk.Label(head, text=f"#{cat}", bg=CARD, fg=MUTED,
+                 font=(FONT, theme.fs(7))).pack(side="right")
+
+        photo = None
+        if cat in ("템플릿", "양식"):
+            try:
+                photo = preview.tk_photo_for_item(
+                    item, library.template_path(item), ZOOM_W - 28, 620)
+            except Exception as e:
+                applog.exc(f"미리보기 실패 — {item.get('name')}", e)
+        if photo is not None:
+            self._zoom_photo = photo        # 참조 유지
+            lbl = tk.Label(self.zoom_pane, image=photo, bg=CARD)
+            lbl.image = photo
+            lbl.pack(padx=10, pady=8)
+        else:
+            text = (library.get_preview(item) or "").strip() or "(미리보기 없음)"
+            tk.Label(self.zoom_pane, text=text[:600], bg=CARD, fg=MUTED,
+                     font=(FONT, theme.fs(8)), justify="left", anchor="nw",
+                     wraplength=ZOOM_W - 30).pack(fill="x", padx=10, pady=8)
+
+        acts = tk.Frame(self.zoom_pane, bg=CARD)
+        acts.pack(fill="x", padx=10, pady=(2, 10))
+        if self.store.block_of(cat, item) is not None:
+            RoundButton(acts, text="팔레트에 놓기",
+                        command=lambda: self.store.place_item(cat, item),
+                        bg=ACCENT, fg="white", radius=6,
+                        font=(FONT, theme.fs(9), "bold"), outline="",
+                        zone_bg=CARD).fit(pad_x=12, pad_y=5).pack(side="left")
+        else:
+            tk.Label(acts, text=r"문서에서 \%s\ 로 씁니다"
+                     % (item.get("label") or item.get("name")),
+                     font=(FONT, theme.fs(7)), bg=CARD, fg=MUTED).pack(side="left")
+        if cat in ("템플릿", "양식"):
+            RoundButton(acts, text="수정",
+                        command=lambda: self.store.edit_item(cat, item),
+                        bg=SOFT, fg=TEXT, radius=6, font=(FONT, theme.fs(9)),
+                        outline="", zone_bg=CARD).fit(pad_x=12, pad_y=5).pack(
+                        side="left", padx=(6, 0))
+
+    def _refresh_store(self):
+        try:
+            self.store.refresh()
+        except Exception as e:
+            applog.exc("창고 새로 그리기 실패", e)
 
     # ── 탭 목록 ──
     def _say(self, msg=None):
@@ -433,6 +600,7 @@ class SettingsWindow(tk.Toplevel):
             return
         self.sel_tab = idx
         self._reload_tabs()
+        self._refresh_store()       # 코랄(이 탭에 있음)이 새 탭 기준으로 바뀐다
 
     def _tab_menu(self, e, idx):
         """탭 우클릭 — 삭제 버튼을 따로 두지 않는다 (2026-07-25)."""
@@ -825,7 +993,21 @@ class SettingsWindow(tk.Toplevel):
             w.config(bg=RANGE_BG if inside else EMPTY_BG)
 
     def _pick_tool(self, row, col, span, rows):
-        """자리와 크기를 정한 뒤 '무엇을 넣을지' 고른다."""
+        """자리와 크기를 정한 뒤 '무엇을 넣을지' 고른다.
+
+        창고에서 '팔레트에 놓기'를 누른 뒤라면 무엇을 넣을지는 이미 정해져
+        있으므로 묻지 않고 바로 그 자리에 놓는다 (2026-07-27).
+        """
+        pending = getattr(self, "_pending_block", None)
+        if pending is not None:
+            self._pending_block = None
+            self._pending_area = (row, col, span, rows)
+            self._pending_color = None
+            self._place(dict(pending))
+            self._pending_area = None
+            self.pal_hint.config(text=self._pal_hint_text(), fg=MUTED)
+            self.bind("<Escape>", lambda e: self._close())
+            return
         dlg = _ToolPickDialog(self, span, rows)
         self.wait_window(dlg)
         self._pending_area = (row, col, span, rows)
@@ -1305,10 +1487,42 @@ class SettingsWindow(tk.Toplevel):
                 "자리·크기·이름은 다른 블럭과 똑같이 바꿀 수 있습니다.",
                 parent=self)
             return
-        palette.delete_block(self.sel_tab, self.sel_block)
+        how = self._ask_delete_scope(blocks[self.sel_block])
+        if how == "cancel":
+            return
+        if how == "block":
+            palette.delete_block(self.sel_tab, self.sel_block)
         self.sel_block = None
         self._render_blocks()
         self._notify()
+
+    # 라이브러리 분류 ← 블럭 타입 (물감 보관함까지 지울지 물어보는 데 쓴다)
+    _REF_CATS = {"template": "템플릿", "form": "양식"}
+
+    def _ask_delete_scope(self, blk):
+        r"""블럭을 지울 때 **물감 보관함의 원본까지** 지울지 묻는다 (2026-07-27).
+
+        팔레트에서 지우는 것은 '자리에서 치우는' 일이라 물감 자체는 남는다.
+        그걸 모르면 물감 설정에 안 쓰는 물감이 조용히 쌓이므로 한 번 묻는다.
+        반환: "block"(자리만 치움) / "library"(원본까지 지움) / "cancel".
+        "library" 면 호출한 쪽은 delete_block 을 또 부르면 안 된다 —
+        library._purge_palette_refs 가 그 물감을 가리키던 블럭을 이미 모두
+        걷어냈기 때문에, 인덱스로 한 번 더 지우면 엉뚱한 블럭이 사라진다.
+        """
+        cat = self._REF_CATS.get(blk.get("type"))
+        ref = blk.get("ref")
+        if not cat or not ref:
+            return "block"
+        it = library.find_by_id(cat, ref)
+        if not it:
+            return "block"          # 이미 지워진 물감 — 물어볼 것이 없다
+        others = max(0, library.count_palette_refs(cat, ref) - 1)
+        dlg = _DeleteScopeDialog(self, it["name"], others)
+        self.wait_window(dlg)
+        if dlg.result != "library":
+            return dlg.result or "cancel"
+        library.delete_item(cat, ref)
+        return "library"
 
     def _edit_selected(self):
         if not self._need_sel():
@@ -1485,8 +1699,75 @@ class SettingsWindow(tk.Toplevel):
         self.destroy()
 
     def _notify(self):
+        # 팔레트가 바뀌면 창고의 색(놓임/안 놓임)도 따라 바뀌어야 한다
+        self._refresh_store()
         if self.on_saved:
             self.on_saved()
+
+
+class _DeleteScopeDialog(tk.Toplevel):
+    r"""블럭을 지울 때 — 자리에서만 치울지, 물감까지 없앨지 (2026-07-27).
+
+    예/아니오 대화상자를 쓰지 않는 이유: 그 창은 [예]에 손이 먼저 가고,
+    무엇이 지워지는지 버튼 이름이 말해 주지 않는다. 여기서는 **기본이
+    '자리에서만 치우기'** 이고(Enter·Esc 둘 다 안전한 쪽),
+    물감을 없애는 쪽은 빨간 글씨로 따로 떨어뜨려 둔다.
+    """
+
+    def __init__(self, master, name, others):
+        super().__init__(master)
+        self.result = None
+        self.title(appinfo.WINDOW_TITLE)
+        self.configure(bg=BG)
+        self.resizable(False, False)
+        self.transient(master)
+        self.grab_set()
+        tk.Label(self, text=f"'{name}' 을(를) 어떻게 지울까요?",
+                 font=(FONT, theme.fs(11), "bold"), bg=BG, fg=TEXT).pack(
+                 anchor="w", padx=18, pady=(14, 6))
+        tk.Label(self,
+                 text="팔레트에서 치워도 물감은 창고에 남습니다.\n"
+                      "물감까지 없애면 되돌릴 수 없습니다.",
+                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED,
+                 justify="left").pack(anchor="w", padx=18)
+        if others:
+            tk.Label(self,
+                     text=f"⚠ 이 물감은 다른 자리 {others}곳에도 놓여 있습니다.\n"
+                          "     물감을 없애면 그 블럭들도 함께 사라집니다.",
+                     font=(FONT, theme.fs(8)), bg=BG, fg="#9b1c1c",
+                     justify="left").pack(anchor="w", padx=18, pady=(8, 0))
+
+        foot = tk.Frame(self, bg=BG, padx=18, pady=14)
+        foot.pack(fill="x")
+        keep = _dialog_btn(foot, "이 자리에서만 치우기",
+                           lambda: self._done("block"), primary=True)
+        keep.pack(side="right")
+        _dialog_btn(foot, "취소", lambda: self._done("cancel")).pack(
+            side="right", padx=(0, 6))
+        wipe = tk.Label(foot, text="물감까지 완전히 없애기",
+                        font=(FONT, theme.fs(8), "underline"),
+                        bg=BG, fg="#9b1c1c", cursor="hand2")
+        wipe.pack(side="left")
+        wipe.bind("<Button-1>", lambda e: self._confirm_wipe(name))
+
+        self.bind("<Return>", lambda e: self._done("block"))
+        self.bind("<Escape>", lambda e: self._done("cancel"))
+        keep.focus_set()
+        self.update_idletasks()
+        self.geometry(f"+{master.winfo_rootx()+60}+{master.winfo_rooty()+80}")
+
+    def _confirm_wipe(self, name):
+        # 한 번 더 묻는다 — 여기부터는 되돌릴 수 없다
+        if messagebox.askyesno(
+                "정말 없앨까요?",
+                f"'{name}' 물감을 창고에서 완전히 지웁니다.\n"
+                "조각 파일까지 지워지며 되돌릴 수 없습니다.\n\n계속할까요?",
+                default="no", icon="warning", parent=self):
+            self._done("library")
+
+    def _done(self, result):
+        self.result = result
+        self.destroy()
 
 
 class _SourceDialog(tk.Toplevel):

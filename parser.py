@@ -296,7 +296,9 @@ def _try_style_span(text, i, lookup, warnings, style, depth):
         m = CMD_RE.match(text, j)
         if not m:
             return None
-        toks.append(m.group(1))
+        # 여러 서식은 쉼표로 잇는다 — `\기울임,굵게{…}` (사용자 결정 2026-07-27).
+        # 옛 방식 `\굵게\기울임{…}` 도 계속 읽힌다 (while 이 \ 마다 돈다).
+        toks.extend(part.strip() for part in m.group(1).split(','))
         j = m.end()
     if not toks or j >= len(text) or text[j] != '{':
         return None                 # 명령 뒤에 { 가 없으면 서식 구간이 아니다

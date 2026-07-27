@@ -31,6 +31,28 @@ SLOT_MARK = "\\"        # 템플릿 빈칸 표시 — 이게 든 조각을 '채�
 # 주고받는 줄 형식:  [3] 내용
 LINE_RE = re.compile(r"^\s*\[(\d+)\]\s?(.*)$")
 
+# ── 자리 문법 (2026-07-27 확정) ─────────────────────────
+# 자리는 **역슬래시로 열고 역슬래시로 닫는다**. 혼자 오는 역슬래시는 없다.
+#     \\        이름 없는 자리
+#     \학년\    이름 있는 자리 — 이름이 하나라도 있으면 누를 때 표가 뜬다
+#     \         옛 문법 — 계속 읽어주되, 저장할 때 \\ 로 자동 정리한다
+#
+# 왜 쌍인가 (사용자 결정): 역슬래시 개수와 자리 개수가 눈으로 세어 같아진다.
+#   `\학년\` 이 슬래시 둘·자리 하나라 어긋나던 혼동이 사라진다.
+#
+# 이름에 쓸 수 있는 글자를 한글·영문·숫자·밑줄로 좁힌 이유 (중요):
+#   느슨하게 두면 서로 다른 빈칸 둘이 이름표 하나로 잘못 묶인다 —
+#   발문 템플릿의 `\. \` 가 이름 ". " 인 토큰으로 읽히는 식이다.
+#   공백·마침표를 빼면 그런 오인이 생기지 않는다.
+NAME_CHARS = r"[0-9A-Za-z가-힣_]{1,20}"
+# 쌍(이름은 선택)을 먼저, 옛 홑 역슬래시를 나중에 시도한다
+TOKEN_RE = re.compile(r"\\(" + NAME_CHARS + r")?\\|\\")
+
+# \본문\ 은 채울 자리가 아니라 '여기가 본문 시작'이라는 표시다 (engine_library).
+RESERVED_NAMES = {"본문"}
+
+UNNAMED_PREFIX = "빈칸 "
+
 
 def _section_names(zf):
     return [n for n in zf.namelist() if SECTION_RE.search(n)]
@@ -134,6 +156,130 @@ def fill(src_hwpx, dst_hwpx, replacements):
                 out.writestr(info, data)
         del sections
     return changed
+
+
+def _walk_tokens(text, counter):
+    r"""글자 조각 안의 채울 자리를 순서대로 훑는다.
+
+    돌려주는 것: (정규식 match, 자리 이름). 이름표가 아닌 홑 `\` 는
+    '빈칸 1', '빈칸 2' … 로 번호를 붙인다 — 이름을 안 심은 옛 양식도
+    같은 표에서 채울 수 있게 하기 위함. counter 는 문서 전체에서 이어져야
+    하므로 호출한 쪽이 [0] 같은 통을 넘긴다.
+    """
+    for m in TOKEN_RE.finditer(text):
+        name = m.group(1)
+        if name and name not in RESERVED_NAMES:
+            yield m, name
+        elif name:
+            continue                    # \본문\ — 건너뛴다
+        else:
+            counter[0] += 1
+            yield m, f"{UNNAMED_PREFIX}{counter[0]}"
+
+
+def token_list(text):
+    r"""글자 안의 자리 토큰을 **문서 순서대로** — 이름 없는 자리는 "".
+
+    물감을 저장할 때 이 목록을 항목에 적어 둔다(slot_names). 표를 그릴 때는
+    이름으로 칸을 만들고, 채울 때는 이 순서대로 값을 늘어놓는다.
+    """
+    out = []
+    for m in TOKEN_RE.finditer(text or ""):
+        name = m.group(1)
+        if name in RESERVED_NAMES:
+            continue
+        out.append(name or "")
+    return out
+
+
+def named_slots(hwpx_path):
+    """채울 자리 목록 — [(이름, 나온 횟수)]. 문서에 나온 순서.
+
+    같은 이름이 여러 곳에 있으면 **한 줄로 합친다**. 학년이 머리말과 본문에
+    겹쳐 있어도 사람은 한 번만 치면 된다 (채울 때 전부 들어간다).
+    """
+    order, count = [], {}
+    counter = [0]
+    for _, text in read_runs(hwpx_path):
+        for _m, name in _walk_tokens(text, counter):
+            if name not in count:
+                order.append(name)
+                count[name] = 0
+            count[name] += 1
+    return [(n, count[n]) for n in order]
+
+
+def fill_named(src_hwpx, dst_hwpx, values):
+    r"""이름표 자리에 값을 넣어 새 HWPX 로 저장. 반환: (채운 자리 수, 지운 자리 수).
+
+    안 채운 이름표는 **지운다** — 그대로 두면 `\교시\` 가 인쇄물에 남는다.
+    나머지 바이트는 건드리지 않으므로 표·병합·글꼴은 그대로다 (fill 과 같은 이유).
+    """
+    filled = wiped = 0
+    counter = [0]
+
+    def _sub_run(m):
+        nonlocal filled, wiped
+        # <hp:t> 안쪽 글자만 토큰 치환한다 (태그는 건드리지 않는다)
+        inner = saxutils.unescape(m.group(1))
+        out, last = [], 0
+        for tm, name in _walk_tokens(inner, counter):
+            out.append(inner[last:tm.start()])
+            val = values.get(name)
+            if val:
+                out.append(val)
+                filled += 1
+            else:
+                wiped += 1              # 값이 없으면 토큰만 사라진다
+            last = tm.end()
+        if not out:
+            return m.group(0)           # 채울 자리가 없던 조각 — 그대로 둔다
+        out.append(inner[last:])
+        return "<hp:t>%s</hp:t>" % saxutils.escape("".join(out))
+
+    with zipfile.ZipFile(src_hwpx) as zf:
+        rewritten = {}
+        for name in _section_names(zf):
+            xml = zf.read(name).decode("utf-8")
+            new_xml = RUN_RE.sub(_sub_run, xml)
+            if new_xml != xml:
+                rewritten[name] = new_xml.encode("utf-8")
+        with zipfile.ZipFile(dst_hwpx, "w") as out:
+            for item in zf.infolist():
+                data = rewritten.get(item.filename)
+                if data is None:
+                    data = zf.read(item.filename)
+                info = zipfile.ZipInfo(item.filename, date_time=item.date_time)
+                info.compress_type = item.compress_type
+                info.external_attr = item.external_attr
+                out.writestr(info, data)
+    return filled, wiped
+
+
+def to_named_markdown(slots, values=None, title="양식"):
+    """표의 내용을 글자로 — AI 에게 시킬 때 붙여넣는 형식."""
+    values = values or {}
+    lines = [f"# 양식: {title}", "#",
+             "# 아래 각 줄의 ':' 뒤를 채워서 그대로 돌려주세요.",
+             "# 이름은 바꾸지 마세요 — 이름으로 자리를 찾습니다.", ""]
+    for name, n in slots:
+        tail = f"   # {n}곳에 들어갑니다" if n > 1 else ""
+        lines.append(f"{name}: {values.get(name, '')}{tail}")
+    return "\n".join(lines)
+
+
+def parse_named_markdown(text):
+    """채워서 돌려받은 글자 → {이름: 값}. 주석(#)과 빈 줄은 무시."""
+    out = {}
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or ":" not in line:
+            continue
+        name, _, val = line.partition(":")
+        val = val.split("#")[0].strip()     # 꼬리 주석 제거
+        if name.strip():
+            out[name.strip()] = val
+    return out
 
 
 def unfilled_marks(hwpx_path):

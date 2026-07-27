@@ -14,9 +14,15 @@ hwp_engine(코어)이 '한글을 어떻게 조작하는가'를 맡는다면, 이
 
 import time
 
+import pathlib
+import shutil
+
 import applog
+import form_fill                    # 채울 자리 토큰 규칙(이름표 \학년\) 한 벌로
+import paths
 import hwp_engine
 import parser as md_parser          # MultiLine(한 칸에 여러 줄) 판별용
+import preview                      # 미리보기 그림 캐시
 from hwp_engine import (
     delete_selection, find_text, has_selection, insert_plain,
 )
@@ -168,6 +174,12 @@ def capture_fragment(dest_path):
     try:
         hwp.XHwpDocuments.Add(1)          # 1 = 새 탭
         hwp.HAction.Run("Paste")
+        # 옛 습관대로 홑 \ 를 쳤어도 저장물은 항상 새 문법(\\)이 되게.
+        # 임시 탭에서만 고치므로 사용자의 원본 문서는 그대로다.
+        try:
+            normalize_marks_to_pairs()
+        except Exception as e:
+            applog.exc("자리 표시 정리 실패 — 옛 문법 그대로 저장 (읽기는 됨)", e)
         hwp.save_as(str(dest_path), format="HWP")
         try:
             preview = hwp.GetTextFile("TEXT", "") or ""
@@ -366,6 +378,9 @@ def fill_slots(anchor, fills, end_para=None, slot_count=None):
     filled = 0
     used = 0
     want = sum(1 for v in fills if v is not None)
+    # 새 문법 토큰(\이름\ · \\)을 홑 \ 로 줄인다 — 그 아래 채우기 코드는
+    # 옛 모습(홑 \ 나열)만 알면 된다. 채우는 길을 둘로 가르지 않는 핵심 장치.
+    normalize_slot_tokens(anchor, end_para)
     hwp.SetPos(*anchor)
     for value in fills:
         if not find_text("\\"):
@@ -414,6 +429,60 @@ def fill_slots(anchor, fills, end_para=None, slot_count=None):
     return filled, want
 
 
+def normalize_slot_tokens(anchor, end_para=None, limit=500):
+    r"""anchor~end_para 범위의 새 문법 토큰을 **홑 역슬래시로 줄인다**.
+
+        \학년\  →  \        \\  →  \
+
+    왜 줄이나 (2026-07-27 문법 확정): 채우기·청소 코드는 전부 "홑 \ 를
+    순서대로 찾는다"로 짜여 있고 검증돼 있다. 삽입 직후 문서를 그 모습으로
+    만들어 두면 아래 코드는 한 줄도 안 바뀐다. 이름을 안 줄이면 `\학년\` 의
+    앞쪽 \ 만 값으로 바뀌어 '학년' 이 글자로 남는 사고가 난다 (실측 시나리오).
+
+    이름 정보는 잃지 않는다 — 물감을 저장할 때 slot_names 로 이미 적어 둔다.
+    반환: 줄인 토큰 수.
+    """
+    hwp = _h()
+    # 문서에 실제로 있는 이름표만 찾는다 (없는 이름을 찾느라 헤매지 않게)
+    names = []
+    try:
+        text = hwp.GetTextFile("TEXT", "") or ""
+        seen = set()
+        for m in form_fill.TOKEN_RE.finditer(text.replace(BODY_ANCHOR, "")):
+            if m.group(1) and m.group(1) not in seen:
+                seen.add(m.group(1))
+                names.append(m.group(1))
+    except Exception as e:
+        applog.exc("이름표 목록 뽑기 실패 — \\\\ 쌍만 줄입니다", e)
+    changed = 0
+    for tok in [f"\\{n}\\" for n in names] + ["\\\\"]:
+        hwp.SetPos(*anchor)
+        while changed < limit and find_text(tok):
+            if _before_anchor(anchor) or _beyond(end_para):
+                break
+            delete_selection()
+            insert_plain("\\")
+            changed += 1
+    hwp.SetPos(*anchor)
+    return changed
+
+
+def count_slots_in_text(text):
+    r"""글자 안의 채울 자리 개수.
+
+    본문 시작 표시(\본문\)는 채울 빈칸이 아니라 세지 않는다.
+    이름표(`\학년\`)는 **역슬래시가 둘이어도 자리 하나**다 (2026-07-27) —
+    그냥 세면 이름표 하나가 빈칸 2개로 잡혀 개수가 부풀려진다.
+    """
+    rest = (text or "").replace(BODY_ANCHOR, "")
+    n = 0
+    for m in form_fill.TOKEN_RE.finditer(rest):
+        if m.group(1) in form_fill.RESERVED_NAMES:
+            continue
+        n += 1
+    return n
+
+
 def count_slots_in_file(path):
     r"""hwp 파일 안의 빈칸(\) 개수를 센다 (양식 등록 시 안내용).
 
@@ -425,9 +494,27 @@ def count_slots_in_file(path):
         hwp.XHwpDocuments.Add(1)          # 1 = 새 탭으로 열기
         hwp.open(str(path))
         text = hwp.GetTextFile("TEXT", "") or ""
-        # 본문 시작 표시(\본문\)는 채울 빈칸이 아니다 — 세기 전에 걷어낸다.
-        # 안 그러면 역슬래시 2개가 빈칸으로 계산돼 개수가 부풀려진다.
-        return text.replace(BODY_ANCHOR, "").count("\\")
+        return count_slots_in_text(text)
+    finally:
+        try:
+            if hwp.XHwpDocuments.Count > saved:
+                hwp.XHwpDocuments.Active_XHwpDocument.Close(isDirty=False)
+        except Exception as e:
+            applog.exc("빈칸 세기용 임시 문서 닫기 실패 — 창이 남아 있을 수 있음", e)
+
+
+def slot_tokens_in_file(path):
+    r"""hwp 파일 안의 자리 토큰 목록 (이름 없는 자리는 ""). 양식 등록용.
+
+    count_slots_in_file 과 같은 방식으로 별도 탭에서 열었다 닫는다.
+    """
+    hwp = _h()
+    saved = hwp.XHwpDocuments.Count
+    try:
+        hwp.XHwpDocuments.Add(1)          # 1 = 새 탭으로 열기
+        hwp.open(str(path))
+        text = (hwp.GetTextFile("TEXT", "") or "").replace(BODY_ANCHOR, "")
+        return form_fill.token_list(text)
     finally:
         try:
             if hwp.XHwpDocuments.Count > saved:
@@ -551,6 +638,146 @@ def open_template_copy(path, note_lines=None):
         hwp.MoveDocBegin()
 
 
+def open_form_copy(path, note_lines=None):
+    r"""양식 파일의 **사본**을 열어 고치게 한다 (2026-07-27).
+
+    템플릿처럼 새 탭에 insert 하지 않는 이유: 양식은 용지·여백·머리말까지가
+    내용이라 insert 로는 그것들이 안 따라온다. 그렇다고 원본을 직접 열면 한글이
+    그 파일을 붙들어(WinError 32 계보) 덮어쓰기가 막힌다. 그래서 사본을 연다 —
+    저장은 어차피 새 이름의 조각 파일로 하므로 원본 잠금과 무관하다.
+    """
+    hwp = _h()
+    work = paths.data_dir() / "양식작업"
+    work.mkdir(parents=True, exist_ok=True)
+    copy_path = work / f"편집중_{pathlib.Path(path).name}"
+    shutil.copy2(str(path), str(copy_path))
+    hwp.FileNew()
+    hwp.open(str(copy_path))
+    if note_lines:
+        _insert_edit_note(note_lines)
+        hwp.MoveDocBegin()
+    return copy_path
+
+
+def build_clean_preview(src_path, item_id):
+    r"""자리표시를 걷어낸 모습으로 미리보기 그림을 만든다 (한글 필요).
+
+    hwp 안의 PrvImage 는 저장 당시 화면이라 빈칸 `\` 가 그대로 찍혀 있다.
+    그런데 그 표시는 인쇄물에 안 나오는 것이라(변환 때 내용으로 바뀌거나
+    strip_marks 로 걷힌다) 미리보기에 보이면 물감이 지저분해 보인다.
+    사본을 열어 표시를 지우고 **한 번 저장**하면 한글이 그 시점 화면으로
+    PrvImage 를 새로 넣어 준다 — 그 그림만 png 로 빼내 캐시에 둔다.
+
+    **물감을 저장하는 순간에 부른다** (사용자 결정 2026-07-27) — 나중에
+    '다듬기' 버튼을 눌러 몰아서 하는 방식은 손이 한 번 더 가고, 안 누르면
+    지저분한 그림이 계속 보인다. 저장 시점에는 한글이 이미 연결돼 있어
+    비용도 작다. 원본 조각은 건드리지 않고, 실패해도 등록 자체는 성공이다.
+    """
+    hwp = _h()
+    work = paths.data_dir() / "미리보기작업"
+    work.mkdir(parents=True, exist_ok=True)
+    tmp = work / f"_prv_{item_id}.hwp"
+    saved = hwp.XHwpDocuments.Count
+    try:
+        hwp.XHwpDocuments.Add(1)          # 1 = 새 탭
+        hwp.insert_file(str(src_path), keep_section=0, keep_charshape=1,
+                        keep_parashape=1, keep_style=1)
+        strip_marks()
+        hwp.save_as(str(tmp), format="HWP")
+    except Exception as e:
+        applog.exc(f"미리보기 다듬기 실패 — {src_path}", e)
+        return False
+    finally:
+        try:
+            if hwp.XHwpDocuments.Count > saved:
+                hwp.XHwpDocuments.Active_XHwpDocument.Close(isDirty=False)
+        except Exception as e:
+            applog.exc("미리보기용 임시 탭 닫기 실패", e)
+    ok = preview.save_cache(item_id, tmp)
+    try:
+        tmp.unlink(missing_ok=True)
+    except OSError:
+        pass                             # 남아도 무해하다
+    return ok
+
+
+def insert_template_filled(path, fills, slot_count=None):
+    r"""템플릿 조각을 커서 자리에 꽂고, 자리를 fills 로 순서대로 채운다.
+
+    이름 있는 템플릿의 '채우기 표'(form_table_ui)가 쓴다. 채우는 일 자체는
+    마크다운 변환과 **같은 fill_slots** 라서 결과가 어긋날 수 없다.
+    반환: (채운 수, 채우려던 수).
+    """
+    hwp = _h()
+    anchor = hwp.GetPos()
+    end_para = measure_insert_span(anchor, lambda: insert_fragment(path))
+    filled, want = fill_slots(anchor, fills, end_para=end_para,
+                              slot_count=slot_count)
+    strip_slot_markers(anchor, end_para,
+                       max_delete=None if slot_count is None
+                       else max(int(slot_count) - filled, 0))
+    return filled, want
+
+
+def normalize_marks_to_pairs():
+    r"""지금 문서의 홑 자리 표시(\)를 쌍(\\)으로 정리한다. 반환: 정리한 개수.
+
+    2026-07-27 문법 확정 — 자리는 \ 로 열고 \ 로 닫는다. 옛 습관대로 홑 \ 를
+    쳐도 저장할 때 여기서 고쳐 준다.
+
+    순서가 생명이다: 이름표(\학년\)와 기존 쌍(\\)을 먼저 다른 글자로 피신시킨
+    뒤 홑 \ 를 불리고, 마지막에 되돌린다 — 안 그러면 \학년\ 이 \\학년\\ 으로
+    불어난다. 피신 글자(⟪…⟫)는 시험지에 나올 수 없는 조합이다.
+    """
+    hwp = _h()
+    try:
+        text = hwp.GetTextFile("TEXT", "") or ""
+    except Exception:
+        return 0
+    singles = sum(1 for m in form_fill.TOKEN_RE.finditer(text)
+                  if m.group(1) is None and len(m.group(0)) == 1)
+    if not singles:
+        return 0
+    # \본문\ 포함 — 보호하지 않으면 그 안의 \ 두 개가 홑으로 취급돼 불어난다
+    names = []
+    for m in form_fill.TOKEN_RE.finditer(text):
+        if m.group(1) and m.group(1) not in names:
+            names.append(m.group(1))
+    PAIR = "⟪자리쌍⟫"
+    for n in names:
+        hwp_engine.replace_all(f"\\{n}\\", f"⟪이름:{n}⟫")
+    hwp_engine.replace_all("\\\\", PAIR)
+    hwp_engine.replace_all("\\", "\\\\")
+    hwp_engine.replace_all(PAIR, "\\\\")
+    for n in names:
+        hwp_engine.replace_all(f"⟪이름:{n}⟫", f"\\{n}\\")
+    # 검산 — 홑 \ 가 남아 있으면 기록만 남긴다 (읽기는 옛 문법도 되므로 무해)
+    try:
+        after = hwp.GetTextFile("TEXT", "") or ""
+        left = sum(1 for m in form_fill.TOKEN_RE.finditer(after)
+                   if m.group(1) is None and len(m.group(0)) == 1)
+        if left:
+            applog.warn(f"자리 표시 정리 뒤에도 홑 \\ {left}개 남음 (읽기는 됨)")
+    except Exception:
+        pass
+    return singles
+
+
+def save_active_as(dest_path):
+    """지금 한글에 떠 있는 문서를 통째로 저장한다. 반환: 본문 글자(미리보기용)."""
+    hwp = _h()
+    try:
+        normalize_marks_to_pairs()      # 양식 '내용 고치기' 저장도 새 문법으로
+    except Exception as e:
+        applog.exc("자리 표시 정리 실패 — 옛 문법 그대로 저장 (읽기는 됨)", e)
+    hwp.save_as(str(dest_path), format="HWP")
+    try:
+        return hwp.GetTextFile("TEXT", "") or ""
+    except Exception as e:
+        applog.exc("저장한 문서의 글자 읽기 실패 — 미리보기 없이 저장", e)
+        return ""
+
+
 def select_all():
     """지금 문서 전체 선택 — '꺼내서 고치기'의 덮어쓰기 캡처가 쓴다."""
     _h().HAction.Run("SelectAll")
@@ -608,12 +835,25 @@ def strip_marks(limit=500):
     여기에 내용이 들어간다). 그런데 양식을 그냥 열어 쓸 때는 그 표시가 그대로
     인쇄물에 남았다 (사용자 지적 2026-07-26).
     \본문\ 을 먼저 지우는 이유: 그 안에도 역슬래시가 둘 있어, 빈칸부터 지우면
-    '본문' 이라는 글자만 남는다.
+    '본문' 이라는 글자만 남는다. **이름표(`\학년\`)도 같은 이유로 먼저 지운다**
+    (2026-07-27) — 홑 역슬래시부터 지우면 '학년' 이라는 글자가 문서에 남는다.
     반환: 지운 개수.
     """
     hwp = _h()
     removed = 0
-    for target in (BODY_ANCHOR, "\\"):
+    # 문서에 실제로 있는 이름표를 먼저 뽑는다 (없는 것을 찾느라 헤매지 않게)
+    names = []
+    try:
+        text = hwp.GetTextFile("TEXT", "") or ""
+        seen = set()
+        for m in form_fill.TOKEN_RE.finditer(text.replace(BODY_ANCHOR, "")):
+            tok = m.group(0)
+            if m.group(1) and tok not in seen:
+                seen.add(tok)
+                names.append(tok)
+    except Exception as e:
+        applog.exc("이름표 목록 뽑기 실패 — 홑 역슬래시만 걷어냅니다", e)
+    for target in (BODY_ANCHOR, *names, "\\\\", "\\"):
         hwp.MoveDocBegin()
         while removed < limit and find_text(target):
             delete_selection()
@@ -805,6 +1045,7 @@ def run_block(block, template_path_fn=None, form_path_fn=None,
         # 팔레트로 넣을 땐 채울 내용이 없으므로, 삽입한 범위 안의 빈칸만 청소한다.
         # slot_count 를 알면 그 개수만큼만 지운다 (모르면 문단 범위로만 제한).
         end_para = measure_insert_span(anchor, lambda: insert_fragment(path))
+        normalize_slot_tokens(anchor, end_para)   # \이름\·\\ → \ (청소 전에)
         strip_slot_markers(anchor, end_para,
                            max_delete=slot_count_fn(block) if slot_count_fn else None)
         return True, "템플릿 삽입"
