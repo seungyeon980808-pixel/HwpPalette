@@ -133,12 +133,29 @@ def ensure_visible():
     return bool(_hwp_window_handles())
 
 
-def window_is_visible():
-    """연결된 인스턴스의 창이 지금 화면에 보이는가.
+def visible_window_handles():
+    r"""지금 화면에 보이는 한글 창 핸들 집합.
 
-    '고치기'에 들어가기 **전에** 재 둔다 — 우리가 켠 창인지 알아야 끝난 뒤
-    원래대로 되돌릴 수 있다 (hide_window_if_idle 참고).
+    **연결하기 전에도 잴 수 있다** — 창 클래스명으로 훑을 뿐 COM 을 쓰지
+    않기 때문. '고치기'에 들어가기 전에 재 두면, 끝난 뒤 우리가 띄우거나
+    켠 창인지 핸들로 정확히 가릴 수 있다.
+
+    왜 `window_is_visible()` 로는 부족한가 (실측 2026-07-27, 사용자 지적
+    "한글 창이 없는 상태에서도 빈 창이 안 사라진다"): 그 함수는 **연결된**
+    인스턴스를 보므로 connect() 뒤에야 쓸 수 있다. 그런데 한글이 아예 없으면
+    connect() 가 한글을 **새로 띄우고**, 그 창은 처음부터 보이는 상태라
+    "원래 보이던 창"으로 오인돼 정리 대상에서 빠졌다.
     """
+    return set(_hwp_window_handles())
+
+
+def connected_hwnd():
+    """연결된 인스턴스의 창 핸들 (없으면 None). 창 정리 판단에 쓴다."""
+    return _connected_hwnd()
+
+
+def window_is_visible():
+    """연결된 인스턴스의 창이 지금 화면에 보이는가."""
     win = _active_window_com()
     if win is None:
         return False

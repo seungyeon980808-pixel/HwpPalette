@@ -1468,7 +1468,7 @@ class _RecaptureCoach(tk.Toplevel):
 
     def __init__(self, master, item, cat="템플릿", on_saved=None,
                  master_was_topmost=False, session=None,
-                 hwp_was_visible=True):
+                 windows_before=None):
         super().__init__(master)
         self._manager = master
         self._item = item
@@ -1478,8 +1478,9 @@ class _RecaptureCoach(tk.Toplevel):
         # 펼쳐 준 문서를 그대로 들고 있는다 — 저장·닫기가 '활성 문서'라는
         # 가정에 기대지 않게 (engine_library.EditSession 머리말 참고)
         self._session = session
-        # 고치려고 **우리가 켠 창**인지 — 끝나면 원래대로 되돌리기 위함
-        self._hwp_was_visible = hwp_was_visible
+        # 고치기 **전에** 보이던 한글 창 핸들 — 끝난 뒤 '우리가 띄운 창'인지
+        # 가리는 데 쓴다 (edit_content 머리말 참고)
+        self._windows_before = windows_before or set()
         self.title(appinfo.WINDOW_TITLE)
         self.configure(bg=BG)
         self.resizable(False, False)
@@ -1509,14 +1510,15 @@ class _RecaptureCoach(tk.Toplevel):
 
     def _close(self):
         """되돌리고 닫는다 — 취소·Esc·X·덮어쓰기 완료가 전부 이 길을 거친다."""
-        # 고치려고 우리가 켠 한글 창이면 원래대로 되돌린다 (사용자 지적
-        # 2026-07-27: "수정하고 닫은 다음에 빈 문서 하나가 남는다"). 사용자가
+        # 고치려고 **우리가 띄우거나 켠** 한글 창이면 원래대로 되돌린다
+        # (사용자 지적 2026-07-27: "수정하고 닫은 다음에 빈 문서 하나가
+        # 남는다", "한글 창이 없는 상태에서도 안 사라진다").
+        # 고치기 전부터 보이던 창이면 사용자 것이라 손대지 않고, 사용자가
         # 쓰던 문서가 하나라도 있으면 hide_window_if_idle 이 알아서 비껴간다.
-        if not self._hwp_was_visible:
-            try:
-                engine_library.hide_window_if_idle()
-            except Exception as e:
-                applog.exc("한글 창 되돌리기 실패 (빈 창이 남을 수 있음)", e)
+        try:
+            engine_library.hide_window_if_ours(self._windows_before)
+        except Exception as e:
+            applog.exc("한글 창 되돌리기 실패 (빈 창이 남을 수 있음)", e)
         if self._master_was_topmost:
             try:
                 self._manager.attributes("-topmost", True)
@@ -2151,15 +2153,17 @@ def edit_content(master, cat, item, on_saved=None):
     템플릿은 새 탭에 펼치고(원본 잠금 회피), 양식은 사본을 연다
     (용지·여백·머리말이 내용의 일부라 insert 로는 안 따라온다).
     """
+    # 한글에 **손대기 전에** 보이는 창 목록을 재 둔다 (사용자 지적 2026-07-27:
+    # "한글 창이 없는 상태에서도 빈 창이 안 사라진다"). connect() 는 한글이
+    # 없으면 새로 띄우는데, 그 창은 처음부터 보이는 상태라 연결 뒤에 재면
+    # "원래 있던 창"으로 오인된다. 그래서 _ensure_hwp 보다 먼저 잰다.
+    windows_before = hwp_engine.visible_window_handles()
     if not _ensure_hwp(master):
         return False
     # 화면 목록이 들고 있던 item 은 **옛 파일명**일 수 있다 (2026-07-27).
     # 덮어쓰기는 조각을 새 uuid 파일로 갈아치우고 옛 파일을 지우므로,
     # 갱신 전 목록으로 펼치면 이미 없는 파일을 가리켜 빈 탭이 떴다.
     item = library.find_by_id(cat, item.get("id")) or item
-    # 고치기에 들어가기 **전에** 한글 창이 보였는지 재 둔다 — 우리가 켠
-    # 창이면 끝난 뒤 되돌려야 빈 한글 창이 남지 않는다 (_close 참고).
-    hwp_was_visible = hwp_engine.window_is_visible()
     try:
         if cat == "양식":
             session = engine_library.open_form_copy(
@@ -2187,7 +2191,7 @@ def edit_content(master, cat, item, on_saved=None):
     hwp_engine.bring_to_front()
     _RecaptureCoach(master, item, cat=cat, on_saved=on_saved,
                     master_was_topmost=master_was_topmost, session=session,
-                    hwp_was_visible=hwp_was_visible)
+                    windows_before=windows_before)
     return True
 
 

@@ -882,6 +882,23 @@ def open_form_copy(path, note_lines=None):
     return EditSession(doc, temp_path=copy_path)
 
 
+def hide_window_if_ours(windows_before):
+    r"""고치려고 **우리가 띄우거나 켠** 한글 창이면 되돌린다. 반환: 숨겼는가.
+
+    windows_before: 고치기에 손대기 **전에** 잰 보이는 창 핸들 집합
+    (`hwp_engine.visible_window_handles()`).
+
+    핸들로 가리는 이유 (실측 2026-07-27): "연결된 창이 보이는가"로 판단하면
+    한글이 아예 없던 경우를 놓친다 — connect() 가 한글을 새로 띄우고 그 창은
+    처음부터 보이는 상태라 '원래 있던 창'으로 오인된다. 고치기 전 핸들 목록에
+    없던 창이면 우리가 만든 것이다.
+    """
+    hwnd = hwp_engine.connected_hwnd()
+    if hwnd is not None and hwnd in (windows_before or set()):
+        return False                # 고치기 전부터 보이던 창 — 사용자 것이다
+    return hide_window_if_idle()
+
+
 def hide_window_if_idle():
     r"""한글에 **빈 무제 문서 하나만** 남았으면 창을 숨긴다. 반환: 숨겼는가.
 

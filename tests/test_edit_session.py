@@ -343,6 +343,52 @@ class HideWindowIfIdleTest(unittest.TestCase):
         spy.assert_not_called()
 
 
+class HideWindowIfOursTest(unittest.TestCase):
+    r"""우리가 띄운 창만 되돌린다 (2026-07-27).
+
+    사용자 지적: "한글 창이 원래 없던 상태에서도 빈 창이 안 사라진다."
+    실측 원인: '연결된 창이 보이는가'로 판단했더니, 한글이 아예 없을 때
+    connect() 가 **새로 띄운** 창이 처음부터 보이는 상태라 '원래 있던 창'으로
+    오인돼 정리에서 빠졌다. 고치기 **전에** 잰 창 핸들 목록과 비교해야 한다.
+    """
+
+    def tearDown(self):
+        mock.patch.stopall()
+
+    def _arrange(self, hwnd):
+        mock.patch.object(engine_library.hwp_engine, "connected_hwnd",
+                          return_value=hwnd).start()
+        return mock.patch.object(engine_library, "hide_window_if_idle",
+                                 return_value=True).start()
+
+    def test_한글이_아예_없던_경우_되돌린다(self):
+        """핵심 회귀 — 고치기 전 보이는 창이 하나도 없었다."""
+        spy = self._arrange(1234)
+        self.assertTrue(engine_library.hide_window_if_ours(set()))
+        spy.assert_called_once()
+
+    def test_숨어_있던_경우_되돌린다(self):
+        spy = self._arrange(1234)
+        self.assertTrue(engine_library.hide_window_if_ours(set()))
+        spy.assert_called_once()
+
+    def test_고치기_전부터_보이던_창은_건드리지_않는다(self):
+        spy = self._arrange(1234)
+        self.assertFalse(engine_library.hide_window_if_ours({1234, 5678}))
+        spy.assert_not_called()
+
+    def test_다른_한글_창만_보였다면_우리_창은_되돌린다(self):
+        """사용자의 다른 한글은 그대로 두고, 우리가 켠 것만 정리한다."""
+        spy = self._arrange(1234)
+        self.assertTrue(engine_library.hide_window_if_ours({5678}))
+        spy.assert_called_once()
+
+    def test_핸들을_모르면_판단은_내용에_맡긴다(self):
+        spy = self._arrange(None)
+        engine_library.hide_window_if_ours({5678})
+        spy.assert_called_once()
+
+
 class EditSessionTest(unittest.TestCase):
 
     def test_사용자가_이미_닫았어도_오류로_보지_않는다(self):
