@@ -1274,7 +1274,7 @@ class LibraryManager(tk.Toplevel):
         if cat in ("템플릿", "양식"):
             (Popover(self, self.act_edit)
              .add("이름·라벨 수정", lambda: self._edit(cat, item))
-             .add("내용 고치기  (한글에 펼쳐서 수정)",
+             .add("양식 수정  (한글에 펼쳐서)",
                   lambda: edit_content(self, cat, item))
              .show())
             return
@@ -1301,23 +1301,21 @@ class LibraryManager(tk.Toplevel):
         cat = self._sel["cat"]
         pop = Popover(self, self.act_more)
         if cat in ("템플릿", "양식"):
-            pop.add("내용 고치기  (한글에 펼쳐서 수정)",
+            pop.add("양식 수정  (한글에 펼쳐서)",
                     lambda: edit_content(self, cat, self._sel["item"]))
             pop.separator()
         pop.add("AI 프롬프트 복사  (빈칸을 AI 에게 채우게)",
                 self._copy_ai_prompt)
         pop.show()
 
-    # 고치는 동안 한글 문서 맨 위에 붙는 안내 (저장할 때 자동으로 빠진다).
+    # 문서 안 안내는 **없앴다** (사용자 결정 2026-07-28).
     #
-    # **한 줄로 줄였다** (사용자 결정 2026-07-27): 7줄 안내가 문단 8개를
-    # 밀어 넣어, 한 쪽을 채운 템플릿이 편집 화면에서 **다음 쪽으로 넘어가**
-    # 보였다. 자세한 설명은 이제 옆의 '고치는 중' 안내(코치 창·미리보기 판)가
-    # 말한다 — 문서 안에는 "여기가 편집본"이라는 표시 하나면 된다.
-    _EDIT_NOTE = [
-        "빈칸은 \\ · 이름 빈칸은 \\이름\\ — 다 고쳤으면 [이 내용으로 덮어쓰기] "
-        "(이 줄은 저장 때 빠집니다)",
-    ]
+    # 내력: 7줄 → 1줄 → 0줄. 문서 맨 위에 빨간 글씨로 넣던 것인데
+    #   · 내용을 아래로 밀어 한 쪽짜리 템플릿이 두 쪽이 되고
+    #   · 걷어낼 때 접힌 줄의 꼬리('다.')가 남아 저장물을 더럽혔다
+    # 고치는 법은 이제 프로그램 쪽(미리보기 판 아래·코치 창)에 적는다 —
+    # 문서는 깨끗하고, 설명은 고치는 내내 눈에 보인다.
+    _EDIT_NOTE = []
 
     def _extract_edit(self):
         r"""꺼내서 고치기 (기획 15번) — 실제 일은 모듈 함수 edit_content 가 한다.
@@ -1558,40 +1556,59 @@ class _RecaptureCoach(tk.Toplevel):
         self.configure(bg=BG)
         self.resizable(False, False)
         self.attributes("-topmost", True)
-        self.bind("<Escape>", lambda e: self._close())
+        self.bind("<Escape>", lambda e: self._close(discard_session=True))
         # X 로 닫아도 topmost 를 되돌려야 한다 — 기본 동작(그냥 destroy)에
         # 맡기면 master 가 계속 꺼진 채로 남는다.
-        self.protocol("WM_DELETE_WINDOW", self._close)
+        self.protocol("WM_DELETE_WINDOW",
+                      lambda: self._close(discard_session=True))
         tk.Label(self, text=f"'{item['name']}' 고치는 중",
                  font=(FONT, theme.fs(11), "bold"), bg=BG, fg=TEXT).pack(
                  anchor="w", padx=16, pady=(14, 2))
-        # 문서 안 안내를 한 줄로 줄인 대신, 자세한 설명은 이 창이 말한다
-        # (사용자 결정 2026-07-27 — 안내 7줄이 문서를 다음 쪽으로 밀었다)
+        # 고치는 법은 **여기**에 적는다 (사용자 결정 2026-07-28) — 문서 안
+        # 빨간 안내는 없앴다 (내용을 밀어내고 잔재를 남겼다)
         tk.Label(self,
                  text=f"한글에 {cat}을(를) 펼쳐 두었습니다. 자유롭게 고치세요.\n"
-                      "· 빈칸은 \\ 하나, 이름 있는 빈칸은 \\학년\\ 처럼 적습니다\n"
-                      "· 채워지는 순서는 위→아래, 왼쪽→오른쪽입니다\n"
-                      "· 이름표는 값으로 통째로 바뀝니다 — 단위 글자는 밖에 "
+                      "· 빈칸은 역슬래시 하나(\\) — 나중에 내용 한 줄이 들어갈 "
+                      "자리입니다\n"
+                      "· 이름을 붙이려면 \\학년\\ 처럼 — 채우기 표에 그 이름이 "
+                      "나옵니다\n"
+                      "· 채워지는 순서는 위에서 아래, 왼쪽에서 오른쪽입니다\n"
+                      "· 이름표는 값으로 통째로 바뀌니 단위 글자는 밖에 "
                       "(\\월\\월)\n"
-                      "고친 뒤 [이 내용으로 덮어쓰기] — 펼쳐 준 그 탭이 통째로 "
-                      "저장되고\n저장이 끝나면 그 탭은 알아서 닫힙니다.",
+                      "[덮어씌워 저장] 을 누르면 펼쳐 준 그 탭이 통째로 저장되고 "
+                      "탭은 닫힙니다.\n[취소] 하면 고치던 탭을 그냥 버립니다.",
                  font=(FONT, theme.fs(FS["sub"])), bg=BG, fg=MUTED,
                  justify="left").pack(anchor="w", padx=16, pady=(0, 10))
         foot = tk.Frame(self, bg=BG, padx=16, pady=12)
         foot.pack(fill="x")
-        _dialog_btn(foot, "이 내용으로 덮어쓰기", self._overwrite,
+        _dialog_btn(foot, "덮어씌워 저장", self._overwrite,
                     primary=True).pack(side="right")
-        _dialog_btn(foot, "취소", self._close).pack(side="right", padx=(0, 6))
+        _dialog_btn(foot, "취소",
+                    lambda: self._close(discard_session=True)
+                    ).pack(side="right", padx=(0, 6))
         self.update_idletasks()
         self.geometry(f"+{master.winfo_rootx()+40}+{master.winfo_rooty()+80}")
 
-    def _close(self):
-        """되돌리고 닫는다 — 취소·Esc·X·덮어쓰기 완료가 전부 이 길을 거친다."""
+    def _close(self, discard_session=False):
+        """되돌리고 닫는다 — 취소·Esc·X·저장 완료가 전부 이 길을 거친다.
+
+        discard_session=True 면 고치던 탭까지 버린다 (취소·Esc·X).
+        저장 경로는 이미 그 탭을 닫았으므로 False 로 들어온다.
+        """
+        if discard_session and self._session is not None:
+            # 취소해도 편집 탭이 남으면 한글 창이 그대로 떠 있다 (사용자 지적
+            # 2026-07-28: "취소를 해버리면 한글 창이 그대로 남아 있습니다").
+            # 문서가 하나라도 있으면 hide_window_if_idle 이 비껴가기 때문.
+            try:
+                self._session.close()
+                self._session.cleanup()
+            except Exception as e:
+                applog.exc("취소 시 고치던 탭 닫기 실패", e)
+            self._session = None
         # 고치려고 **우리가 띄우거나 켠** 한글 창이면 원래대로 되돌린다
         # (사용자 지적 2026-07-27: "수정하고 닫은 다음에 빈 문서 하나가
         # 남는다", "한글 창이 없는 상태에서도 안 사라진다").
-        # 고치기 전부터 보이던 창이면 사용자 것이라 손대지 않고, 사용자가
-        # 쓰던 문서가 하나라도 있으면 hide_window_if_idle 이 알아서 비껴간다.
+        # 고치기 전부터 보이던 창이면 사용자 것이라 손대지 않는다.
         try:
             engine_library.hide_window_if_ours(self._windows_before)
         except Exception as e:
@@ -2139,14 +2156,10 @@ def export_palette_flow(parent, tab):
     return True
 
 
-# 양식을 고칠 때 문서 맨 위에 붙는 안내 (저장할 때 자동으로 빠진다).
-# 한 줄로 줄였다 (사용자 결정 2026-07-27) — 6줄 안내가 문서를 밀어
-# 한 쪽짜리 양식이 편집 화면에서 두 쪽이 됐다. 자세한 설명은 '고치는 중'
-# 안내가 말한다. 양식은 여백까지가 내용이라 여백은 건드리지 않는다.
-_FORM_EDIT_NOTE = [
-    "채울 자리는 \\ · 이름 자리는 \\학년\\ 처럼 — 다 고쳤으면 "
-    "[이 내용으로 덮어쓰기] (이 줄은 저장 때 빠집니다)",
-]
+# 양식도 문서 안 안내를 없앴다 (사용자 결정 2026-07-28) —
+# LibraryManager._EDIT_NOTE 머리말의 이유가 그대로 적용된다.
+# 양식은 여백까지가 내용이라 여백도 건드리지 않는다.
+_FORM_EDIT_NOTE = []
 
 
 def edit_item_dialog(master, cat, item, on_saved=None):
@@ -2165,7 +2178,7 @@ def edit_item_dialog(master, cat, item, on_saved=None):
     except Exception:
         pass
     if cat in ("템플릿", "양식"):
-        _dialog_btn(meta.foot, "내용 고치기…",
+        _dialog_btn(meta.foot, "양식 수정",
                     lambda: (meta.destroy(),
                              edit_content(master, cat, item, on_saved))
                     ).pack(side="left")

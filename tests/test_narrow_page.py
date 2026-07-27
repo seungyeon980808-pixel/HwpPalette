@@ -66,21 +66,40 @@ class NarrowPageWiringTest(unittest.TestCase):
             self.assertFalse(engine_library.apply_narrow_page())
 
 
-class EditNoteLengthTest(unittest.TestCase):
-    r"""안내문은 **1줄** — 다시 자라면 편집 화면이 또 다음 쪽으로 넘어간다."""
+class EditNoteRemovedTest(unittest.TestCase):
+    r"""문서 안 안내는 **없다** (사용자 결정 2026-07-28).
 
-    def test_템플릿_안내문은_한_줄(self):
-        self.assertEqual(len(library_ui.LibraryManager._EDIT_NOTE), 1,
-                         "안내문이 다시 자랐다 — 자세한 설명은 '고치는 중' "
-                         "판·코치 창으로 보낼 것")
+    내력: 7줄 → 1줄 → 0줄. 문서를 아래로 밀어 한 쪽짜리가 두 쪽이 됐고,
+    걷어낼 때 접힌 줄의 꼬리가 남아 저장물을 더럽혔다. 고치는 법은 이제
+    프로그램 쪽(미리보기 판 아래·코치 창)에 적는다.
+    """
 
-    def test_양식_안내문은_한_줄(self):
-        self.assertEqual(len(library_ui._FORM_EDIT_NOTE), 1)
+    def test_템플릿_안내문은_비어_있다(self):
+        self.assertEqual(library_ui.LibraryManager._EDIT_NOTE, [],
+                         "문서 안 안내가 되살아났다 — 설명은 프로그램 쪽에")
 
-    def test_안내문에_덮어쓰기_안내는_남아_있다(self):
-        # 줄이더라도 "무엇을 눌러야 저장되는지"는 문서에서 안 사라져야 한다
-        self.assertIn("덮어쓰기", library_ui.LibraryManager._EDIT_NOTE[0])
-        self.assertIn("덮어쓰기", library_ui._FORM_EDIT_NOTE[0])
+    def test_양식_안내문은_비어_있다(self):
+        self.assertEqual(library_ui._FORM_EDIT_NOTE, [])
+
+    def test_안내가_없으면_문서에_아무것도_안_넣는다(self):
+        r"""빈 목록을 그대로 넘겨도 _insert_edit_note 가 불리면 안 된다."""
+        src = pathlib.Path(__file__).with_name("_note_test.hwp")
+        src.write_bytes(b"fake")
+        try:
+            fake = FakeHwp()
+            fake.body = "표 내용"
+            fake.ctrls = ["secd", "cold", "tbl"]
+            fake.insert_file = lambda *a, **kw: True
+            _install(fake)
+            mock.patch.object(engine_library, "apply_narrow_page",
+                              return_value=True).start()
+            spy = mock.patch.object(engine_library, "_insert_edit_note").start()
+            engine_library.open_template_copy(
+                src, library_ui.LibraryManager._EDIT_NOTE)
+            spy.assert_not_called()
+        finally:
+            mock.patch.stopall()
+            src.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

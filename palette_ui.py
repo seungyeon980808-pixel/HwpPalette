@@ -661,7 +661,7 @@ class SettingsWindow(tk.Toplevel):
                     zone_bg=CARD).fit(pad_x=12, pad_y=5).pack(
                     side="right", padx=(0, 6))
         if cat in ("템플릿", "양식"):
-            RoundButton(acts, text="내용 고치기…",
+            RoundButton(acts, text="양식 수정",
                         command=lambda: self._start_content_edit(cat, item),
                         bg=SOFT, fg=TEXT, radius=theme.RADIUS["ctl"],
                         font=(FONT, theme.fs(FS["body"])), outline="",
@@ -717,16 +717,23 @@ class SettingsWindow(tk.Toplevel):
                       "안 보이면 작업 표시줄에서 한글을 눌러 주세요.",
                  font=(FONT, theme.fs(FS["sub"])), bg=CARD, fg=MUTED,
                  justify="left").pack(anchor="nw", padx=SP["m"], pady=SP["m"])
-        # 버튼 줄(항상 보이는 아래 고정 영역)에 안내 한 줄 + 저장/취소
+        # 고치는 법 안내는 **여기**에 있다 (사용자 결정 2026-07-28) — 예전에는
+        # 한글 문서 맨 위에 빨간 글씨로 넣었는데, 문서를 밀어내고 지저분한
+        # 잔재까지 남겼다. 프로그램 쪽에 두면 문서는 깨끗하고 설명은 늘 보인다.
         tk.Label(self._zoom_foot,
-                 text="빈칸은 \\ · 이름 빈칸은 \\학년\\ 처럼 — 위→아래, "
-                      "왼쪽→오른쪽 순서로 채워집니다",
+                 text="· 빈칸은 역슬래시 하나(\\) — 나중에 내용 한 줄이 들어갈 "
+                      "자리입니다\n"
+                      "· 이름을 붙이려면 \\학년\\ 처럼 — 채우기 표에 그 이름이 "
+                      "나옵니다\n"
+                      "· 채워지는 순서는 위에서 아래, 왼쪽에서 오른쪽입니다\n"
+                      "· 이름표는 값으로 통째로 바뀌니 단위 글자는 밖에 두세요 "
+                      "(\\월\\월)",
                  font=(FONT, theme.fs(FS["caption"])), bg=CARD, fg=MUTED,
-                 anchor="w").pack(fill="x", padx=SP["m"] - 2,
-                                  pady=(SP["xs"], 0))
+                 justify="left", anchor="w").pack(fill="x", padx=SP["m"] - 2,
+                                                  pady=(SP["xs"], 0))
         acts = tk.Frame(self._zoom_foot, bg=CARD)
         acts.pack(fill="x", padx=SP["m"] - 2, pady=SP["s"])
-        RoundButton(acts, text="이 내용으로 덮어쓰기",
+        RoundButton(acts, text="덮어씌워 저장",
                     command=lambda: self._finish_content_edit(True),
                     bg=ACCENT, fg="white", radius=theme.RADIUS["ctl"],
                     font=(FONT, theme.fs(FS["body"]), "bold"), outline="",
@@ -765,7 +772,10 @@ class SettingsWindow(tk.Toplevel):
             avail = (_b - _t) - 160     # 제목줄·바닥 버튼줄·창 테두리 몫
         except Exception:
             avail = 900
-        edit_h = max(480, min(1050, avail))
+        # 높이를 20% 줄였다 (사용자 결정 2026-07-28: "도킹된 창이 너무 높다").
+        # 한글 편집에 그만한 세로가 필요하지 않고, 창이 화면을 다 덮으면
+        # 뒤에 있던 것이 안 보여 답답하다.
+        edit_h = max(480, int(min(1050, avail) * 0.8))
         self.zoom_pane.configure(width=hwp_dock.EDIT_PANE_W, height=edit_h)
         self._fit_window()
         self.update_idletasks()         # 판이 최종 자리를 잡은 뒤에 도킹한다
@@ -806,11 +816,22 @@ class SettingsWindow(tk.Toplevel):
                 ctx["session"], ctx["cat"], ctx["item"], parent=self)
             if not ok:
                 return              # 오류창이 떴다 — 편집 상태를 유지한다
+        else:
+            # 취소도 **고치던 탭을 닫는다** (사용자 지적 2026-07-28:
+            # "취소를 해버리면 한글 창이 그대로 남아 있습니다"). 예전에는
+            # 실수로 Esc 를 눌렀을 때를 걱정해 남겼는데, 그러면 편집 탭이
+            # 문서 하나로 남아 hide_window_if_idle 이 비껴가고 결국 한글
+            # 창이 그대로 떠 있었다. 취소는 '버린다'는 뜻이므로 닫는다.
+            try:
+                if ctx["session"] is not None:
+                    ctx["session"].close()
+                    ctx["session"].cleanup()
+            except Exception as e:
+                applog.exc("취소 시 고치던 탭 닫기 실패", e)
         self._edit_ctx = None
         self._exit_dock_layout()
         try:
-            # 우리가 띄우거나 켠 한글 창이면 되돌린다 (빈 창이 남지 않게).
-            # 취소면 편집 탭이 남아 있어 알아서 비껴간다.
+            # 우리가 띄우거나 켠 한글 창이면 되돌린다 (빈 창이 남지 않게)
             engine_library.hide_window_if_ours(ctx["windows_before"])
         except Exception as e:
             applog.exc("한글 창 되돌리기 실패 (빈 창이 남을 수 있음)", e)
