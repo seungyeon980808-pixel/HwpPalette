@@ -2122,6 +2122,10 @@ def edit_content(master, cat, item, on_saved=None):
     """
     if not _ensure_hwp(master):
         return False
+    # 화면 목록이 들고 있던 item 은 **옛 파일명**일 수 있다 (2026-07-27).
+    # 덮어쓰기는 조각을 새 uuid 파일로 갈아치우고 옛 파일을 지우므로,
+    # 갱신 전 목록으로 펼치면 이미 없는 파일을 가리켜 빈 탭이 떴다.
+    item = library.find_by_id(cat, item.get("id")) or item
     try:
         if cat == "양식":
             engine_library.open_form_copy(library.template_path(item),

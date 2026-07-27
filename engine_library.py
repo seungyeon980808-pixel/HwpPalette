@@ -174,6 +174,18 @@ def capture_fragment(dest_path):
     try:
         hwp.XHwpDocuments.Add(1)          # 1 = 새 탭
         hwp.HAction.Run("Paste")
+        # 붙여넣기가 비었으면 저장하지 않는다 (2026-07-27). 클립보드는 다른
+        # 프로그램(클립보드 관리자·Win+V 기록)이 잠깐 잡을 수 있고, 그러면
+        # Copy 가 조용히 실패해 **빈 조각이 원본을 덮어쓴다.** 이 프로젝트는
+        # 클립보드 경합을 이미 여러 번 겪었다(clipboard.py 머리말).
+        if doc_is_empty():
+            applog.warn("조각 캡처: 붙여넣기가 비었습니다 — 다시 시도합니다")
+            hwp.HAction.Run("Copy")
+            hwp.HAction.Run("Paste")
+            if doc_is_empty():
+                raise RuntimeError(
+                    "복사한 내용이 비어 있습니다 (클립보드를 다른 프로그램이 "
+                    "쓰는 중일 수 있습니다).\n잠시 뒤 다시 시도해주세요.")
         # 옛 습관대로 홑 \ 를 쳤어도 저장물은 항상 새 문법(\\)이 되게.
         # 임시 탭에서만 고치므로 사용자의 원본 문서는 그대로다.
         try:
@@ -620,6 +632,60 @@ def strip_edit_note():
     return removed
 
 
+# 어떤 문서에도 항상 들어 있는 컨트롤 — 구역 정의와 단 정의.
+# 이 둘 말고 다른 컨트롤(표 tbl, 그림 gso …)이 있으면 내용이 있는 문서다.
+_ALWAYS_CTRLS = {"secd", "cold"}
+
+
+def doc_is_empty():
+    r"""지금 문서가 비어 있는가 — 삽입이 조용히 실패했는지 판정한다.
+
+    세 가지를 본다 (실측 2026-07-27). 하나라도 걸리면 '내용 있음'이다:
+      ① 본문 글자 ② 표·그림 같은 컨트롤 ③ 문서 처음과 끝의 커서 위치 차이
+
+    글자만 보면 안 되는 이유: 표·그림만 든 조각은 GetTextFile 이 빈 문자열을
+    주므로 멀쩡한 템플릿이 '빈 문서'로 오판된다.
+
+    커서 위치를 **절대값으로 비교하면 안 되는** 이유 (실측): 빈 새 탭에서도
+    MoveDocEnd 뒤 GetPos 가 (0, 0, 0) 이 아니라 **(0, 0, 16)** 이다. 처음엔
+    (0,0,0) 과 비교했는데 그러면 판정이 영영 참이 되지 않아 안전장치가 통째로
+    무동작이었다. 처음과 끝을 **서로** 비교해야 한다 — 빈 문서는 두 위치가
+    같고(둘 다 (0,0,16)), 표가 하나만 있어도 끝이 (0,0,24) 로 달라진다.
+    """
+    hwp = _h()
+    try:
+        if (hwp.GetTextFile("TEXT", "") or "").strip():
+            return False
+    except Exception as e:
+        applog.exc("빈 문서 판정: 글자 읽기 실패 — 다른 신호로 본다", e)
+    try:
+        ctrl = hwp.HeadCtrl
+        while ctrl is not None:
+            if str(ctrl.CtrlID) not in _ALWAYS_CTRLS:
+                return False              # 표·그림이 있다 = 내용이 있다
+            ctrl = ctrl.Next
+    except Exception as e:
+        applog.exc("빈 문서 판정: 컨트롤 훑기 실패 — 커서 위치로만 본다", e)
+    try:
+        hwp.MoveDocBegin()
+        begin = tuple(hwp.GetPos())
+        hwp.MoveDocEnd()
+        return tuple(hwp.GetPos()) == begin
+    except Exception as e:
+        applog.exc("빈 문서 판정: 커서 위치 확인 실패 — 비지 않았다고 본다", e)
+        return False
+
+
+def _clear_doc():
+    """지금 문서를 통째로 비운다 — 삽입 재시도 전 부분 삽입 흔적을 없앤다."""
+    hwp = _h()
+    try:
+        hwp.HAction.Run("SelectAll")
+        hwp.HAction.Run("Delete")
+    except Exception as e:
+        applog.exc("재시도 전 문서 비우기 실패", e)
+
+
 def open_template_copy(path, note_lines=None):
     r"""템플릿 조각을 **새 탭**에 펼친다 — '꺼내서 고치기'용 (2026-07-25).
 
@@ -628,14 +694,57 @@ def open_template_copy(path, note_lines=None):
     저장이 막히기 때문이다. 새 탭은 제목 없는 문서라 원본과 무관하다.
 
     note_lines 를 주면 문서 맨 위에 안내문을 붙인다 (저장할 때 자동으로 빠진다).
+
+    **삽입 결과를 반드시 확인한다** (2026-07-27, 사용자 지적 "가끔 내용이
+    출력되지 않는다"): pyhwpx 의 insert_file 은 실패해도 예외를 던지지 않고
+    False 만 돌려준다(HAction.Execute 그대로). 여태 그 값을 안 봐서, 조각
+    파일이 사라졌거나 잠겨 있으면 **빈 탭에 안내문만** 붙은 채로 "고치세요"가
+    떴다. 그 상태에서 [덮어쓰기]를 누르면 원본이 빈 내용으로 바뀐다 —
+    표시 버그가 데이터 손실이 되는 길이라 여기서 끊는다.
     """
     hwp = _h()
-    hwp.XHwpDocuments.Add(1)          # 1 = 새 탭
-    hwp.insert_file(str(path), keep_section=0, keep_charshape=1,
-                    keep_parashape=1, keep_style=1)
+    src = pathlib.Path(path)
+    if not src.is_file():
+        # 지워진 조각을 가리키는 스테일 경로 — 예외로 바꿔야 오류창이 뜬다
+        raise FileNotFoundError(f"조각 파일이 없습니다 — {src}")
+
+    doc = hwp.XHwpDocuments.Add(1)          # 1 = 새 탭
+    try:
+        doc.SetActive_XHwpDocument()
+    except Exception as e:
+        applog.exc("새 탭 활성화 실패 — 활성 문서 그대로 진행", e)
+
+    ok = False
+    for attempt in (1, 2):
+        try:
+            ok = bool(hwp.insert_file(str(src), keep_section=0,
+                                      keep_charshape=1, keep_parashape=1,
+                                      keep_style=1))
+        except Exception as e:
+            applog.exc(f"조각 삽입 중 오류 (시도 {attempt})", e)
+            ok = False
+        if ok and not doc_is_empty():
+            break
+        applog.warn(f"조각 삽입이 비었습니다 (시도 {attempt}, insert_file={ok}) "
+                    f"— {src.name}")
+        if attempt == 1:
+            _clear_doc()                    # 부분 삽입이 겹치지 않게 비우고
+            time.sleep(0.3)                 # 한글이 바빴던 경우를 위해 잠깐
+    else:
+        # 두 번 다 실패 — 빈 탭을 치우고 호출부에 알린다 (오류창은 그쪽이 띄운다)
+        try:
+            doc.Close(isDirty=False)
+        except Exception as e:
+            applog.exc("실패한 빈 탭 닫기 실패", e)
+        raise RuntimeError(f"조각을 펼치지 못했습니다 — {src.name}\n"
+                           "파일이 잠겨 있거나 한글이 응답하지 않았습니다.")
+
+    # 안내문은 **삽입이 확인된 뒤에만** 붙인다 — 빈 탭에 "고치세요"가 뜨면
+    # 사용자가 그대로 덮어써 원본을 잃는다.
     if note_lines:
         _insert_edit_note(note_lines)
         hwp.MoveDocBegin()
+    return doc
 
 
 def open_form_copy(path, note_lines=None):
@@ -764,8 +873,16 @@ def normalize_marks_to_pairs():
 
 
 def save_active_as(dest_path):
-    """지금 한글에 떠 있는 문서를 통째로 저장한다. 반환: 본문 글자(미리보기용)."""
+    """지금 한글에 떠 있는 문서를 통째로 저장한다. 반환: 본문 글자(미리보기용).
+
+    빈 문서는 저장하지 않는다 (2026-07-27) — 삽입이 조용히 실패한 빈 탭을
+    그대로 덮어쓰면 원본 양식이 사라진다. open_template_copy 의 검증과 같은
+    이유이고, 이쪽은 마지막 방어선이다.
+    """
     hwp = _h()
+    if doc_is_empty():
+        raise RuntimeError("문서가 비어 있어 저장하지 않았습니다 "
+                           "(원본을 지우지 않기 위해 멈춥니다).")
     try:
         normalize_marks_to_pairs()      # 양식 '내용 고치기' 저장도 새 문법으로
     except Exception as e:
