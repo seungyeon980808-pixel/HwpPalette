@@ -25,6 +25,7 @@ import builtin_actions              # 프로그램 기능 블럭('도구') 카�
 import engine_library               # 고치기 세션 마무리 (hide_window_if_ours)
 import hwp_dock                     # 고치는 동안 한글 창을 미리보기 판에 도킹
 import hwp_engine
+import disclosure                  # 접었다 펴는 안내 (양식 문법)
 import library_ui                  # commit_ime · capture_template_dialog 공용
 
 import appinfo
@@ -34,7 +35,7 @@ import store_ui                    # 왼쪽 물감 창고 패널
 import preview                     # 물감 미리보기 그림
 import theme                       # 색은 theme.py 한 곳에서 (밝게/어둡게)
 import ui_fx                       # 호버 보간 (애플 A안)
-from roundbtn import RoundButton   # 둥근 모서리 버튼
+from roundbtn import RoundButton, RoundTile   # 둥근 모서리 버튼·타일
 
 _C = theme.colors()
 BG = _C["bg"]
@@ -290,6 +291,33 @@ def _tip(widget, text):
     widget.bind("<ButtonPress-1>", hide, add="+")
 
 
+# 양식 문법 안내 — '양식 수정' 중 판 아래에 접힌 채로 놓인다 (disclosure.py).
+#
+# 규칙만 나열하던 옛 네 줄을 **"이렇게 쓰면 이렇게 나온다"** 로 다시 썼다
+# (사용자 지적 2026-07-28). 문법을 외우게 하는 글이 아니라, 지금 눈앞의
+# 한글 문서에 무엇을 치면 채우기 표가 어떻게 생기는지를 보여주는 글이다.
+_FORM_SYNTAX_LINES = [
+    "빈칸 만들기",
+    [("   문서에 ", 0), ("\\", 1), (" 하나를 치면", 0),
+     ("   →   ", 1), ("채우기 표에 칸이 하나 생깁니다", 0)],
+    [("   빈칸 하나 = 내용 한 줄이 들어갈 자리입니다.", 0)],
+    "빈칸에 이름 붙이기",
+    [("   ", 0), ("\\학년\\", 1), (" 이라고 치면", 0),
+     ("   →   ", 1), ("채우기 표에 ", 0), ("'학년'", 1), (" 이라고 나옵니다", 0)],
+    [("   이름이 없으면 ", 0), ("빈칸 1 · 빈칸 2", 1),
+     (" 로만 나와, 나중에 어디가 어디인지 알아보기 어렵습니다.", 0)],
+    "채워지는 차례",
+    [("   ", 0), ("위에서 아래 → 왼쪽에서 오른쪽", 1),
+     (" 입니다 (표 안에서도 같습니다).", 0)],
+    [("   AI 에게 값을 받아 채울 때도 이 차례를 따릅니다.", 0)],
+    "단위 글자는 이름표 밖에",
+    [("   ", 0), ("\\월\\월", 1), (" 이라고 치면", 0), ("   →   ", 1),
+     ("'3월'", 1), (" 이 됩니다", 0)],
+    [("   ", 0), ("\\월월\\", 1), (" 이라고 치면", 0), ("   →   ", 1),
+     ("'3'", 1), (" 만 남고 '월' 이 사라집니다", 0)],
+    [("   이름표는 값으로 ", 0), ("통째로", 1), (" 바뀌기 때문입니다.", 0)],
+]
+
 # 미리보기 판의 폭 — 창고보다 넓어야 '크게 본다'가 성립하지만,
 # 셋이 나란히 서므로 창이 화면을 넘지 않는 선에서 잡는다
 ZOOM_W = 396          # 20% 더 넓게, 330 → 396 (사용자 결정 2026-07-27)
@@ -307,6 +335,19 @@ class SettingsWindow(tk.Toplevel):
         self.title(self._base_title)
         self.configure(bg=BG)
         self.resizable(True, True)
+        # **메인 창의 자식으로 못박는다** (사용자 지적 2026-07-28: "팔레트 설정을
+        # 누르면 메인 페이지 위로 떠야 하는데 그 아래에 깔린다").
+        #
+        # 원인: 메인 창이 -topmost 라 '항상 위' 무리에 있고, 이 창도 -topmost 지만
+        # 같은 무리 안에서는 순서가 보장되지 않는다 — 메인 창이 무슨 이유로든
+        # 다시 활성화되면 그 위로 올라온다.
+        # transient 는 윈도우에게 **소유 관계**를 알려준다: 소유된 창은 소유자
+        # 위에 있는 것이 운영체제 규칙이라, 이 한 줄이 순서를 영구히 고정한다.
+        # (메인 위젯이 우리 창들 중 늘 맨 아래여야 한다는 요구와 같은 해법)
+        try:
+            self.transient(master)
+        except Exception:
+            pass
         self.attributes("-topmost", True)
         self.sel_tab = 0
         self.sel_block = None
@@ -360,10 +401,24 @@ class SettingsWindow(tk.Toplevel):
         self._store_grip.pack(side="left", fill="y")
         self._store_grip.bind("<Button-1>", lambda e: self._toggle_store())
 
-        store_card = tk.Frame(outer, bg=CARD, highlightbackground=BORDER,
-                              highlightthickness=1)
+        # 창고와 미리보기는 **한 판** 안에 둔다 (사용자 지적 2026-07-28:
+        # "물감 창고와 물감 미리보기가 한 묶음이라는 느낌이 들어야 한다").
+        #
+        # 예전에는 셋(팔레트 설정·창고·미리보기)이 각각 테두리를 두르고 같은
+        # 간격으로 서 있어서, 화면이 '나란한 세 개'로 읽혔다. 실제 관계는
+        # **팔레트 설정 ┃ (창고 + 미리보기)** 다 — 오른쪽 둘은 같은 물감을
+        # 고르고 들여다보는 한 벌이고, 왼쪽은 그것을 놓는 판이다.
+        # 테두리를 하나로 합치고 사이는 1px 선으로만 가르면, 바깥 테두리가
+        # '이 둘은 한 벌'을, 안쪽 선이 '그 안에서 하는 일은 둘'을 말한다.
+        self._paint_group = tk.Frame(outer, bg=CARD, highlightbackground=BORDER,
+                                     highlightthickness=1)
+        self._paint_group.pack(side="left", fill="y", padx=(SP["s"], 0))
+
+        store_card = tk.Frame(self._paint_group, bg=CARD)
         store_card.pack(side="left", fill="y")
         self._store_card = store_card
+        self._paint_div = tk.Frame(self._paint_group, bg=BORDER, width=1)
+        self._paint_div.pack(side="left", fill="y")
         self.store = store_ui.StorePanel(
             store_card, on_place=self._place_from_store,
             tab_name_fn=self._cur_tab_name, on_select=self._show_detail,
@@ -377,11 +432,9 @@ class SettingsWindow(tk.Toplevel):
         #   위: 스크롤되는 내용 칸 (그림이 커도 판 밖으로 안 넘친다)
         #   아래: **항상 같은 자리**에 고정된 버튼 줄
         # 그림이 커지거나 작아져도 버튼은 절대 움직이지 않는다.
-        self.zoom_pane = tk.Frame(outer, bg=CARD, width=ZOOM_W,
-                                  highlightbackground=BORDER,
-                                  highlightthickness=1)
+        self.zoom_pane = tk.Frame(self._paint_group, bg=CARD, width=ZOOM_W)
         self.zoom_pane.pack_propagate(False)
-        self.zoom_pane.pack(side="left", fill="y", padx=(8, 0))
+        self.zoom_pane.pack(side="left", fill="y")
         self._zoom_photo = None
         self._detail = None
 
@@ -391,7 +444,9 @@ class SettingsWindow(tk.Toplevel):
         zhead = tk.Frame(self.zoom_pane, bg=CARD)
         zhead.pack(side="top", fill="x", padx=SP["s"], pady=(SP["s"], 2))
         # 제목은 상태 따라 바뀐다: 미리보기 ↔ 양식 수정 (사용자 결정 2026-07-28)
-        self._zoom_title = tk.Label(zhead, text="미리보기",
+        # '미리보기' → '물감 미리보기' (사용자 결정 2026-07-28) — 옆의
+        # '물감 창고'와 이름을 맞춰야 둘이 한 벌로 읽힌다.
+        self._zoom_title = tk.Label(zhead, text="물감 미리보기",
                                     font=(FONT, theme.fs(FS["head"]), "bold"),
                                     bg=CARD, fg=TEXT)
         self._zoom_title.pack(side="left")
@@ -453,17 +508,32 @@ class SettingsWindow(tk.Toplevel):
         #  '＋ 새 팔레트' 로 추가).
         prow = tk.Frame(main, bg=CARD)
         prow.pack(fill="x", padx=SP["s"], pady=(0, SP["s"]))
+        # 이름은 왼쪽 붙임, ▾ 는 오른쪽 끝 고정 (사용자 지적 2026-07-28) —
+        # 자세한 이유는 RoundButton 의 trailing 설명.
         self.tab_pick = RoundButton(
-            prow, text="", command=self._tab_dropdown,
+            prow, text="", command=self._tab_dropdown, trailing="▾",
             bg=CARD, fg=TEXT, radius=theme.RADIUS["ctl"],
             font=(FONT, theme.fs(FS["body"])), outline=BORDER,
             focus_color=ACCENT, zone_bg=CARD)
         # 폭을 **가장 긴 이름 기준으로 한 번만** 잰다 (사용자 지적 2026-07-27:
         # "드롭다운의 길이가 일정해야 한다") — 고를 때마다 이름 길이 따라
         # 버튼이 늘었다 줄었다 하면 그 줄 전체가 다시 배치되며 창이 덜컹거린다.
-        self.tab_pick._text = "가" * self._TAB_NAME_MAX + "  ▾"
+        self.tab_pick._text = "가" * self._TAB_NAME_MAX
         self.tab_pick.fit(pad_x=SP["m"] - 3, pad_y=3)
         self.tab_pick.pack(side="left")
+
+        # ↗ — 이 팔레트를 파일로 내보내거나, 받은 파일을 불러온다
+        # (사용자 결정 2026-07-28: 설정 메뉴의 '물감 나누기'를 없애고
+        #  물감·팔레트를 보고 있는 자리로 옮겼다).
+        # 팔레트 고르개 **바로 옆**에 두는 이유: 무엇이 나가는지가 그 옆의
+        # 이름으로 정해지므로, 둘이 붙어 있어야 "이것을 보낸다"가 읽힌다.
+        self.share_btn = RoundButton(
+            prow, text=theme.SHARE_GLYPH, command=self._share_menu,
+            bg=CARD, fg=MUTED, radius=theme.RADIUS["ctl"],
+            font=(FONT, theme.fs(FS["body"])), outline="", zone_bg=CARD)
+        self.share_btn.config(width=theme.fs(24), height=theme.fs(21))
+        self.share_btn.pack(side="right")
+        _tip(self.share_btn, "이 팔레트 내보내기 · 받은 파일 불러오기")
 
         tk.Frame(main, bg=BORDER, height=1).pack(fill="x")
 
@@ -584,16 +654,42 @@ class SettingsWindow(tk.Toplevel):
         self.bind("<Escape>", lambda e: self._close())
 
     def _pal_hint_text(self):
-        return "빈 칸을 끌면 블럭을 놓고, 놓인 블럭은 끌어 옮깁니다"
+        # 한 문장으로 줄였다 (사용자 결정 2026-07-28) — 머리말 옆 설명은
+        # '무엇을 하는 곳인가' 한 가지만 말해야 눈에 걸린다.
+        return "빈칸을 드래그해서 물감을 짭니다"
+
+    def _share_menu(self):
+        r"""↗ — 이 팔레트 주고받기. 누르자마자 파일창이 뜨지 않는다
+        (사용자 결정 2026-07-28): 내보내기인지 불러오기인지 먼저 고른다.
+        """
+        tabs = palette.load_tabs()
+        cur = tabs[self.sel_tab] if 0 <= self.sel_tab < len(tabs) else None
+        pop = Popover(self, self.share_btn)
+        if cur is not None:
+            pop.add(f"'{cur['name']}' 팔레트 내보내기…",
+                    lambda t=cur: library_ui.export_palette_flow(self, t))
+        pop.separator()
+        pop.add("불러오기…", self._import_share)
+        pop.show()
+
+    def _import_share(self):
+        r"""받은 파일 등록 — 물감도 팔레트도 이 한 입구로 들어온다.
+
+        들어온 뒤 창고와 팔레트 목록을 **둘 다** 다시 읽는다: 파일에 팔레트가
+        들어 있으면 탭이 늘어나는데, 목록을 안 읽으면 드롭다운에 안 보인다.
+        """
+        if library_ui.import_flow(self, on_saved=None):
+            self._reload_tabs()
+            self._refresh_store()
+            self._notify(items_changed=True)
 
     def _toggle_store(self):
-        if self._store_card.winfo_ismapped():
-            self._store_card.pack_forget()
-            self.zoom_pane.pack_forget()
+        """⟩ — 창고+미리보기 묶음을 통째로 접었다 편다 (둘은 한 벌이다)."""
+        if self._paint_group.winfo_manager() == "pack":
+            self._paint_group.pack_forget()
             self._store_grip.config(text="⟨")
         else:
-            self._store_card.pack(side="left", fill="y")
-            self.zoom_pane.pack(side="left", fill="y", padx=(8, 0))
+            self._paint_group.pack(side="left", fill="y", padx=(SP["s"], 0))
             self._store_grip.config(text="⟩")
         self._fit_window()
 
@@ -647,7 +743,7 @@ class SettingsWindow(tk.Toplevel):
                      wraplength=ZOOM_W - 32).pack(fill="x", padx=SP["m"] - 2,
                                                   pady=SP["s"])
 
-        self._zoom_title.config(text="미리보기")
+        self._zoom_title.config(text="물감 미리보기")
         acts = tk.Frame(self._zoom_foot, bg=CARD)
         acts.pack(fill="x", padx=SP["m"] - 2, pady=SP["s"])
         # 버튼은 오른쪽 정렬 (사용자 결정 2026-07-28). '팔레트에 놓기' 버튼은
@@ -687,7 +783,11 @@ class SettingsWindow(tk.Toplevel):
         if self._edit_ctx is not None:
             return
         self._clear_zoom()
-        self.zoom_hint.config(text=f"{item.get('name', '')} · 수정")
+        # 판 제목이 **지금 무엇을 하는 중인지**를 말한다 (사용자 지적
+        # 2026-07-28: "수정 버튼을 누르면 여전히 미리보기입니다").
+        # 미리보기 → 물감 이름 수정 → 양식 수정, 셋이 같은 판을 갈아 쓴다.
+        self._zoom_title.config(text="물감 이름 수정")
+        self.zoom_hint.config(text=item.get("name", ""))
         form = library_ui.MetaForm(
             self._zoom_body, name=item["name"], exclude_id=item["id"],
             bg=CARD, on_submit=lambda: self._save_edit_form(cat, item))
@@ -765,6 +865,14 @@ class SettingsWindow(tk.Toplevel):
             return
         item = library.find_by_id(cat, item.get("id")) or item
         was_topmost = library_ui._pop_topmost(self)
+        # 메인 창의 '항상 위'도 함께 내린다 (사용자 지적 2026-07-28: "양식
+        # 수정을 하니 메인 페이지가 중간에 끼어 있습니다").
+        #
+        # 이 자리에 도킹되는 한글 창은 **남의 창**이라 transient 로 순서를
+        # 묶을 수 없다. 메인 창이 topmost 로 남아 있으면 한글과 팔레트 설정
+        # 사이에 끼어 버린다. 고치는 동안만 내려 두고 끝나면 되돌린다 —
+        # 메인 창은 우리 창들 중 늘 맨 아래여야 한다는 규칙의 연장이다.
+        main_was_topmost = library_ui._pop_topmost(self.master)
         self._show_editing_panel(cat, item)     # ① 판 전환
         self._collapse_for_edit()               # ① 창 크기 확정
         hwnd = hwp_engine.connected_hwnd()
@@ -788,16 +896,19 @@ class SettingsWindow(tk.Toplevel):
                 engine_library.hide_window_if_ours(windows_before)
             except Exception:
                 pass
-            if was_topmost:
-                try:
-                    self.attributes("-topmost", True)
-                except Exception:
-                    pass
+            for win, was in ((self, was_topmost),
+                             (self.master, main_was_topmost)):
+                if was:
+                    try:
+                        win.attributes("-topmost", True)
+                    except Exception:
+                        pass
             self._show_detail(cat, item)
             return
         self._edit_ctx = {
             "cat": cat, "item": item, "session": session,
             "windows_before": windows_before, "was_topmost": was_topmost,
+            "main_was_topmost": main_was_topmost,
         }
         self._start_dock()                      # ⑤ 실시간 추적 시작
         hwp_engine.bring_to_front()             # 도킹된 창에 초점까지 준다
@@ -826,25 +937,11 @@ class SettingsWindow(tk.Toplevel):
         # 한글 문서 맨 위에 빨간 글씨로 넣었는데, 문서를 밀어내고 지저분한
         # 잔재까지 남겼다. 아래 빈 공간을 채우도록 **크게**, 핵심은 파랗게
         # (같은 날 사용자 결정: "글씨 크기를 키우고 강조는 파란색으로").
-        guide = tk.Text(self._zoom_foot, height=4, bd=0, bg=CARD,
-                        highlightthickness=0, wrap="word", cursor="arrow",
-                        font=(FONT, theme.fs(FS["head"])), fg=TEXT,
-                        padx=SP["m"], pady=SP["xs"], takefocus=0)
-        guide.tag_configure("hl", foreground=ACCENT,
-                            font=(FONT, theme.fs(FS["head"]), "bold"))
-        for parts in (
-            [("· 빈칸은 ", 0), ("역슬래시 하나( \\ )", 1),
-             (" — 내용 한 줄이 들어갈 자리입니다\n", 0)],
-            [("· 이름을 붙이려면 ", 0), ("\\학년\\", 1),
-             (" 처럼 — 채우기 표에 그 이름이 나옵니다\n", 0)],
-            [("· 채워지는 순서는 ", 0), ("위에서 아래, 왼쪽에서 오른쪽", 1),
-             (" 입니다\n", 0)],
-            [("· 이름표는 값으로 통째로 바뀌니 단위 글자는 밖에 — ", 0),
-             ("\\월\\월", 1), (" 처럼", 0)],
-        ):
-            for text, hl in parts:
-                guide.insert("end", text, ("hl",) if hl else ())
-        guide.config(state="disabled")          # 읽기 전용 — 선택·편집 금지
+        guide = disclosure.Disclosure(
+            self._zoom_foot, title="양식 문법",
+            summary=r"빈칸은 \ 하나 · 이름은 \학년\ 처럼",
+            lines=_FORM_SYNTAX_LINES,
+            bg=CARD, on_toggle=lambda _o: self._fit_window())
         guide.pack(fill="x", padx=SP["m"] - 2, pady=(SP["xs"], 0))
         acts = tk.Frame(self._zoom_foot, bg=CARD)
         acts.pack(fill="x", padx=SP["m"] - 2, pady=SP["s"])
@@ -871,12 +968,15 @@ class SettingsWindow(tk.Toplevel):
         # ismapped 는 창이 WM 에 실리기 전이면 packed 상태여도 0 을 줘서,
         # 창고를 "안 보임"으로 오판해 접지 않았고 복귀 순서까지 어긋났다.
         self._dock_saved = {
-            "store_packed": self._store_card.winfo_manager() == "pack",
+            "group_packed": self._paint_group.winfo_manager() == "pack",
             "zoom_h": int(self.zoom_pane.cget("height"))}
         self._main_card.pack_forget()
         self._store_grip.pack_forget()
-        if self._dock_saved["store_packed"]:
-            self._store_card.pack_forget()
+        # 묶음 자체는 접힌 상태였을 수도 있다 — 그때는 다시 펴야 판이 보인다
+        if not self._dock_saved["group_packed"]:
+            self._paint_group.pack(side="left", fill="y", padx=(SP["s"], 0))
+        self._store_card.pack_forget()
+        self._paint_div.pack_forget()
         # 높이를 **반드시 함께** 정한다 (실측 2026-07-27, 사용자 버그): 판은
         # 폭만 지정돼 있고 높이는 옆의 격자·창고가 정해 줬다. 그 둘을 접는
         # 순간 높이를 정해 줄 것이 없어져 창이 제목줄만 남기고 쪼그라들었다.
@@ -918,12 +1018,15 @@ class SettingsWindow(tk.Toplevel):
                 applog.exc("한글 창 정리 실패 (빈 창이 남을 수 있음)", e)
         saved = getattr(self, "_dock_saved", None) or {}
         self.zoom_pane.configure(width=ZOOM_W, height=saved.get("zoom_h", 0))
-        # 원래 순서(격자·손잡이·창고·판)로 — 각각 판 앞에 차례로 끼우면 된다
+        # 원래 순서(격자·손잡이·묶음)로 — 각각 묶음 앞에 차례로 끼운다.
+        # 묶음 안쪽은 창고·구분선이 미리보기 앞에 와야 한다.
         self._main_card.pack(side="left", fill="both", expand=True,
-                             before=self.zoom_pane)
-        self._store_grip.pack(side="left", fill="y", before=self.zoom_pane)
-        if saved.get("store_packed", True):
-            self._store_card.pack(side="left", fill="y", before=self.zoom_pane)
+                             before=self._paint_group)
+        self._store_grip.pack(side="left", fill="y", before=self._paint_group)
+        self._store_card.pack(side="left", fill="y", before=self.zoom_pane)
+        self._paint_div.pack(side="left", fill="y", before=self.zoom_pane)
+        if not saved.get("group_packed", True):
+            self._paint_group.pack_forget()     # 접어 뒀던 상태를 그대로 돌려준다
         self._fit_window()
 
     def _finish_content_edit(self, save):
@@ -963,26 +1066,40 @@ class SettingsWindow(tk.Toplevel):
             except Exception as e:
                 applog.exc("취소 시 고치던 탭 닫기 실패", e)
         self._edit_ctx = None
-        # 숨길 창이면 **되돌리기 전에** 숨긴다 — 도킹 자리에서 옛 자리로
-        # 튀어가는 모션이 화면에 안 보인다 (깜빡임 제거의 핵심 순서).
-        self._exit_dock_layout(pre_restore=lambda: (
-            engine_library.hide_window_if_ours(ctx["windows_before"])))
-        if ctx["was_topmost"]:
-            try:
-                self.attributes("-topmost", True)
-            except Exception:
-                pass
-        self.bind("<Escape>", lambda e: self._close())      # Esc 원복
-        if save:
-            # 내용·미리보기가 바뀜 — 창고 통째 갱신
-            self._notify(items_changed=True)
-        fresh = library.find_by_id(ctx["cat"], ctx["item"]["id"])
-        if fresh is not None:
-            self._show_detail(ctx["cat"], fresh)
-        else:
-            self._clear_zoom()
-            self._zoom_title.config(text="미리보기")
-            self.zoom_hint.config(text="물감을 고르면 보입니다")
+
+        def restore():
+            # 숨길 창이면 **되돌리기 전에** 숨긴다 — 도킹 자리에서 옛 자리로
+            # 튀어가는 모션이 화면에 안 보인다 (깜빡임 제거의 핵심 순서).
+            self._exit_dock_layout(pre_restore=lambda: (
+                engine_library.hide_window_if_ours(ctx["windows_before"])))
+            for win, was in ((self, ctx["was_topmost"]),
+                             (self.master, ctx.get("main_was_topmost"))):
+                if was:
+                    try:
+                        win.attributes("-topmost", True)
+                    except Exception:
+                        pass
+            self.bind("<Escape>", lambda e: self._close())      # Esc 원복
+            if save:
+                # 내용·미리보기가 바뀜 — 창고 통째 갱신
+                self._notify(items_changed=True)
+            fresh = library.find_by_id(ctx["cat"], ctx["item"]["id"])
+            if fresh is not None:
+                self._show_detail(ctx["cat"], fresh)
+            else:
+                self._clear_zoom()
+                self._zoom_title.config(text="물감 미리보기")
+                self.zoom_hint.config(text="물감을 고르면 보입니다")
+
+        # **되돌리는 구간을 가린다** (사용자 지적 2026-07-28: "취소나 저장을
+        # 누르면 깜빡거리는 모션이 있습니다").
+        #
+        # 여기서 벌어지는 일은 한 프레임에 다 안 끝난다: 도킹 해제 → 한글 창
+        # 숨기기 → 접었던 격자·창고 다시 펴기 → 창 크기 재계산. 그 사이 판이
+        # 빈 채로 한두 프레임 비치는 것이 '깜빡임'의 정체다. 순서를 아무리
+        # 다듬어도 재배치 자체는 남으므로, 재배치를 **안 보이게** 한다 —
+        # 살짝 흐려졌다가(110ms) 다 끝난 새 화면으로 진해진다(160ms).
+        ui_fx.veil(self, restore, dim=0.12)
 
     def _route_wheel(self, e):
         """마우스 휠 중앙 처리 — 커서가 창고 위면 창고를, 미리보기 위면 그쪽을."""
@@ -1037,7 +1154,7 @@ class SettingsWindow(tk.Toplevel):
                 name = name[:self._TAB_NAME_MAX - 1] + "…"
         # set_text 는 글자에 맞춰 폭을 다시 재므로 쓰지 않는다 — 폭은 만들 때
         # 고정했다 (고를 때마다 버튼 크기가 변하면 창이 덜컹거린다)
-        self.tab_pick._text = f"{name}  ▾"
+        self.tab_pick._text = name          # ▾ 는 trailing 이 따로 그린다
         self.tab_pick._redraw()
 
     def _tab_dropdown(self):
@@ -1531,9 +1648,13 @@ class SettingsWindow(tk.Toplevel):
         selected = (self.sel_block == i)
         # 사용자 지정 색이 우선, 없으면 종류별 기본색 (메인 창과 같은 규칙)
         bg = theme.block_color(blk)     # 메인 창과 같은 규칙 (변환은 강조색)
-        tile = tk.Frame(parent, bg=bg,
-                        highlightbackground=ACCENT if selected else BORDER,
-                        highlightthickness=2 if selected else 1)
+        # 곡률도 메인 창과 같다 (RoundTile 머리말 — 같은 물건은 같은 모양이어야
+        # 같은 물건으로 읽힌다). highlight* 로 테두리를 바꾸던 기존 코드는
+        # RoundTile 이 그대로 받아 준다.
+        tile = RoundTile(parent, bg=bg, radius=theme.RADIUS["ctl"],
+                         zone_bg=parent.cget("bg"),
+                         highlightbackground=ACCENT if selected else BORDER,
+                         highlightthickness=2 if selected else 1)
         tile.pack_propagate(False)
         # 글자색은 배경 밝기에 맞춰 정한다 — 어두운 색을 골라도 읽히게 (제안 18)
         lab = tk.Label(tile, text=self._tile_text(blk, span), bg=bg,
@@ -2211,7 +2332,11 @@ class SettingsWindow(tk.Toplevel):
                 self.unbind_all(seq)
             except Exception:
                 pass
-        self.destroy()
+        # 창을 **흐려지며** 닫는다 (사용자 지적 2026-07-28: "팔레트 설정을 끌
+        # 때에도 깜빡거림이 있습니다"). 큰 창이 한 프레임에 사라지면 그 뒤에
+        # 있던 화면이 갑자기 드러나 번쩍인다 — 120ms 면 눈이 '사라졌다'가 아니라
+        # '접혔다'로 읽는다. destroy 는 전환이 끝난 뒤 한 번만 (ui_fx.fade_close).
+        ui_fx.fade_close(self, ms=120)
 
     def _notify(self, items_changed=False, immediate=False):
         r"""팔레트 변경을 창고·메인 창에 알린다 (2026-07-28 부분 갱신).

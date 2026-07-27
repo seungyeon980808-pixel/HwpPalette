@@ -739,18 +739,14 @@ misc_row.pack(fill="x")
 # (사용자 지적 2026-07-25: 기본 메뉴가 프로그램의 나머지와 따로 놀았다).
 # 버튼은 메뉴가 떠 있는 동안 켜져 있다가(on_close 로) 닫힐 때 꺼진다.
 def _settings_menu(anchor_widget):
-    # 차례는 **일하는 순서**대로 (사용자 결정 2026-07-26):
-    # 물감을 먼저 만들고(물감 설정) 그다음에 어디 둘지 정한다(팔레트 설정).
+    # '물감 나누기'는 여기서 뺐다 (사용자 결정 2026-07-28) — 주고받기는
+    # **물감을 보고 있는 자리**에서 하는 일이라 팔레트 설정 화면의 ↗ 로 옮겼다.
+    # 설정 메뉴에 갈래가 하나뿐이라도 그대로 둔다: 톱니는 '설정하는 곳'이라는
+    # 자리 자체가 관습이고, 나중에 늘어날 자리이기도 하다.
     _bar_active(anchor_widget, True)
     (Popover(root, anchor_widget,
              on_close=lambda: _bar_active(anchor_widget, False))
      .add("물감·팔레트 설정", fn_open_palette_settings)
-     .separator()
-     # 내 물감을 남에게 주고받는 일 — 물감 설정 화면이 아니라 여기 하위 기능으로
-     # (사용자 결정 2026-07-25). 이름은 '물감 나누기' (2026-07-26) —
-     # 내보내기/가져오기는 파일 다루는 말이라 무엇을 주고받는지가 안 보였다.
-     .add("물감 나누기…",
-          lambda: library_ui.open_share(root, on_saved=render_palette))
      .show())
 
 
@@ -1196,10 +1192,24 @@ num_var = tk.IntVar(value=1)
 #     화면은 깔끔해지지만 무엇인지 못 찾게 되어 손해가 더 크다(사용자 지적).
 # 아래: 사용자가 '메인' 탭에 채워 넣은 블럭 (quick_area).
 # ══════════════════════════════════════════════════════
+# 구역의 가로 여백과 **이름표의 가로 여백은 다르다** (사용자 지적 2026-07-28:
+# "공통 팔레트와 개인 팔레트의 좌우 끝이 마크다운 변환 블럭의 좌우랑 일치해야
+# 합니다").
+#
+# 블럭은 구역 여백(_ZONE_PAD) 안에서 다시 두 겹 밀린다:
+#   · 칸 사이 틈의 절반  — cell.grid(padx=_BLOCK_GAP_PX // 2)  = 1px
+#   · 둥근 버튼의 외곽선 — RoundButton 은 x=1 부터 그린다      = 1px
+# 그래서 이름표를 같은 여백에 두면 블럭보다 2px 왼쪽에서 시작한다. 2px 는
+# 하나씩 보면 안 보이지만, 이름표와 블럭이 세로로 붙어 있어 **선이 어긋난
+# 것으로 읽힌다.** 이름표만 그 2px 만큼 밀어 글머리를 맞춘다.
+_ZONE_PAD = 10
+_LABEL_PAD = _ZONE_PAD + 2
+
+
 def _zone_label(parent, text, bg):
     """구역 이름표 — 그 구역의 바탕색 위에 얹는다."""
     tk.Label(parent, text=text, font=_font(7), fg=MUTED, bg=bg,
-             anchor="w").pack(fill="x", padx=10, pady=(5, 0))
+             anchor="w").pack(fill="x", padx=_LABEL_PAD, pady=(5, 0))
 
 
 # 구역은 **바탕색**으로 가른다 (2026-07-25). 선을 더 긋는 것보다 색이 훨씬 강하게
@@ -1209,7 +1219,7 @@ common_zone = tk.Frame(root, bg=BG)
 common_zone.pack(fill="x", pady=(0, 12))          # 구역 사이 여백
 _zone_label(common_zone, "공통 팔레트", BG)
 
-btn_area = tk.Frame(common_zone, bg=BG, padx=10, pady=2)
+btn_area = tk.Frame(common_zone, bg=BG, padx=_ZONE_PAD, pady=2)
 btn_area.pack(fill="x")
 
 # 변환 버튼도 이제 **메인 탭의 도구 블럭**이다 (사용자 결정 2026-07-25).
@@ -1245,7 +1255,7 @@ _builtin_btns = {}
 # 통째로 없어진다. 대신 고르는 데 두 번 눌러야 한다 — 팔레트가 서넛 이상으로
 # 늘어날수록 이쪽이 유리하다는 판단.
 pal_head = tk.Frame(doc_zone, bg=SUBBG)
-pal_head.pack(fill="x", padx=10, pady=(5, 0))
+pal_head.pack(fill="x", padx=_LABEL_PAD, pady=(5, 0))
 tk.Label(pal_head, text="개인 팔레트", font=_font(7), fg=MUTED,
          bg=SUBBG).pack(side="left")
 
@@ -1256,7 +1266,7 @@ pal_pick = RoundButton(pal_head, text="", command=lambda: _pal_menu(),
                        outline=BORDER, focus_color=ACCENT, zone_bg=SUBBG)
 pal_pick.pack(side="left", padx=(6, 0))
 
-pal_area = tk.Frame(doc_zone, bg=SUBBG, padx=10, pady=2)
+pal_area = tk.Frame(doc_zone, bg=SUBBG, padx=_ZONE_PAD, pady=2)
 pal_area.pack(fill="x", pady=(3, 6))
 
 
@@ -1691,16 +1701,18 @@ _footer.pack_propagate(False)        # 안의 라벨이 높이를 바꾸지 못�
 # 산술 중앙(expand)으로도 눈에는 아래로 처져 보였다 (사용자 확인 2026-07-25) —
 # 글자의 시각 무게가 베이스라인 쪽에 쏠려서다. 아래에만 여백을 더해 약 1mm(4px)
 # 올린다: pack 은 '라벨+아래 4px' 묶음을 중앙에 놓으므로 글자는 그만큼 위로 간다.
-# 2026-07-27 디자인 개편: 저작권 한 줄을 **상태 표시줄**로 바꿨다.
-# 늘 같은 글자만 있던 자리에 '지금 어떤 상태인가'(한글 연결·고른 팔레트)를
-# 놓는다 — 장식이 정보로 바뀌면 화면이 조용해지면서 쓸모는 늘어난다.
-# 저작권은 도움말 안에 그대로 있다.
-_status_var = tk.StringVar(value="")
-tk.Label(_footer, textvariable=_status_var, font=_font(7), fg=FAINT, bg=BG,
-         anchor="w").pack(side="left", expand=True, fill="x",
-                          padx=theme.SP["m"], pady=(0, 4))
-tk.Label(_footer, text=f"v{VERSION}", font=_font(7), fg=FAINT, bg=BG,
-         anchor="e").pack(side="right", padx=theme.SP["m"], pady=(0, 4))
+# 2026-07-28: **원래 쓰던 푸터로 되돌린다** (사용자 결정).
+#
+# 2026-07-27 에 이 자리를 상태 표시줄('한글 연결됨 · 메인' + 버전)로 바꿨었다.
+# 정보는 늘었지만 푸터가 눈에 말을 걸기 시작했고, 화면 맨 아래가 조용하지
+# 않으면 위쪽 도구가 덜 도드라진다. 저작권 한 줄이 그 자리의 원래 몫이다.
+#
+# 한글 연결 여부는 없어지는 정보가 아니다 — 버튼을 누르면 그때 알려 주고,
+# 위쪽 알림등이 방금 한 일의 성패를 색으로 말한다. 버전·날짜는 사용법 화면
+# 맨 아래에 있다 (GUIDE_TEXT).
+_status_var = tk.StringVar(value="")        # 상태 문구 (지금은 화면에 안 쓴다)
+tk.Label(_footer, text=appinfo.COPYRIGHT, font=_font(7), fg=FAINT, bg=BG,
+         anchor="center").pack(expand=True, pady=(0, 4))
 
 
 def refresh_status():
@@ -1944,22 +1956,8 @@ root.protocol("WM_DELETE_WINDOW", _remember_pos)
 # 첫 실행 안내 (UI 제안 11) — exe 를 받은 사람은 여기서 쓰는 법을 배운다.
 # mainloop 전에 부르면 창이 아직 안 그려져 위치 계산이 틀어지므로 after_idle.
 root.after_idle(lambda: onboarding.maybe_show(root, _font))
-root.after_idle(refresh_status)     # 상태 표시줄 첫 값
-
-
-def _status_tick():
-    """한글이 켜지거나 꺼지는 것을 상태 표시줄에 반영한다.
-
-    3초는 일부러 느리게 잡았다 — 이 줄은 곁눈으로 보는 정보라 즉각성이
-    필요 없고, 자주 갱신하면 그 자체가 화면의 소음이 된다.
-    """
-    try:
-        refresh_status()
-    except Exception:
-        pass
-    root.after(3000, _status_tick)
-
-
-root.after(3000, _status_tick)
+# 3초마다 돌던 상태 표시줄 갱신(_status_tick)은 없앴다 (2026-07-28) —
+# 푸터가 저작권 한 줄로 돌아가 **보여줄 자리가 없어졌다.** 아무도 안 보는
+# 값을 3초마다 계산하는 것은 그 자체가 낭비다.
 
 root.mainloop()

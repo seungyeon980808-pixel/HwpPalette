@@ -27,7 +27,8 @@ class RoundButton(tk.Canvas):
 
     def __init__(self, parent, text="", command=None, bg="#ffffff",
                  fg="#1d1d1f", radius=8, font=None, outline="",
-                 focus_color="#0071e3", zone_bg=None, justify="center"):
+                 focus_color="#0071e3", zone_bg=None, justify="center",
+                 trailing=None, pad_in=10):
         # zone_bg = 모서리 '바깥'에 비칠 색. 안 주면 부모 배경을 따른다.
         super().__init__(parent, highlightthickness=0, bd=0,
                          bg=zone_bg or parent.cget("bg"),
@@ -40,6 +41,16 @@ class RoundButton(tk.Canvas):
         self._outline = outline
         self._focus_color = focus_color
         self._justify = justify
+        # trailing = 오른쪽 끝에 **따로** 그리는 짧은 기호 (▾ 같은 것).
+        #
+        # 왜 글자에 붙여 쓰지 않나 (사용자 지적 2026-07-28: "드롭다운이 좌측으로
+        # 정렬되고 표시가 오른쪽 끝에 있어야 한다"): "수능  ▾" 처럼 한 덩어리로
+        # 가운데 정렬하면, 이름 길이에 따라 ▾ 가 좌우로 떠다닌다. 폭을 가장 긴
+        # 이름으로 고정해 둔 버튼에서는 짧은 이름일수록 ▾ 가 안쪽으로 들어와
+        # '오른쪽 끝의 펼침 표시'라는 관습이 깨진다. 이름은 왼쪽 고정,
+        # ▾ 는 오른쪽 고정 — 둘을 따로 그려야 성립한다.
+        self._trailing = trailing
+        self._pad_in = pad_in
         self._base = bg
         self._hover = ui_fx.darken(bg, ui_fx.HOVER_FACTOR)
         self._press = ui_fx.darken(bg, ui_fx.PRESS_FACTOR)
@@ -71,6 +82,8 @@ class RoundButton(tk.Canvas):
             f = tkfont.Font(font=self._font) if self._font else tkfont.Font()
             lines = (self._text or " ").split("\n")
             w = max((f.measure(ln) for ln in lines), default=0) + pad_x * 2
+            if self._trailing:      # 오른쪽 기호가 글자를 침범하지 않게
+                w += f.measure(self._trailing) + pad_x
             h = f.metrics("linespace") * len(lines) + pad_y * 2
             self.config(width=max(w, min_w), height=h)
         except Exception:
@@ -101,21 +114,33 @@ class RoundButton(tk.Canvas):
         edge = (self._focus_color if self._focused else self._outline)
         dy = 1 if self._pressed else 0      # 누르면 글자가 1px 가라앉는다
 
+        # 글자 자리 — trailing 이 있으면 왼쪽 붙임, 없으면 가운데
+        lx, lanchor = ((self._pad_in, "w") if self._trailing
+                       else (w // 2, "center"))
+
         if not self.find_withtag("body"):
             self.create_polygon(pts, smooth=True, fill=self._fill,
                                 outline=edge or "",
                                 width=2 if self._focused else 1, tags="body")
-            self.create_text(w // 2, h // 2 + dy, text=self._text,
+            self.create_text(lx, h // 2 + dy, text=self._text, anchor=lanchor,
                              font=self._font, fill=self._fg,
                              justify=self._justify, tags="label")
+            if self._trailing:
+                self.create_text(w - self._pad_in, h // 2 + dy,
+                                 text=self._trailing, anchor="e",
+                                 font=self._font, fill=self._fg, tags="trail")
             return
 
         self.coords("body", *pts)
         self.itemconfig("body", fill=self._fill, outline=edge or "",
                         width=2 if self._focused else 1)
-        self.coords("label", w // 2, h // 2 + dy)
+        self.coords("label", lx, h // 2 + dy)
         self.itemconfig("label", text=self._text, fill=self._fg,
-                        font=self._font)
+                        font=self._font, anchor=lanchor)
+        if self._trailing:
+            self.coords("trail", w - self._pad_in, h // 2 + dy)
+            self.itemconfig("trail", text=self._trailing, fill=self._fg,
+                            font=self._font)
 
     # ── 색 전환 (ui_fx 와 같은 리듬) ────────────────
     def _cancel(self):
@@ -209,3 +234,76 @@ class RoundButton(tk.Canvas):
         if fg:
             self._fg = fg
         self._redraw()
+
+
+class RoundTile(tk.Canvas):
+    r"""모서리가 둥근 **판때기** — 버튼이 아니라 무언가를 담는 타일용.
+
+    왜 필요한가 (사용자 지적 2026-07-28: "메인 위젯의 곡률과 팔레트 설정
+    위젯의 곡률이 다릅니다"): 메인 창의 블럭은 RoundButton 이라 모서리가
+    깎여 있는데, 팔레트 설정의 격자 블럭과 창고 카드는 tk.Frame 이라
+    직각이었다. 같은 물건(블럭·물감)이 화면마다 다른 모양이면 **다른 물건으로
+    읽힌다.** 곡률은 메인 쪽(RADIUS["ctl"])으로 맞춘다.
+
+    핵심 설계: **configure 를 가로챈다.**
+        기존 코드는 타일 테두리를 `highlightbackground`·`highlightthickness`
+        로 바꾼다(선택 표시·놓기 강조·창고 색칠). 그 호출들을 한 줄도 안
+        고치고 그대로 쓰려고, 여기서 그 두 옵션을 받아 **폴리곤 외곽선**으로
+        옮긴다. Canvas 는 원래 그 옵션들을 다른 뜻으로 갖고 있으므로
+        가로채지 않으면 둘레에 엉뚱한 네모 테두리가 하나 더 생긴다.
+    """
+
+    def __init__(self, parent, bg, radius=None, zone_bg=None, **kw):
+        self._tile_bg = bg
+        self._radius = 8 if radius is None else radius
+        # 만들 때 준 테두리 옵션도 configure 와 **같은 규칙**으로 받는다 —
+        # 안 그러면 Canvas 가 자기 뜻(둘레의 초점 테두리)으로 해석해 충돌한다.
+        self._edge = kw.pop("highlightbackground", "")
+        self._edge_w = max(1, int(kw.pop("highlightthickness", 1)))
+        kw.pop("highlightcolor", None)
+        super().__init__(parent, highlightthickness=0, bd=0,
+                         bg=zone_bg or parent.cget("bg"), **kw)
+        self.bind("<Configure>", lambda e: self._redraw(), add="+")
+
+    def _redraw(self):
+        w, h = self.winfo_width(), self.winfo_height()
+        if w <= 2 or h <= 2:
+            return
+        r = min(self._radius, w // 2, h // 2)
+        pts = RoundButton._round_points(1, 1, w - 2, h - 2, r)
+        if not self.find_withtag("body"):
+            self.create_polygon(pts, smooth=True, fill=self._tile_bg,
+                                outline=self._edge or "", width=self._edge_w,
+                                tags="body")
+            self.tag_lower("body")      # 안에 놓인 자식·글자보다 뒤로
+            return
+        self.coords("body", *pts)
+        self.itemconfig("body", fill=self._tile_bg, outline=self._edge or "",
+                        width=self._edge_w)
+
+    def configure(self, cnf=None, **kw):
+        opts = dict(cnf or {})
+        opts.update(kw)
+        redraw = False
+        if "highlightbackground" in opts:
+            self._edge = opts.pop("highlightbackground")
+            redraw = True
+        opts.pop("highlightcolor", None)        # 초점 테두리는 쓰지 않는다
+        if "highlightthickness" in opts:
+            self._edge_w = max(1, int(opts.pop("highlightthickness")))
+            redraw = True
+        for key in ("bg", "background"):
+            if key in opts:
+                self._tile_bg = opts.pop(key)
+                redraw = True
+        if opts:
+            super().configure(**opts)
+        if redraw:
+            self._redraw()
+
+    config = configure
+
+    def cget(self, key):
+        if key in ("bg", "background"):
+            return self._tile_bg
+        return super().cget(key)

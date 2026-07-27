@@ -67,6 +67,105 @@ HOVER_FACTOR = 0.94
 PRESS_FACTOR = 0.86
 
 
+# ── 창 투명도 전환 (2026-07-28) ────────────────────────
+# 왜 필요한가: 창을 destroy 하거나 판을 접었다 펴면 Tk 는 그 사이 **다시 그리는
+# 과정을 그대로 보여준다** — 판이 사라졌다가 다른 크기로 나타나는 한두 프레임이
+# 사람 눈에는 '깜빡임'으로 읽힌다 (사용자 지적 2026-07-28).
+#
+# 애플이 쓰는 방법은 그 구간을 **안 보이게 덮는 것**이다: 불투명도를 잠깐
+# 내렸다가, 배치가 다 끝난 뒤 올린다. 옮기는 동안 창 자체가 반투명이라
+# 무엇이 어떻게 재배치되는지가 눈에 띄지 않는다.
+#
+# 창 알파는 윈도우 합성기가 처리하므로(Tk 위젯 재그리기와 무관) 이 전환은
+# 레이아웃을 한 번도 건드리지 않는다 — 그래서 그 자체로는 절대 안 깜빡인다.
+FADE_STEPS = 7
+FADE_INTERVAL_MS = 14
+
+
+def _set_alpha(win, value):
+    try:
+        win.attributes("-alpha", max(0.0, min(1.0, value)))
+        return True
+    except Exception:
+        return False            # -alpha 를 못 쓰는 환경 — 전환 없이 즉시 처리
+
+
+def fade(win, to, ms=None, on_done=None, ease=True):
+    """창 불투명도를 지금 값에서 to(0~1)로 옮긴다. 끝나면 on_done.
+
+    -alpha 를 지원하지 않으면 곧바로 on_done 을 부른다 — 전환은 장식이므로
+    없다고 해서 동작이 막히면 안 된다.
+    """
+    try:
+        start = float(win.attributes("-alpha"))
+    except Exception:
+        if on_done:
+            on_done()
+        return
+    steps = FADE_STEPS
+    interval = FADE_INTERVAL_MS if ms is None else max(1, int(ms / steps))
+    if abs(to - start) < 0.02:
+        _set_alpha(win, to)
+        if on_done:
+            on_done()
+        return
+
+    def step(k):
+        try:
+            if not win.winfo_exists():
+                return
+        except Exception:
+            return
+        t = ease_out(k / steps) if ease else (k / steps)
+        _set_alpha(win, start + (to - start) * t)
+        if k < steps:
+            try:
+                win.after(interval, lambda: step(k + 1))
+            except Exception:
+                pass
+        elif on_done:
+            on_done()
+
+    step(1)
+
+
+def fade_close(win, ms=120):
+    """창을 흐려지며 닫는다 — 뚝 사라지는 대신.
+
+    파괴는 **전환이 끝난 뒤** 한 번만 한다. 중간에 destroy 되면 남은 after
+    콜백이 죽은 창을 잡으므로 winfo_exists 로 막는다 (fade 안에서 확인).
+    """
+    def done():
+        try:
+            win.destroy()
+        except Exception:
+            pass
+    fade(win, 0.0, ms=ms, on_done=done)
+
+
+def veil(win, work, dim=0.0, out_ms=110, in_ms=160):
+    r"""**옮기는 동안 가린다** — 흐려짐 → work() → 다시 진해짐.
+
+    판을 접었다 펴거나 창 크기를 크게 바꾸는 일(양식 수정 종료 등)에 쓴다.
+    work 는 흐려진 뒤에 불리므로, 그 안에서 창 크기·배치를 마음껏 바꿔도
+    재배치 과정이 화면에 안 보인다.
+
+    work 가 예외를 던져도 **반드시 다시 진해진다** — 안 그러면 창이 투명한
+    채로 남아 프로그램이 사라진 것처럼 보인다.
+    """
+    def after_dim():
+        try:
+            work()
+        finally:
+            try:
+                win.update_idletasks()      # 새 배치를 알파 복귀 전에 확정
+            except Exception:
+                pass
+            fade(win, 1.0, ms=in_ms)
+
+    fade(win, dim, ms=out_ms, on_done=after_dim)
+
+
 # ── Tk 위젯에 붙이기 ───────────────────────────────────
 def rebase(widget, base):
     """attach 로 붙인 위젯의 **기준색**을 바꾼다 (탭 활성/비활성 전환 등).

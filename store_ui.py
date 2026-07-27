@@ -7,11 +7,18 @@ r"""물감 창고 — 팔레트 설정 창 왼쪽에 붙는 서랍 (2026-07-27).
     팔레트의 타일과 **같은 물건으로 안 보였다**. 창고는 물감을 팔레트 블럭과
     같은 생김새의 타일로 보여주고, 그 자리에서 팔레트에 놓게 한다.
 
-색이 말하는 것 (사용자 결정):
-    파랑  — 어느 팔레트에도 안 놓인 물감. 눈에 띄어야 할 쪽은 이쪽이다.
-    코랄  — **지금 보고 있는 탭**에 이미 놓인 물감. 탭을 바꾸면 따라 바뀐다.
-    흰색  — 다른 탭에만 놓인 물감.
+색이 말하는 것 (사용자 결정 2026-07-28에 뒤집음):
+    흰색  — **안 씀**. 어느 팔레트에도 안 놓인 물감.
+    파랑  — **쓰는 중**. 다른 팔레트에 놓여 있다.
+    코랄  — **이 팔레트**. 지금 보고 있는 탭에 놓여 있다.
+    초록  — **고른 것**.
     "어느 탭에 있는지"를 글자로 적지 않는 이유: 탭을 옮겨 다니면 색이 알려준다.
+
+    왜 뒤집었나: 안 쓰는 물감은 목록 맨 위에 오는데 그것들이 파랗게 칠해져
+    있으니 창고를 열 때마다 **파란 덩어리가 먼저 보였다** — 색의 세기는
+    '중요하다'가 아니라 '이미 쓰고 있다'를 말해야 한다는 판단 (사용자 지적:
+    "안 씀이 파란색이면 느낌이 이상하다"). 흰색은 빈 자리처럼 읽혀서
+    '아직 아무 데도 안 갔다'와 정확히 맞물린다.
 
 분류를 탭이 아니라 칩 한 줄로 둔 이유:
     창고의 핵심은 "안 놓인 물감이 여기 있다"인데, 분류로 탭을 갈라 놓으면
@@ -31,7 +38,7 @@ import library
 import palette
 import preview
 import theme
-from roundbtn import RoundButton
+from roundbtn import RoundButton, RoundTile
 
 _C = theme.colors()
 BG = _C["bg"]
@@ -46,11 +53,20 @@ FONT = theme.FONT
 SP = theme.SP
 FS = theme.FS
 
-# 파랑 = 안 놓임 / 코랄 = 이 탭에 있음 / 초록 = 지금 고른 것.
-# 셋 다 색상환에서 멀리 떨어져 있어 나란히 놓여도 구별된다.
-FREE_BG, FREE_LINE, FREE_FG = ACCENT_SOFT, "#54aeff", "#0550ae"
+# 흰색 = 안 씀 / 파랑 = 다른 팔레트에서 쓰는 중 / 코랄 = 이 팔레트 / 초록 = 고른 것.
+# 파랑·코랄·초록은 색상환에서 멀리 떨어져 있어 나란히 놓여도 구별된다.
+FREE_BG, FREE_LINE, FREE_FG = CARD, BORDER, TEXT
+USED_BG, USED_LINE, USED_FG = ACCENT_SOFT, "#54aeff", "#0550ae"
 HERE_BG, HERE_LINE, HERE_FG = "#ffefe9", "#f0997b", "#8a3418"
 SEL_BG, SEL_LINE, SEL_FG = "#e6f6ea", "#2da44e", "#116329"
+
+# 고른 해시태그는 **회색**이다 (사용자 지적 2026-07-28) — 예전엔 옅은 파랑이라
+# 바로 아래 '안 씀' 견본과 색이 겹쳐, 태그를 고른 것인지 물감 상태인지가
+# 한눈에 안 갈렸다. 거르개는 물감의 상태를 말하는 물건이 아니므로 색 규칙
+# 바깥의 무채색을 쓴다.
+CHIP_ON_BG, CHIP_ON_LINE, CHIP_ON_FG = "#e6e6ea", "#9a9aa0", "#3c3c40"
+
+SHARE_GLYPH = theme.SHARE_GLYPH
 
 CATS = (("전체", None), ("서식", "서식"), ("특수기호", "문자"),
         ("템플릿", "템플릿"), ("양식", "양식"))
@@ -75,6 +91,12 @@ class StorePanel(tk.Frame):
         self._drag = None                   # 끌기 상태 (타일 → 팔레트 격자)
         self.filter = None                  # None = 전체
         self.sel_key = None                 # 고른 물감 (분류, id)
+        # Ctrl 을 누른 채 고르면 여러 개가 쌓인다 (사용자 결정 2026-07-28) —
+        # 동료에게 물감 몇 개만 골라 보내는 일에 쓴다. 미리보기 판은 여전히
+        # **마지막에 누른 하나**를 보여준다: 여러 개를 한 판에 겹쳐 보여줄
+        # 방법이 없고, 고르는 동안 오른쪽이 텅 비면 무엇을 담았는지 모른다.
+        self.multi = set()                  # {(분류, id)} — 내보내기 대상
+        self._free_hint = ""                # 담은 게 없을 때 머리말에 쓸 말
         self._tiles = {}
         self._photo = None                  # ⚠ 참조를 붙들어야 그림이 안 사라진다
 
@@ -82,6 +104,15 @@ class StorePanel(tk.Frame):
         head.pack(fill="x", padx=8, pady=(6, 2))
         tk.Label(head, text="물감 창고", font=(FONT, theme.fs(FS["head"]), "bold"),
                  bg=CARD, fg=TEXT).pack(side="left")
+        # 나누기 — 팔레트 설정 쪽과 **같은 기호**를 쓴다 (사용자 결정 2026-07-28).
+        # 한쪽은 팔레트를, 한쪽은 물감을 주고받지만 하는 일은 같으므로 기호가
+        # 같아야 "여기서도 주고받는구나"가 배움 없이 읽힌다.
+        self.share_btn = RoundButton(
+            head, text=SHARE_GLYPH, command=self._share_menu,
+            bg=CARD, fg=MUTED, radius=theme.RADIUS["ctl"],
+            font=(FONT, theme.fs(FS["body"])), outline="", zone_bg=CARD)
+        self.share_btn.config(width=theme.fs(22), height=theme.fs(20))
+        self.share_btn.pack(side="right")
         self.hint = tk.Label(head, text="", font=(FONT, theme.fs(FS["caption"])),
                              bg=CARD, fg=MUTED)
         self.hint.pack(side="left", padx=(6, 0))
@@ -98,8 +129,11 @@ class StorePanel(tk.Frame):
         # 보였다 (사용자 지적 2026-07-27).
         legend = tk.Frame(self, bg=CARD)
         legend.pack(fill="x", padx=8, pady=(0, 6))
+        # 네 칸이 되면서 이름을 줄였다 — 견본은 색과 뜻을 잇는 물건이라
+        # 짧을수록 좋고, 긴 이름은 칸을 밀어내 색 판이 찌그러진다.
         states = (("안 씀", FREE_BG, FREE_LINE, FREE_FG),
-                  ("이 팔레트에 있음", HERE_BG, HERE_LINE, HERE_FG),
+                  ("쓰는 중", USED_BG, USED_LINE, USED_FG),
+                  ("이 팔레트", HERE_BG, HERE_LINE, HERE_FG),
                   ("고른 것", SEL_BG, SEL_LINE, SEL_FG))
         for i, (text, bg, line, fg) in enumerate(states):
             legend.columnconfigure(i, weight=1, uniform="legend")
@@ -206,8 +240,9 @@ class StorePanel(tk.Frame):
 
         free_n = sum(1 for c, i in items
                      if self._state(c, i, where, here) == "free")
-        self.hint.config(text=(f"안 쓰는 물감 {free_n}개"
-                               if free_n else "모두 팔레트에 놓여 있습니다"))
+        self._free_hint = (f"안 쓰는 물감 {free_n}개" if free_n
+                           else "모두 팔레트에 놓여 있습니다")
+        self._sync_share()
 
         grid = tk.Frame(self.body, bg=CARD)
         grid.pack(fill="x")
@@ -238,10 +273,10 @@ class StorePanel(tk.Frame):
             chip = tk.Label(self.chip_box,
                             text=f"#{label} {counts.get(key, 0)}",
                             font=(FONT, theme.fs(FS["caption"])),
-                            bg=ACCENT_SOFT if on else CARD,
-                            fg=FREE_FG if on else MUTED,
+                            bg=CHIP_ON_BG if on else CARD,
+                            fg=CHIP_ON_FG if on else MUTED,
                             padx=5, pady=2, cursor="hand2",
-                            highlightbackground=FREE_LINE if on else BORDER,
+                            highlightbackground=CHIP_ON_LINE if on else BORDER,
                             highlightthickness=1)
             chip.grid(row=i // 3, column=i % 3, sticky="ew", padx=2, pady=1)
             chip.bind("<Button-1>", lambda e, k=key: self._pick_chip(k))
@@ -257,14 +292,16 @@ class StorePanel(tk.Frame):
         self.canvas.yview_moveto(0)
 
     def _colors(self, state):
-        if state == "free":
-            return FREE_BG, FREE_LINE, FREE_FG
         if state == "here":
             return HERE_BG, HERE_LINE, HERE_FG
-        return CARD, BORDER, TEXT
+        if state == "away":
+            return USED_BG, USED_LINE, USED_FG
+        return FREE_BG, FREE_LINE, FREE_FG      # free · plain — 안 씀(흰색)
 
     def _tile(self, parent, cat, item, state):
-        tile = tk.Frame(parent, cursor="hand2", highlightthickness=1)
+        # 곡률은 메인 창 블럭과 같다 (RoundTile 머리말 참고)
+        tile = RoundTile(parent, bg=CARD, radius=theme.RADIUS["ctl"],
+                         zone_bg=CARD, cursor="hand2")
         name = item.get("name", "?")
         nm = tk.Label(tile, text=name if len(name) <= 12 else name[:12] + "…",
                       font=(FONT, theme.fs(FS["sub"]), "bold"), anchor="w")
@@ -287,6 +324,13 @@ class StorePanel(tk.Frame):
 
     # ── 타일 끌어서 팔레트에 놓기 ─────────────────────
     def _tile_press(self, e, cat, item):
+        # Ctrl 누른 채 = 여러 개 담기 (0x0004 는 윈도우 Tk 의 Control 비트).
+        # 끌기는 시작하지 않는다 — 여러 개를 담는 중에 손이 조금 흔들렸다고
+        # 팔레트로 물감이 날아가면 안 된다.
+        if e.state & 0x0004:
+            self._toggle_multi(cat, item)
+            self._drag = None
+            return
         self._select(cat, item)             # 누르는 것 자체는 '고르기'
         block = self.block_of(cat, item)
         if self.on_drop is None or block is None:
@@ -352,7 +396,72 @@ class StorePanel(tk.Frame):
 
     def _paint_selection(self):
         for key, tile in getattr(self, "_tiles", {}).items():
-            self._paint_tile(tile, tile._state, selected=(key == self.sel_key))
+            self._paint_tile(tile, tile._state,
+                             selected=(key == self.sel_key or key in self.multi))
+
+    # ── 여러 개 담기 · 주고받기 ────────────────────────
+    def _toggle_multi(self, cat, item):
+        key = (cat, item.get("id"))
+        if key in self.multi:
+            self.multi.discard(key)
+        else:
+            self.multi.add(key)
+            if self.on_select:
+                self.on_select(cat, item)   # 방금 담은 것을 오른쪽에 보여준다
+        self.sel_key = None                 # 하나 고르기와 섞이지 않게
+        self._paint_selection()
+        self._sync_share()
+
+    def clear_multi(self):
+        if not self.multi:
+            return
+        self.multi.clear()
+        self._paint_selection()
+        self._sync_share()
+
+    def _sync_share(self):
+        """담은 개수를 화살표 버튼의 색으로 말한다 — 숫자를 따로 안 적는다."""
+        n = len(self.multi)
+        try:
+            self.share_btn.retint(bg=SEL_BG if n else CARD,
+                                  fg=SEL_FG if n else MUTED)
+        except Exception:
+            pass
+        try:
+            self.hint.config(text=(f"{n}개 담음 — ↗ 로 내보냅니다" if n
+                                   else self._free_hint))
+        except Exception:
+            pass
+
+    def _multi_pairs(self):
+        """담은 것 → [(분류, 항목)] — 그새 지워진 물감은 빠진다."""
+        pairs = []
+        for cat, iid in sorted(self.multi):
+            it = library.find_by_id(cat, iid)
+            if it is not None:
+                pairs.append((cat, it))
+        return pairs
+
+    def _share_menu(self):
+        r"""↗ — 주고받기. **누르자마자 파일창이 뜨지 않는다** (사용자 결정
+        2026-07-28): 내보내기와 불러오기 중 어느 쪽인지 먼저 고르게 한다.
+        담은 물감이 없으면 내보낼 것이 없으므로 불러오기만 남는다.
+        """
+        import library_ui                   # 순환 참조 회피
+        from popover import Popover
+        pairs = self._multi_pairs()
+        pop = Popover(self.winfo_toplevel(), self.share_btn)
+        if pairs:
+            pop.add(f"고른 물감 {len(pairs)}개 내보내기…",
+                    lambda: library_ui.export_items_flow(
+                        self.winfo_toplevel(), pairs, on_done=self.clear_multi))
+        else:
+            pop.add("내보낼 물감을 Ctrl+클릭으로 고르세요", lambda: None)
+        pop.separator()
+        pop.add("불러오기…",
+                lambda: library_ui.import_flow(self.winfo_toplevel(),
+                                               on_saved=self.refresh))
+        pop.show()
 
     def refresh_states(self):
         r"""배치 색(안 씀/이 팔레트에 있음)만 다시 칠한다 — 위젯 재생성 없음.
@@ -377,9 +486,11 @@ class StorePanel(tk.Frame):
             if tile is None:
                 continue
             tile._state = state
-            self._paint_tile(tile, state, selected=(key == self.sel_key))
-        self.hint.config(text=(f"안 쓰는 물감 {free_n}개"
-                               if free_n else "모두 팔레트에 놓여 있습니다"))
+            self._paint_tile(tile, state,
+                             selected=(key == self.sel_key or key in self.multi))
+        self._free_hint = (f"안 쓰는 물감 {free_n}개" if free_n
+                           else "모두 팔레트에 놓여 있습니다")
+        self._sync_share()
 
     def _select(self, cat, item):
         r"""물감 고르기 — **화면을 다시 그리지 않는다.**
@@ -390,6 +501,11 @@ class StorePanel(tk.Frame):
         내용은 오른쪽 미리보기 판이 받는다.
         """
         self.sel_key = (cat, item.get("id"))
+        # 그냥 클릭은 담아 둔 것을 푼다 — 파일 탐색기와 같은 규칙이라
+        # 따로 배우지 않아도 손이 안다.
+        if self.multi:
+            self.multi.clear()
+            self._sync_share()
         self._paint_selection()
         if self.on_select:
             self.on_select(cat, item)
