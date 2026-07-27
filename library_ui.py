@@ -257,11 +257,15 @@ class MetaDialog(tk.Toplevel):
         # 두 개를 따로 두니 이름만 고쳤을 때 라벨이 옛 이름으로 남는 사고가 났다.
         adv = tk.Frame(self, bg=BG, padx=16)
         adv.pack(fill="x")
-        tk.Label(adv, text="태그", font=(FONT, theme.fs(FS["body"])), bg=BG, fg=TEXT).pack(
-            anchor="w", pady=(4, 2))
-        self.tag_entry = tk.Entry(adv, width=26, font=(FONT, theme.fs(FS["head"])),
+        # '태그' 이름표를 입력칸 **옆**에 둔다 (사용자 지적 2026-07-27) —
+        # 위 '이름' 줄과 같은 짜임이어야 눈이 줄 단위로 훑으면 된다.
+        trow = tk.Frame(adv, bg=BG)
+        trow.pack(fill="x", pady=(4, 0))
+        tk.Label(trow, text="태그", font=(FONT, theme.fs(FS["body"])), bg=BG,
+                 fg=TEXT).pack(side="left")
+        self.tag_entry = tk.Entry(trow, width=26, font=(FONT, theme.fs(FS["head"])),
                                   relief="solid", bd=1)
-        self.tag_entry.pack(anchor="w", fill="x")
+        self.tag_entry.pack(side="left", fill="x", expand=True, padx=(8, 0))
         # 엔터로 담는다 (사용자 결정 2026-07-27) — 띄어쓰기로 나열하는 방식은
         # 무엇이 이미 담겼는지 눈에 안 보이고, 지우려면 글자를 찾아 지워야 했다.
         self.tag_entry.bind("<Return>", lambda e: self._commit_tag())

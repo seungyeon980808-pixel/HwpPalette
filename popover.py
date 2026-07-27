@@ -53,31 +53,48 @@ class Popover(tk.Toplevel):
         """보통 항목. indent=True 면 체크 항목들과 글머리를 맞춘다."""
         return self._item(text, command, lead="    " if indent else "")
 
-    def add_check(self, text, command, checked=False):
-        """체크 표시가 붙는 항목 (지금 선택된 팔레트 등)."""
-        return self._item(text, command, lead="✓  " if checked else "    ",
-                          bold=checked)
+    def add_check(self, text, command, checked=False, more=None):
+        """체크 표시가 붙는 항목 (지금 선택된 팔레트 등).
 
-    def _item(self, text, command, lead="", bold=False):
+        more 를 주면 항목 오른쪽에 ⋯ 단추가 붙는다 — 그 항목에 대한 관리
+        메뉴(이름·순서·삭제 등)를 여는 용도. 항목 본체를 누르면 command,
+        ⋯ 를 누르면 more 가 실행된다 (둘 다 팝오버를 먼저 닫는다).
+        """
+        return self._item(text, command, lead="✓  " if checked else "    ",
+                          bold=checked, more=more)
+
+    def _item(self, text, command, lead="", bold=False, more=None):
         f = tk.Frame(self._body, bg=_C["card"])
         f.pack(fill="x")
         font = ((theme.FONT, theme.fs(9), "bold") if bold
                 else (theme.FONT, theme.fs(9)))
         lab = tk.Label(f, text=lead + text, font=font, bg=_C["card"],
                        fg=_C["text"], anchor="w", padx=12, pady=6)
-        lab.pack(fill="x")
+        parts = [f, lab]
+        if more is not None:
+            # ⋯ 는 자기 바인딩만 갖는다 — 항목 본체(f·lab)의 클릭과 안 섞인다
+            dots = tk.Label(f, text="⋯", font=(theme.FONT, theme.fs(9)),
+                            bg=_C["card"], fg=_C["muted"], padx=10, pady=6)
+            dots.pack(side="right")
+            dots.bind("<Enter>", lambda e: dots.config(fg=_C["accent"]))
+            dots.bind("<Leave>", lambda e: dots.config(fg=_C["muted"]))
+            dots.bind("<ButtonRelease-1>", lambda e, c=more: self._run(c))
+            dots.config(cursor="hand2")
+            parts.append(dots)
+        lab.pack(side="left", fill="x", expand=True)
         for w in (f, lab):
-            w.bind("<Enter>", lambda e, fr=f, lb=lab: self._hover(fr, lb, True))
-            w.bind("<Leave>", lambda e, fr=f, lb=lab: self._hover(fr, lb, False))
+            w.bind("<Enter>", lambda e, ws=parts: self._hover(ws, True))
+            w.bind("<Leave>", lambda e, ws=parts: self._hover(ws, False))
             w.bind("<ButtonRelease-1>", lambda e, c=command: self._run(c))
             w.config(cursor="hand2")
         return self
 
-    def _hover(self, f, lab, on):
+    def _hover(self, parts, on):
         bg = _C["accent_soft"] if on else _C["card"]
         fg = _C["accent"] if on else _C["text"]
-        f.config(bg=bg)
-        lab.config(bg=bg, fg=fg)
+        for w in parts:
+            w.config(bg=bg)
+        parts[1].config(fg=fg)      # 글자색은 본문 라벨만 — ⋯ 는 제 색을 지킨다
 
     def separator(self):
         tk.Frame(self._body, bg=_C["border"], height=1).pack(fill="x", pady=3)

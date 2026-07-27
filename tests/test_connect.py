@@ -152,5 +152,75 @@ class AttachWithoutResizeTest(unittest.TestCase):
                          f"pyhwpx.Hwp.__init__ 이 세팅하는 필드가 바뀌었다: {fields}")
 
 
+class FakeWindow:
+    """XHwpWindows.Active_XHwpWindow 흉내 — Visible 대입 횟수를 센다."""
+
+    def __init__(self, visible=True, handle=1234):
+        self._visible = visible
+        self.WindowHandle = handle
+        self.visible_writes = 0
+
+    @property
+    def Visible(self):
+        return self._visible
+
+    @Visible.setter
+    def Visible(self, v):
+        self.visible_writes += 1
+        self._visible = v
+
+
+class HiddenInstanceTest(unittest.TestCase):
+    r"""숨은 COM 인스턴스 회귀 테스트 (2026-07-27).
+
+    증상: "양식 고치기를 눌러도 한글 창이 안 뜬다."
+    원인: 다른 자동화가 숨겨 둔 HwpObject 에 붙으면 문서가 **안 보이는 창**에
+    열린다. ensure_visible 이 그 창을 켜고, bring_to_front 는 아무 한글 창이
+    아니라 **연결된 인스턴스의 창**을 앞으로 가져와야 한다.
+    """
+
+    def tearDown(self):
+        hwp_engine.hwp = None
+
+    def _wrap(self, window):
+        fake = FakeHwp()
+        fake.hwp.XHwpWindows = type("W", (), {})()
+        fake.hwp.XHwpWindows.Active_XHwpWindow = window
+        return fake
+
+    def test_숨은_창이면_ensure_visible이_켠다(self):
+        win = FakeWindow(visible=False)
+        hwp_engine.hwp = self._wrap(win)
+        with mock.patch.object(hwp_engine, "_hwp_window_handles",
+                               return_value=[42]):
+            self.assertTrue(hwp_engine.ensure_visible())
+        self.assertTrue(win.Visible)
+        self.assertEqual(win.visible_writes, 1)
+
+    def test_이미_보이는_창은_건드리지_않는다(self):
+        """Visible 대입은 최대화를 푸는 부작용이 있다 — 켜져 있으면 안 만진다."""
+        win = FakeWindow(visible=True)
+        hwp_engine.hwp = self._wrap(win)
+        with mock.patch.object(hwp_engine, "_hwp_window_handles",
+                               return_value=[42]):
+            self.assertTrue(hwp_engine.ensure_visible())
+        self.assertEqual(win.visible_writes, 0,
+                         "이미 보이는 창의 Visible 을 다시 대입했다 (최대화가 풀린다)")
+
+    def test_connected_hwnd는_연결된_인스턴스의_핸들을_쓴다(self):
+        """한글이 여럿일 때 엉뚱한(문서 없는) 창을 올리면 안 된다."""
+        win = FakeWindow(visible=True, handle=777)
+        hwp_engine.hwp = self._wrap(win)
+        with mock.patch.object(hwp_engine, "_hwp_window_handles",
+                               return_value=[42]):
+            self.assertEqual(hwp_engine._connected_hwnd(), 777)
+
+    def test_핸들을_모르면_보이는_창으로_대신한다(self):
+        hwp_engine.hwp = None
+        with mock.patch.object(hwp_engine, "_hwp_window_handles",
+                               return_value=[42]):
+            self.assertEqual(hwp_engine._connected_hwnd(), 42)
+
+
 if __name__ == "__main__":
     unittest.main()

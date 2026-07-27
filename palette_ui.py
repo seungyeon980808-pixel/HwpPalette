@@ -424,14 +424,18 @@ class SettingsWindow(tk.Toplevel):
         # 설명과 드롭다운이 서로를 밀어내 줄이 빡빡했다.
         phead = tk.Frame(main, bg=CARD)
         phead.pack(fill="x", padx=SP["s"], pady=(SP["s"], 2))
-        tk.Label(phead, text="팔레트", font=(FONT, theme.fs(FS["head"]), "bold"),
+        tk.Label(phead, text="팔레트 설정",
+                 font=(FONT, theme.fs(FS["head"]), "bold"),
                  bg=CARD, fg=TEXT).pack(side="left")
         self.pal_hint = tk.Label(phead, text=self._pal_hint_text(),
                                  font=(FONT, theme.fs(FS["caption"])),
                                  bg=CARD, fg=MUTED)
         self.pal_hint.pack(side="left", padx=(SP["xs"] + 2, 0))
 
-        # 둘째 줄: 고르기(드롭다운) · 더하기 · 관리(⋯) — 손이 가는 빈도순
+        # 둘째 줄: 고르기(드롭다운) 하나뿐 — 추가·관리도 이 안에 있다
+        # (사용자 결정 2026-07-27: ＋·⋯ 버튼을 없애고 드롭다운으로 모음.
+        #  각 팔레트의 오른쪽 ⋯ 로 이름·순서·내보내기·삭제, 맨 아래
+        #  '＋ 새 팔레트' 로 추가).
         prow = tk.Frame(main, bg=CARD)
         prow.pack(fill="x", padx=SP["s"], pady=(0, SP["s"]))
         self.tab_pick = RoundButton(
@@ -439,21 +443,12 @@ class SettingsWindow(tk.Toplevel):
             bg=CARD, fg=TEXT, radius=theme.RADIUS["ctl"],
             font=(FONT, theme.fs(FS["body"])), outline=BORDER,
             focus_color=ACCENT, zone_bg=CARD)
+        # 폭을 **가장 긴 이름 기준으로 한 번만** 잰다 (사용자 지적 2026-07-27:
+        # "드롭다운의 길이가 일정해야 한다") — 고를 때마다 이름 길이 따라
+        # 버튼이 늘었다 줄었다 하면 그 줄 전체가 다시 배치되며 창이 덜컹거린다.
+        self.tab_pick._text = "가" * self._TAB_NAME_MAX + "  ▾"
+        self.tab_pick.fit(pad_x=SP["m"] - 3, pad_y=3)
         self.tab_pick.pack(side="left")
-        self.tab_add_btn = RoundButton(
-            prow, text="＋", command=self._add_tab,
-            bg=CARD, fg=MUTED, radius=theme.RADIUS["ctl"],
-            font=(FONT, theme.fs(FS["body"])), outline=BORDER, zone_bg=CARD)
-        self.tab_add_btn.fit(pad_x=SP["s"], pad_y=2).pack(
-            side="left", padx=(SP["xs"], 0))
-        _tip(self.tab_add_btn, "팔레트 추가")
-        self.tab_more_btn = RoundButton(
-            prow, text="⋯", command=self._tab_more_menu,
-            bg=CARD, fg=MUTED, radius=theme.RADIUS["ctl"],
-            font=(FONT, theme.fs(FS["body"])), outline=BORDER, zone_bg=CARD)
-        self.tab_more_btn.fit(pad_x=SP["s"], pad_y=2).pack(
-            side="left", padx=(SP["xs"], 0))
-        _tip(self.tab_more_btn, "이름 바꾸기·순서·내보내기·삭제")
 
         tk.Frame(main, bg=BORDER, height=1).pack(fill="x")
 
@@ -657,47 +652,57 @@ class SettingsWindow(tk.Toplevel):
     def _sync_tab_pick(self, tabs=None):
         tabs = palette.load_tabs() if tabs is None else tabs
         if not tabs:
-            self.tab_pick.set_text("팔레트 없음  ▾", pad_x=SP["m"] - 3, pad_y=3)
-            return
-        name = tabs[min(self.sel_tab, len(tabs) - 1)]["name"]
-        if len(name) > self._TAB_NAME_MAX:
-            name = name[:self._TAB_NAME_MAX - 1] + "…"
-        self.tab_pick.set_text(f"{name}  ▾", pad_x=SP["m"] - 3, pad_y=3)
+            name = "팔레트 없음"
+        else:
+            name = tabs[min(self.sel_tab, len(tabs) - 1)]["name"]
+            if len(name) > self._TAB_NAME_MAX:
+                name = name[:self._TAB_NAME_MAX - 1] + "…"
+        # set_text 는 글자에 맞춰 폭을 다시 재므로 쓰지 않는다 — 폭은 만들 때
+        # 고정했다 (고를 때마다 버튼 크기가 변하면 창이 덜컹거린다)
+        self.tab_pick._text = f"{name}  ▾"
+        self.tab_pick._redraw()
 
     def _tab_dropdown(self):
-        """팔레트 고르기 — main.py 의 pal_pick 과 같은 얼굴(Popover, 체크 목록)."""
+        """팔레트 고르기 — 고르기·관리(⋯)·추가가 모두 이 안에 있다.
+
+        main.py 의 pal_pick 과 같은 얼굴(Popover, 체크 목록)이되, 관리는
+        각 팔레트 오른쪽의 ⋯ 로, 추가는 맨 아래 줄로 들어갔다 (사용자 결정
+        2026-07-27 — 머리말의 ＋·⋯ 버튼을 없애고 드롭다운 하나로).
+        """
         tabs = palette.load_tabs()
         self.tab_pick.retint(bg=ACCENT_SOFT, fg=ACCENT)
         pop = Popover(self, self.tab_pick,
                      on_close=lambda: self.tab_pick.retint(bg=CARD, fg=TEXT))
         for i, t in enumerate(tabs):
             pop.add_check(t["name"], lambda idx=i: self._pick_tab(idx),
-                         checked=(i == self.sel_tab))
+                         checked=(i == self.sel_tab),
+                         more=lambda idx=i: self._tab_manage_menu(idx))
+        pop.separator()
+        pop.add("＋ 새 팔레트 만들기", self._add_tab, indent=True)
         pop.show()
 
-    def _tab_more_menu(self):
-        """탭 관리 — 이름 바꾸기·순서·내보내기·삭제. 우클릭 메뉴와 같은 목록.
+    def _tab_manage_menu(self, idx):
+        """팔레트 관리 — 드롭다운 각 줄의 ⋯ 가 연다. 이름·순서·내보내기·삭제.
 
         네이티브 tk.Menu 를 쓴다 — 이 프로그램 전체에서 오른쪽 클릭 메뉴가
         이미 이 모양이라(_tile_menu 등) 통일된다.
         """
-        idx = self.sel_tab
         tabs = palette.load_tabs()
+        if not (0 <= idx < len(tabs)):
+            return
         m = tk.Menu(self, tearoff=0)
         m.add_command(label="이름 바꾸기", command=lambda: self._rename_tab(idx))
         m.add_separator()
-        m.add_command(label="◀ 왼쪽으로", command=lambda: self._move_tab(-1),
+        m.add_command(label="▲ 위로", command=lambda: self._move_tab(idx, -1),
                       state="normal" if idx > 0 else "disabled")
-        m.add_command(label="오른쪽으로 ▶", command=lambda: self._move_tab(1),
+        m.add_command(label="▼ 아래로", command=lambda: self._move_tab(idx, 1),
                       state="normal" if idx < len(tabs) - 1 else "disabled")
         m.add_separator()
         m.add_command(label="팔레트 내보내기…",
                       command=lambda: self._export_chip(idx))
         m.add_separator()
         m.add_command(label="삭제", command=lambda: self._del_tab(idx))
-        x = self.tab_more_btn.winfo_rootx()
-        y = self.tab_more_btn.winfo_rooty() + self.tab_more_btn.winfo_height() + 2
-        m.tk_popup(x, y)
+        m.tk_popup(*self.winfo_pointerxy())
 
     def _pick_tab(self, idx):
         if idx == self.sel_tab:
@@ -719,7 +724,7 @@ class SettingsWindow(tk.Toplevel):
         library_ui.export_palette_flow(self, tabs[idx])
 
     def _add_tab(self):
-        name = simpledialog.askstring("탭 추가", "새 탭 이름:", parent=self)
+        name = simpledialog.askstring("새 팔레트", "새 팔레트 이름:", parent=self)
         if name:
             palette.add_tab(name)
             self.sel_tab = len(palette.load_tabs()) - 1
@@ -727,21 +732,25 @@ class SettingsWindow(tk.Toplevel):
             self._notify()
 
     def _rename_tab(self, idx=None):
+        """이름 바꾸기 — idx 팔레트를 고른 상태로 만들지 않는다 (2026-07-27).
+
+        드롭다운의 ⋯ 는 **아무 팔레트에서나** 열 수 있으므로, 이름을 바꾼다고
+        보고 있던 팔레트가 바뀌어 버리면 안 된다.
+        """
         tabs = palette.load_tabs()
         if not tabs:
             return
-        if idx is not None:
-            self.sel_tab = min(idx, len(tabs) - 1)
-        if tabs[self.sel_tab].get("name") == palette.MAIN_TAB:
+        idx = self.sel_tab if idx is None else min(idx, len(tabs) - 1)
+        if tabs[idx].get("name") == palette.MAIN_TAB:
             messagebox.showinfo("이름 고정",
                 "'메인' 탭 이름은 메인 창이 찾는 열쇠라 바꿀 수 없습니다.",
                 parent=self)
             return
-        cur = tabs[self.sel_tab]["name"]
+        cur = tabs[idx]["name"]
         name = simpledialog.askstring("이름 변경", "새 이름:", initialvalue=cur, parent=self)
         if name:
             try:
-                palette.rename_tab(self.sel_tab, name)
+                palette.rename_tab(idx, name)
             except ValueError as e:
                 messagebox.showwarning("이름 충돌", str(e), parent=self)
                 return
@@ -752,25 +761,33 @@ class SettingsWindow(tk.Toplevel):
         tabs = palette.load_tabs()
         if not tabs:
             return
-        if idx is not None:
-            self.sel_tab = min(idx, len(tabs) - 1)
-        if tabs[self.sel_tab].get("name") == palette.MAIN_TAB:
+        idx = self.sel_tab if idx is None else min(idx, len(tabs) - 1)
+        if tabs[idx].get("name") == palette.MAIN_TAB:
             messagebox.showinfo(
                 "삭제할 수 없음",
                 "'메인' 탭은 메인 창의 변환 버튼 옆 버튼칸입니다.\n"
                 "탭 자체는 지울 수 없고, 안의 블럭만 비울 수 있습니다.", parent=self)
             return
-        if messagebox.askyesno("삭제", f"'{tabs[self.sel_tab]['name']}' 탭을 삭제할까요?",
+        if messagebox.askyesno("삭제", f"'{tabs[idx]['name']}' 탭을 삭제할까요?",
                                parent=self):
-            palette.delete_tab(self.sel_tab)
-            self.sel_tab = max(0, self.sel_tab - 1)
+            palette.delete_tab(idx)
+            if self.sel_tab >= idx:        # 앞이 지워지면 보던 것을 따라간다
+                self.sel_tab = max(0, self.sel_tab - 1)
             self._reload_tabs()
             self._notify()
 
-    def _move_tab(self, delta):
-        """탭 순서 바꾸기 — 이제 끌어서가 아니라 '⋯' 메뉴의 ◀▶ 로 한 칸씩."""
-        palette.move_tab(self.sel_tab, delta)
-        self.sel_tab = max(0, min(self.sel_tab + delta, len(palette.load_tabs()) - 1))
+    def _move_tab(self, idx, delta):
+        """탭 순서 바꾸기 — 드롭다운 ⋯ 메뉴의 ▲▼ 로 한 칸씩.
+
+        보고 있던 팔레트는 그대로 보이게 선택 인덱스를 따라 옮긴다.
+        """
+        palette.move_tab(idx, delta)
+        last = len(palette.load_tabs()) - 1
+        target = max(0, min(idx + delta, last))
+        if self.sel_tab == idx:
+            self.sel_tab = target          # 보던 것을 옮겼다 — 따라간다
+        elif self.sel_tab == target:
+            self.sel_tab = idx             # 보던 것과 자리를 맞바꿨다
         self._reload_tabs()
         self._notify()
 

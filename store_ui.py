@@ -88,16 +88,23 @@ class StorePanel(tk.Frame):
 
 
         # 색이 무슨 뜻인지 화면이 말해 준다 (사용자 지적 2026-07-27) —
-        # 안내가 없으면 파랑·코랄을 반대로 읽는다
+        # 안내가 없으면 파랑·코랄을 반대로 읽는다.
+        # 견본은 **타일과 같은 생김새**(그 색 판 위에 그 색 글자)로, 세 칸을
+        # 같은 폭으로 고르게 편다 — 점 따로 글자 따로 왼쪽에 몰려 있던 옛
+        # 안내는 색과 뜻을 잇느라 눈이 한 번 더 오가야 했고 한쪽으로 쏠려
+        # 보였다 (사용자 지적 2026-07-27).
         legend = tk.Frame(self, bg=CARD)
-        legend.pack(fill="x", padx=8, pady=(0, 4))
-        for text, col in (("안 씀", FREE_BG), ("이 팔레트에 있음", HERE_BG),
-                          ("고른 것", SEL_BG)):
-            dot = tk.Label(legend, text="  ", bg=col, font=(FONT, theme.fs(6)),
-                           highlightbackground=BORDER, highlightthickness=1)
-            dot.pack(side="left")
-            tk.Label(legend, text=text, font=(FONT, theme.fs(FS["caption"])), bg=CARD,
-                     fg=MUTED).pack(side="left", padx=(3, 8))
+        legend.pack(fill="x", padx=8, pady=(0, 6))
+        states = (("안 씀", FREE_BG, FREE_LINE, FREE_FG),
+                  ("이 팔레트에 있음", HERE_BG, HERE_LINE, HERE_FG),
+                  ("고른 것", SEL_BG, SEL_LINE, SEL_FG))
+        for i, (text, bg, line, fg) in enumerate(states):
+            legend.columnconfigure(i, weight=1, uniform="legend")
+            tk.Label(legend, text=text, font=(FONT, theme.fs(FS["caption"])),
+                     bg=bg, fg=fg, pady=2,
+                     highlightbackground=line, highlightthickness=1
+                     ).grid(row=0, column=i, sticky="ew",
+                            padx=(0, 3) if i < len(states) - 1 else 0)
 
         # 물감이 스무 개를 넘으면 스크롤이 필요하다
         wrap = tk.Frame(self, bg=CARD)

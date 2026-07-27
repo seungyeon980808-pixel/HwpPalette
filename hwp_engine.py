@@ -97,6 +97,61 @@ def _hwp_window_handles():
     return found
 
 
+def _active_window_com():
+    """연결된 인스턴스의 활성 창 COM 객체. 없으면 None."""
+    if hwp is None:
+        return None
+    try:
+        return hwp.hwp.XHwpWindows.Active_XHwpWindow
+    except Exception:
+        return None
+
+
+def ensure_visible():
+    r"""연결된 한글 **인스턴스**의 창을 화면에 보이게 한다. 성공 여부.
+
+    왜 필요한가 (실측 2026-07-27, "양식 고치기를 눌러도 한글이 안 뜬다"):
+    한글은 COM 자동화(다른 프로그램·이전 작업)가 띄워 놓은 **숨은 인스턴스**를
+    ROT 에 남겨 둘 수 있다. connect() 는 창을 안 건드리려고 생성자를 우회해
+    실행 중인 인스턴스에 붙는데(_attach_without_resize), 그것이 숨은
+    인스턴스면 Visible 을 아무도 안 켜 줘서 — 문서를 열어도 **화면에 아무것도
+    나타나지 않는다.** 창 목록(_hwp_window_handles)은 IsWindowVisible 로
+    거르므로 bring_to_front 도 빈손이었다.
+
+    이미 보이는 창이면 아무것도 안 건드린다 — Visible 대입은 최대화를 풀어
+    버리는 부작용이 있어(connect 설명 참고) 숨어 있을 때만 켠다.
+    """
+    win = _active_window_com()
+    if win is not None:
+        try:
+            if not win.Visible:
+                win.Visible = True
+                applog.warn("숨어 있던 한글 창을 보이게 켰습니다 "
+                            "(숨은 COM 인스턴스에 연결돼 있었음)")
+        except Exception as e:
+            applog.exc("한글 창 보이기(Visible) 실패", e)
+    return bool(_hwp_window_handles())
+
+
+def _connected_hwnd():
+    """연결된 인스턴스의 창 핸들. 모르면 보이는 아무 한글 창, 없으면 None.
+
+    한글은 인스턴스가 여럿일 수 있다(사용자가 쓰는 창 + 자동화가 숨겨 둔 것).
+    문서는 '연결된 인스턴스'에 열리므로 앞으로 끌어올 창도 그 인스턴스여야
+    한다 — 아무 한글 창이나 올리면 문서 없는 창이 올라온다.
+    """
+    win = _active_window_com()
+    if win is not None:
+        try:
+            h = int(win.WindowHandle)
+            if h:
+                return h
+        except Exception:
+            pass                    # WindowHandle 이 없는 버전 — 열거로 대신
+    handles = _hwp_window_handles()
+    return handles[0] if handles else None
+
+
 def bring_to_front():
     """한글 창을 앞으로 끌어온다. 성공 여부.
 
@@ -104,24 +159,50 @@ def bring_to_front():
     한글에 문서를 펼쳐 놨는데 창이 우리 창 뒤에 있으면, 사용자는 무엇을
     고치라는 것인지 모른 채 안내 창만 보게 된다.
     """
-    handles = _hwp_window_handles()
-    if not handles:
+    ensure_visible()                # 숨은 인스턴스였다면 먼저 창부터 켠다
+    hwnd = _connected_hwnd()
+    if hwnd is None:
+        applog.warn("bring_to_front: 보이는 한글 창이 없습니다")
         return False
     try:
         import win32gui
         import win32con
     except ImportError:
         return False
-    hwnd = handles[0]
     try:
         if win32gui.IsIconic(hwnd):          # 최소화돼 있으면 먼저 편다
             win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+        else:
+            win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
+    except Exception as e:
+        applog.exc("한글 창 펴기 실패", e)
+    try:
         win32gui.SetForegroundWindow(hwnd)
         return True
+    except Exception:
+        pass
+    # 윈도우는 '지금 앞에 있는 앱'이 아니면 SetForegroundWindow 를 거절한다.
+    # ALT 키를 잠깐 눌렀다 떼면 그 잠금이 풀린다 (널리 쓰이는 우회로).
+    try:
+        import win32api
+        win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
+        try:
+            win32gui.SetForegroundWindow(hwnd)
+        finally:
+            win32api.keybd_event(win32con.VK_MENU, 0,
+                                 win32con.KEYEVENTF_KEYUP, 0)
+        return True
     except Exception as e:
-        # 윈도우는 '지금 앞에 있는 앱'이 아니면 SetForegroundWindow 를 거절한다.
-        # 실패해도 문서는 열려 있으니 안내만 하면 된다.
-        applog.exc("한글 창을 앞으로 가져오지 못했습니다", e)
+        applog.exc("한글 창을 앞으로 가져오지 못했습니다 (ALT 우회 포함)", e)
+    # 마지막 수단 — z순서만이라도 끌어올린다 (초점은 못 받아도 눈에는 보인다)
+    try:
+        flags = (win32con.SWP_NOMOVE | win32con.SWP_NOSIZE
+                 | win32con.SWP_SHOWWINDOW)
+        win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 0, 0, 0, 0, flags)
+        win32gui.SetWindowPos(hwnd, win32con.HWND_NOTOPMOST, 0, 0, 0, 0, flags)
+        return True
+    except Exception as e:
+        applog.exc("한글 창 z순서 올리기 실패", e)
         return False
 
 
@@ -150,18 +231,35 @@ def _connection_error(h):
 
 
 def _running_hwp_com():
-    """이미 실행 중인 한글의 COM 객체. 없으면 None. (한글을 새로 띄우지 않는다)"""
+    """이미 실행 중인 한글의 COM 객체. 없으면 None. (한글을 새로 띄우지 않는다)
+
+    인스턴스가 여럿이면 **창이 보이는 것**을 우선한다 (2026-07-27) — 다른
+    자동화 도구가 숨겨 놓은 인스턴스에 붙으면, 사용자가 보고 있는 한글이
+    아니라 숨은 창에 문서가 열려 "양식 고치기를 눌러도 아무것도 안 뜬다"가
+    된다. 보이는 것이 하나도 없을 때만 숨은 인스턴스를 쓴다 (그 경우는
+    ensure_visible 이 창을 켠다).
+    """
     import pythoncom
     import win32com.client as win32
     ctx = pythoncom.CreateBindCtx(0)
     pythoncom.CoInitialize()
     rot = pythoncom.GetRunningObjectTable()
+    hidden = None
     for moniker in rot.EnumRunning():
-        if moniker.GetDisplayName(ctx, moniker).startswith("!HwpObject."):
-            obj = rot.GetObject(moniker)
-            return win32.gencache.EnsureDispatch(
-                obj.QueryInterface(pythoncom.IID_IDispatch))
-    return None
+        if not moniker.GetDisplayName(ctx, moniker).startswith("!HwpObject."):
+            continue
+        obj = rot.GetObject(moniker)
+        com = win32.gencache.EnsureDispatch(
+            obj.QueryInterface(pythoncom.IID_IDispatch))
+        try:
+            visible = bool(com.XHwpWindows.Active_XHwpWindow.Visible)
+        except Exception:
+            return com              # 보임 여부를 못 물으면 예전처럼 첫 것
+        if visible:
+            return com
+        if hidden is None:
+            hidden = com
+    return hidden
 
 
 def _attach_without_resize():
