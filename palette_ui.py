@@ -322,6 +322,10 @@ _FORM_SYNTAX_LINES = [
 # 셋이 나란히 서므로 창이 화면을 넘지 않는 선에서 잡는다
 ZOOM_W = 396          # 20% 더 넓게, 330 → 396 (사용자 결정 2026-07-27)
 
+# 격자 블럭 안쪽 글자 여백 — main._BLOCK_TEXT_PAD 와 같은 값이어야 한다.
+# (이 판은 메인 창 블럭의 미리보기다)
+TILE_TEXT_PAD = 8
+
 
 class SettingsWindow(tk.Toplevel):
     def __init__(self, master, on_saved=None):
@@ -1657,10 +1661,12 @@ class SettingsWindow(tk.Toplevel):
                          highlightthickness=2 if selected else 1)
         tile.pack_propagate(False)
         # 글자색은 배경 밝기에 맞춰 정한다 — 어두운 색을 골라도 읽히게 (제안 18)
+        # 글자는 왼쪽에 붙인다 — 메인 창 블럭과 같은 규칙 (RoundButton.align).
+        # 여기가 그 블럭의 미리보기이므로 자리가 다르면 다른 물건으로 보인다.
         lab = tk.Label(tile, text=self._tile_text(blk, span), bg=bg,
-                       fg=theme.text_on(bg),
+                       fg=theme.text_on(bg), anchor="w", justify="left",
                        font=(FONT, theme.fs(10 if blk["type"] == "char" else 8)))
-        lab.pack(expand=True)
+        lab.pack(expand=True, fill="both", padx=(TILE_TEXT_PAD, 0))
         self._tiles[i] = tile
         for w in (tile, lab):
             self._tile_map[str(w)] = i

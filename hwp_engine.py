@@ -537,6 +537,60 @@ def read_selection_text(retries=10, delay=0.08):
     return ""
 
 
+# ── 되돌리기 (2026-07-28) ─────────────────────────────
+# 왜 필요한가: 변환 한 번, 템플릿 삽입 한 번은 한글 입장에서 **동작 수십 개**다.
+# 사용자가 Ctrl+Z 를 누르면 그중 하나만 돌아가고, 몇 번을 더 눌러야 원래대로
+# 오는지 아무도 모른다 (도움말에 "여러 번 눌러야 합니다"라고 적어 둘 정도였다).
+#
+# 어떻게 안전하게 하나: **되돌릴 지점을 지문으로 찍어 두고, 그 지문이 나올
+# 때까지만** Undo 한다. 못 찾으면 되돌린 만큼 Redo 로 도로 감아 원상복구한다 —
+# 사용자가 그 전에 손으로 쓴 글까지 먹어치우는 일이 구조적으로 불가능하다.
+UNDO_CAP = 60           # 이만큼 눌러도 못 찾으면 포기 (한 동작이 이보다 크진 않다)
+
+
+def doc_fingerprint():
+    """문서 상태 지문 — 본문 글자 전체. 못 읽으면 None.
+
+    글자 수만 세지 않는 이유: 같은 길이로 바뀌는 편집(글자 교체)이 있으면
+    "돌아왔다"고 오판한다. 문서 하나는 대개 수 KB 라 통째로 비교해도 싸다.
+    """
+    try:
+        return hwp.GetTextFile("TEXT", "") or ""
+    except Exception as e:
+        applog.exc("문서 지문 읽기 실패 — 되돌리기 불가", e)
+        return None
+
+
+def undo_to(mark, cap=UNDO_CAP):
+    """지문이 mark 와 같아질 때까지 Undo. (성공?, 누른 횟수)
+
+    실패하면 누른 만큼 Redo 로 되감고 (False, 0) 을 준다 — **반쯤 되돌린
+    상태로 두지 않는다.** 그 상태가 제일 나쁘다: 사용자는 무엇이 없어졌는지
+    모르고, 한글의 Ctrl+Z 로도 어디까지 왔는지 알 수 없다.
+    """
+    if mark is None:
+        return False, 0
+    if doc_fingerprint() == mark:
+        return True, 0                      # 이미 그 자리 — 누를 것이 없다
+    pressed = 0
+    while pressed < cap:
+        try:
+            hwp.HAction.Run("Undo")
+        except Exception as e:
+            applog.exc("되돌리기 실행 실패", e)
+            break
+        pressed += 1
+        if doc_fingerprint() == mark:
+            return True, pressed
+    for _ in range(pressed):                # 못 찾았다 — 건드린 만큼 도로
+        try:
+            hwp.HAction.Run("Redo")
+        except Exception as e:
+            applog.exc("되감기(Redo) 실패 — 문서가 반쯤 되돌아간 채 남았습니다", e)
+            break
+    return False, 0
+
+
 def delete_selection():
     hwp.HAction.Run("Delete")
 

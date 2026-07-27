@@ -315,6 +315,8 @@ def fn_convert():
     hwp_engine._diag("fn_convert: 버튼 눌린 직후")
     if not ensure_hwp(): return
     hwp_engine._diag("fn_convert: ensure_hwp 후")
+    # 전역 단축키로 들어오면 run_palette_block 을 거치지 않는다 — 여기서도 찍는다
+    _mark_undo("마크다운 변환")
     selected = ""               # 실패했을 때 되돌리기 위해 바깥에 둔다
     erased = False              # 선택을 지웠는가 (지웠으면 책임지고 되살린다)
     touched = False             # 문서에 무언가 넣기 시작했는가
@@ -572,9 +574,65 @@ def _unbusy():
         pass
 
 
+# ── 되돌리기 지점 (2026-07-28, 상단 ↺) ─────────────────
+# 무엇을 기억하나: **문서를 건드리기 직전의 지문**과 그 일의 이름.
+# 팔레트 블럭 한 번·변환 한 번이 한글에서는 동작 수십 개라, 사용자가 셀 수
+# 없는 것을 프로그램이 대신 센다 (hwp_engine.undo_to 머리말).
+_undo_point = {"mark": None, "what": ""}
+
+
+def _mark_undo(what):
+    """문서를 바꾸기 직전에 부른다 — 실패해도 하던 일은 그대로 진행한다."""
+    try:
+        _undo_point["mark"] = hwp_engine.doc_fingerprint()
+        _undo_point["what"] = what
+    except Exception as e:
+        applog.exc("되돌리기 지점 기록 실패 (되돌리기만 못 씀)", e)
+        _undo_point["mark"] = None
+    _sync_undo_btn()
+
+
+def _sync_undo_btn():
+    """↺ 는 되돌릴 것이 있을 때만 진하다 — 눌러 봐야 아는 버튼이 되지 않게."""
+    try:
+        on = _undo_point["mark"] is not None
+        _undo_btn.retint(fg=TEXT if on else FAINT)
+        _tip(_undo_btn, (f"되돌리기 — {_undo_point['what']}" if on
+                         else "되돌릴 것이 없습니다"))
+    except Exception:
+        pass
+
+
+def fn_undo_last():
+    r"""↺ — 이 프로그램이 마지막으로 한 일을 통째로 되돌린다."""
+    if _undo_point["mark"] is None:
+        notify("info", "되돌릴 것이 없습니다 — 이 프로그램으로 한 일이 아직 없습니다")
+        return
+    if not ensure_hwp():
+        return
+    what = _undo_point["what"]
+    _busy(f"되돌리는 중 — {what}")
+    try:
+        ok, pressed = hwp_engine.undo_to(_undo_point["mark"])
+    except Exception as e:
+        report_error("되돌리기 실패", e)
+        return
+    finally:
+        _unbusy()
+    if ok:
+        _undo_point["mark"] = None      # 한 번 되돌린 지점은 다시 못 쓴다
+        _sync_undo_btn()
+        notify("ok", f"'{what}' 을(를) 되돌렸습니다 (되돌리기 {pressed}번)")
+    else:
+        notify("warn", f"'{what}' 을(를) 되돌리지 못했습니다 — "
+                       "그 뒤로 문서를 많이 고치셨다면 한글의 Ctrl+Z 를 쓰세요")
+
+
 def run_palette_block(block):
     """팔레트 블럭 클릭 — 종류에 따라 삽입/적용."""
-    _busy(_block_label(block).replace("\n", " "))
+    name = _block_label(block).replace("\n", " ")
+    _busy(name)
+    _mark_undo(name)
     try:
         _run_palette_block(block)
     finally:
@@ -680,7 +738,9 @@ root = tk.Tk()
 root.title(appinfo.WINDOW_TITLE)
 root.configure(bg=BG)
 root.resizable(False, False)
-root.attributes("-topmost", True)
+# '항상 위'는 이제 사용자가 끌 수 있다 (상단 ⇧ — _toggle_top). 기본은 켬.
+root.attributes("-topmost",
+                bool(settings.get_config_value("always_on_top", True)))
 
 # ── 앱 아이콘 (사용자 제작 hwp-final.svg 를 PNG 로 구운 것) ──
 # 창 안 제목줄을 없앤 뒤로는 제목표시줄·작업표시줄용 한 벌만 있으면 된다
@@ -1012,6 +1072,47 @@ def _start_tutorial():
 _help_btn = _bar_btn("?", lambda: _help_menu(_help_btn), "도움말")
 _help_btn.pack(side="left", padx=(4, 0))
 
+# ── 늘 보이는 도구 셋 (사용자 결정 2026-07-28) ─────────
+#
+# 셋 다 **이미 있는 기능인데 입구가 없던 것**이다 — 새 기능을 늘린 게 아니라
+# 손이 닿는 자리에 꺼냈다. ⚙·? 와 달리 메뉴를 열지 않고 바로 동작한다.
+#
+#   ↺  되돌리기   — 한글 Ctrl+Z 를 몇 번 눌러야 하는지 프로그램이 대신 센다
+#   ⌕  통합 찾기  — Ctrl+K 로만 있던 것. 물감이 팔레트보다 많아지면 여기가 입구다
+#   ⇧  항상 위    — 한글을 전체화면으로 쓸 때 잠깐 내린다 (창 위치처럼 기억된다)
+_undo_btn = _bar_btn("↺", lambda: fn_undo_last(), "되돌릴 것이 없습니다")
+_undo_btn.pack(side="left", padx=(4, 0))
+_undo_btn.retint(fg=FAINT)          # 되돌릴 것이 생기면 진해진다 (_sync_undo_btn)
+
+_search_btn = _bar_btn("⌕", lambda: _open_search(), "통합 찾기  (Ctrl+K)")
+_search_btn.pack(side="left", padx=(4, 0))
+
+_TOP_KEY = "always_on_top"
+
+
+def _toggle_top():
+    """항상 위 켜기/끄기 — 값은 config 에 남아 다음 실행에도 이어진다.
+
+    끌 수 있게 하되 **기본은 켬**이다: 이 창은 한글 옆에 두고 쓰는 물건이라,
+    한글을 누를 때마다 뒤로 숨으면 도구로서 쓸모가 없다.
+    """
+    on = not bool(settings.get_config_value(_TOP_KEY, True))
+    settings.set_config_value(_TOP_KEY, on)
+    try:
+        root.attributes("-topmost", on)
+    except Exception as e:
+        applog.exc("항상 위 전환 실패", e)
+    _bar_active(_top_btn, on)
+    _tip(_top_btn, "항상 위 — 켜짐" if on else "항상 위 — 꺼짐")
+    notify("info", "이 창을 항상 위에 둡니다" if on
+                   else "이 창이 다른 창 뒤로 갈 수 있습니다")
+
+
+_top_btn = _bar_btn("⇧", lambda: _toggle_top(), "항상 위")
+_top_btn.pack(side="left", padx=(4, 0))
+# 켜져 있으면 켜져 보여야 한다 — 상태를 말하지 않는 토글은 토글이 아니다
+_bar_active(_top_btn, bool(settings.get_config_value(_TOP_KEY, True)))
+
 # 상태줄(최근 알림)을 이 줄 오른쪽 빈 자리에 둔다 (2026-07-25).
 #
 # 맨 아래에 따로 한 줄을 쓰던 것을 옮겼다 — 여기는 어차피 비어 있던 공간이고,
@@ -1114,8 +1215,9 @@ GUIDE_TEXT = (
     "   Ctrl+Alt+T   마크다운 변환 — 한글에서 눌러도 먹습니다\n"
     "   Ctrl+K  찾기      Ctrl+1~9  지금 팔레트의 1~9번째 블럭\n"
     "\n"
-    "※ 되돌리기는 한글의 Ctrl+Z 로 합니다. 변환·템플릿 삽입은 여러 동작이\n"
-    "   묶여 있어 여러 번 눌러야 완전히 돌아갑니다.\n"
+    "※ 되돌리기는 위쪽 ↺ 로 합니다 — 변환·템플릿 삽입은 여러 동작이 묶여\n"
+    "   있어서, 몇 번 눌러야 하는지를 프로그램이 대신 셉니다.\n"
+    "   (그 뒤로 문서를 많이 고쳤으면 한글의 Ctrl+Z 를 쓰세요)\n"
     "\n"
     # 버전·날짜를 메인 화면 하단에서 여기로 옮겼다 (2026-07-25).
     f"■ 버전   v{VERSION} · {RELEASE_DATE} · 자유 소프트웨어 (AGPL-3.0)"
@@ -1473,6 +1575,10 @@ _BLOCK_COLOR = theme.block_colors()
 _BLOCK_CELL_MAX_PX = 42   # SCALE 적용 전 기준값     # 칸 수가 적어도 이보다 크게는 안 키운다
 _BLOCK_CELL_MIN_PX = 20     # 칸 수가 많아도 이보다 작아지면 못 누른다
 _BLOCK_GAP_PX = 2
+# 블럭 안쪽 글자 여백 — 왼쪽 정렬이라 이 값이 곧 **글머리 자리**다.
+# 8px 은 한 칸(42px)의 5분의 1쯤으로, 한 글자짜리 이름('원')도 벽에 붙어
+# 보이지 않으면서 두 글자 이름이 잘리지 않는 선이다.
+_BLOCK_TEXT_PAD = 8
 # 창이 아무리 홀쭉해져도 이 칸 수만큼은 폭을 잡는다 (사용자 결정 2026-07-25).
 # 팔레트 설정 창의 칸 줄이기도 같은 값에서 멈춘다 (palette.MIN_COLS).
 _MIN_GRID_COLS = palette.MIN_COLS
@@ -1663,11 +1769,14 @@ def _make_block_button(parent, blk, span=1):
     # 글자색을 TEXT 로 고정하면 사용자가 남색·빨강을 고르거나 어두운 모드로
     # 바꿨을 때 글자가 배경에 묻힌다 (UI 제안 18) — text_on 이 밝기를 재서 정한다.
     # 초점 테두리(키보드 Tab 이동)는 RoundButton 이 자체로 그린다.
+    # 이름은 **왼쪽에 붙인다** (사용자 결정 2026-07-28) — 칸 크기와 비율은
+    # 그대로 두고 글자 자리만 옮겼다. 자세한 이유는 RoundButton 의 align.
     btn = RoundButton(parent, text=label,
                       command=lambda b=blk: run_palette_block(b),
                       bg=bg, fg=theme.text_on(bg), radius=theme.RADIUS["ctl"], font=_font(size),
                       outline=BORDER, focus_color=ACCENT,
-                      zone_bg=parent.cget("bg"))
+                      zone_bg=parent.cget("bg"),
+                      align="left", justify="left", pad_in=_BLOCK_TEXT_PAD)
     # 도구 블럭은 이름표를 달아 둔다 — 튜토리얼이 '마크다운 변환' 버튼을
     # 짚으려면 그 위젯을 찾을 수 있어야 한다 (2026-07-26).
     if blk.get("type") == "builtin" and blk.get("key"):

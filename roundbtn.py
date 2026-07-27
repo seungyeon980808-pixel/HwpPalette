@@ -28,7 +28,7 @@ class RoundButton(tk.Canvas):
     def __init__(self, parent, text="", command=None, bg="#ffffff",
                  fg="#1d1d1f", radius=8, font=None, outline="",
                  focus_color="#0071e3", zone_bg=None, justify="center",
-                 trailing=None, pad_in=10):
+                 trailing=None, pad_in=10, align="center"):
         # zone_bg = 모서리 '바깥'에 비칠 색. 안 주면 부모 배경을 따른다.
         super().__init__(parent, highlightthickness=0, bd=0,
                          bg=zone_bg or parent.cget("bg"),
@@ -51,6 +51,13 @@ class RoundButton(tk.Canvas):
         # ▾ 는 오른쪽 고정 — 둘을 따로 그려야 성립한다.
         self._trailing = trailing
         self._pad_in = pad_in
+        # align="left" — 글자를 칸 왼쪽에 붙인다 (사용자 결정 2026-07-28).
+        #
+        # 팔레트 블럭 이름은 길이가 제각각인데(변환·글씨체·합답형2사진3선지)
+        # 가운데 정렬이면 이름마다 글머리가 다른 자리에서 시작해, 블럭이 격자로
+        # 줄 맞춰 서 있어도 **글자는 줄이 안 맞는다.** 왼쪽에 붙이면 세로로
+        # 글머리가 한 줄에 서고, 두 줄 이름도 첫 글자가 어긋나지 않는다.
+        self._align = align
         self._base = bg
         self._hover = ui_fx.darken(bg, ui_fx.HOVER_FACTOR)
         self._press = ui_fx.darken(bg, ui_fx.PRESS_FACTOR)
@@ -114,9 +121,11 @@ class RoundButton(tk.Canvas):
         edge = (self._focus_color if self._focused else self._outline)
         dy = 1 if self._pressed else 0      # 누르면 글자가 1px 가라앉는다
 
-        # 글자 자리 — trailing 이 있으면 왼쪽 붙임, 없으면 가운데
-        lx, lanchor = ((self._pad_in, "w") if self._trailing
-                       else (w // 2, "center"))
+        # 글자 자리 — trailing 이 있거나 align="left" 면 왼쪽 붙임
+        if self._trailing or self._align == "left":
+            lx, lanchor = self._pad_in, "w"
+        else:
+            lx, lanchor = w // 2, "center"
 
         if not self.find_withtag("body"):
             self.create_polygon(pts, smooth=True, fill=self._fill,
