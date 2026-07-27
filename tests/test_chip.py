@@ -282,6 +282,81 @@ class PeekTest(_Base):
         self.assertEqual(chip.peek(dest)["known"], 1)
 
 
+class ReportedCountTest(_Base):
+    r"""내보낸 개수를 **실제로 담긴 수**로 보고하는가 (2026-07-27).
+
+    조각 파일이 사라진 항목은 library 쪽에서 건너뛴다. 고른 개수를 그대로
+    보고하면 "5개 보냈다"고 해 놓고 4개만 간 것을 아무도 모른다.
+    """
+
+    def test_조각이_사라진_항목은_개수에서_빠진다(self):
+        a = self._make_template("멀쩡한표")
+        b = self._make_template("조각잃은표")
+        # 조각 파일만 지운다 (목록에는 남아 있는 상태)
+        lost = library.find_by_id("템플릿", b)
+        (library.FRAGMENTS_DIR / lost["file"]).unlink()
+
+        dest = self.root / f"물감{chip.CHIP_EXT}"
+        pairs = [("템플릿", library.find_by_id("템플릿", x)) for x in (a, b)]
+        with mock.patch("library.applog.warn"):
+            r = chip.export_items(pairs, dest, name="물감")
+        self.assertEqual(r["items"], 1, "담긴 개수를 그대로 보고해야 한다")
+
+    def test_팔레트도_실제로_담긴_수를_보고한다(self):
+        a = self._make_template("멀쩡한표")
+        b = self._make_template("조각잃은표")
+        lost = library.find_by_id("템플릿", b)
+        (library.FRAGMENTS_DIR / lost["file"]).unlink()
+        tab = {"name": "수능", "cols": 8, "blocks": [
+            {"type": "template", "ref": a, "template": "멀쩡한표"},
+            {"type": "template", "ref": b, "template": "조각잃은표"}]}
+        dest = self.root / f"수능{chip.CHIP_EXT}"
+        with mock.patch("library.applog.warn"):
+            r = chip.export_tab(tab, dest)
+        self.assertEqual(r["items"], 1)
+        self.assertEqual(r["blocks"], 2, "버튼 수는 배치 그대로다")
+
+
+class MixedInstallTest(_Base):
+    r"""물감 파일과 팔레트 파일을 **차례로** 받는 실제 상황 (2026-07-27).
+
+    '물감 보내기'로 몇 개를 먼저 받고, 나중에 그 물감을 쓰는 '팔레트 보내기'
+    파일을 받으면 — 물감이 두 벌 생기면 안 되고, 팔레트는 먼저 받은 물감을
+    가리켜야 한다.
+    """
+
+    def test_먼저_받은_물감에_팔레트가_이어붙는다(self):
+        self._use("A")
+        a = self._make_template("소1사진", body="소1")
+        b = self._make_template("대1사진", body="대1")
+        tab = {"name": "수능", "cols": 8, "blocks": [
+            {"type": "template", "ref": a, "template": "소1사진"},
+            {"type": "template", "ref": b, "template": "대1사진"}]}
+        paints = self.root / f"물감{chip.CHIP_EXT}"
+        chip.export_items([("템플릿", library.find_by_id("템플릿", a))],
+                          paints, name="물감 몇 개")
+        pal = self.root / f"수능{chip.CHIP_EXT}"
+        chip.export_tab(tab, pal)
+
+        self._use("B")
+        chip.install(paints)          # 소1사진만 먼저 받는다
+        first = {it["name"]: it["id"] for it in library.list_items("템플릿")}
+        self.assertEqual(list(first), ["소1사진"])
+
+        out = chip.install(pal)       # 그 물감을 쓰는 팔레트를 받는다
+        self.assertEqual(out["reused"], 1, "이미 있는 소1사진을 또 만들면 안 된다")
+        self.assertEqual(out["added"], 1, "대1사진만 새로 들어와야 한다")
+        self.assertEqual(len(library.list_items("템플릿")), 2)
+        self.assertEqual(out["lost"], 0)
+
+        got = {it["id"]: it["name"] for it in library.list_items("템플릿")}
+        blocks = palette.load_tabs()[0]["blocks"]
+        by_name = {b["template"]: b["ref"] for b in blocks}
+        self.assertEqual(by_name["소1사진"], first["소1사진"],
+                         "먼저 받아 둔 물감을 가리켜야 한다")
+        self.assertEqual(got[by_name["대1사진"]], "대1사진")
+
+
 class RelinkTest(unittest.TestCase):
     """ref 갈아끼우기 자체 — 칩 없이도 검사되는 순수 함수."""
 

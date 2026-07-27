@@ -18,14 +18,15 @@ r"""개인 라이브러리(물감 설정) 창 — 2026-07-25 재구축.
 
 import pathlib
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import applog
-import chip                      # 팔레트 칩 읽기·등록
+import chip                      # 물감·팔레트 파일 만들기·읽기·등록
 import clipboard                  # 윈도우 클립보드 (Tk 클립보드 금지)
 import hwp_engine
 import engine_library
 import library
+import palette                    # 보낼 팔레트 목록 (팔레트 보내기)
 import builtin_chars
 import settings
 
@@ -1479,8 +1480,13 @@ class ShareDialog(tk.Toplevel):
     2026-07-25: "내가 만든 탭을 남에게 주는 일"이라 물감 설정 화면이 아니라
     설정의 하위 기능으로 뺐다).
 
-    내보내기 = 고른 분류(탭) 전체를 조각 파일까지 zip 하나로.
-    가져오기 = zip 을 추가만 한다 (덮어쓰기 없음 — 이름·라벨 충돌은 자동 개명).
+    **먼저 무엇을 보낼지 고른다** (사용자 결정 2026-07-27). 예전에는 물감
+    내보내기만 이 창에 있고 팔레트는 팔레트 설정의 탭 우클릭에 숨어 있어서,
+    그런 기능이 있다는 것 자체를 모르면 못 찾았다. 두 갈래를 나란히 두면
+    "이 프로그램은 물감도 팔레트도 보낼 수 있다"가 화면에서 바로 읽힌다.
+
+    받는 쪽 입구는 여전히 **하나**다 — 받은 파일이 어느 쪽인지는 프로그램이
+    열어 보고 판단한다.
     """
 
     def __init__(self, master, on_saved=None):
@@ -1495,28 +1501,19 @@ class ShareDialog(tk.Toplevel):
         tk.Label(self, text="물감 나누기",
                  font=(FONT, theme.fs(12), "bold"), bg=BG, fg=TEXT).pack(
                  anchor="w", padx=16, pady=(14, 2))
-        tk.Label(self, text="내가 만든 물감이나 팔레트를 파일로 묶어 동료와 주고받습니다.\n"
-                            "팔레트를 통째로 넘기려면 팔레트 설정에서 탭을 "
-                            "우클릭 → '팔레트 내보내기'.",
+        tk.Label(self, text="내가 만든 것을 파일 하나로 묶어 동료와 주고받습니다.",
                  font=(FONT, theme.fs(8)), bg=BG, fg=MUTED,
                  justify="left").pack(anchor="w", padx=16, pady=(0, 10))
 
-        row = tk.Frame(self, bg=BG, padx=16)
-        row.pack(fill="x")
-        tk.Label(row, text="보낼 물감", font=(FONT, theme.fs(9)), bg=BG,
-                 fg=TEXT).pack(side="left")
-        # 내장·사진은 파일/프로그램에 딸린 것이라 내보낼 게 없다
-        self._exportable = [c for c in CATS
-                            if c["key"] != "사진"]
-        self.cat_var = tk.StringVar(value=self._exportable[0]["label"])
-        ttk.Combobox(row, textvariable=self.cat_var, state="readonly",
-                     width=10, font=(FONT, theme.fs(9)),
-                     values=[c["label"] for c in self._exportable]).pack(
-                     side="left", padx=(8, 8))
-        _dialog_btn(row, "물감 내보내기…", self._export,
-                    primary=True).pack(side="left")
+        tk.Label(self, text="무엇을 보낼까요?", font=(FONT, theme.fs(9), "bold"),
+                 bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(0, 4))
+        self._card("물감 보내기",
+                   "등록한 서식·기호·템플릿·양식 중 골라서", self._send_paints)
+        self._card("팔레트 보내기",
+                   "팔레트 하나를 통째로 (쓰이는 물감도 함께)",
+                   self._send_palette)
 
-        tk.Frame(self, bg=BORDER, height=1).pack(fill="x", padx=16, pady=10)
+        tk.Frame(self, bg=BORDER, height=1).pack(fill="x", padx=16, pady=12)
 
         row2 = tk.Frame(self, bg=BG, padx=16)
         row2.pack(fill="x", pady=(0, 14))
@@ -1534,40 +1531,46 @@ class ShareDialog(tk.Toplevel):
         self.update_idletasks()
         screens.place_beside(self, master)
 
-    def _cat_key(self):
-        label = self.cat_var.get()
-        for c in self._exportable:
-            if c["label"] == label:
-                return c["key"]
-        return self._exportable[0]["key"]
+    def _card(self, title, desc, command):
+        """고르는 카드 한 장 — 튜토리얼 목록과 같은 생김새로 맞춘다.
 
-    def _export(self):
-        cat = self._cat_key()
-        label = CAT_LABEL.get(cat, cat)
-        items = library.list_items(cat)
-        if not items:
-            messagebox.showinfo("항목 없음",
-                                f"'{label}' 에 내보낼 항목이 없습니다.",
-                                parent=self)
-            return
-        path = filedialog.asksaveasfilename(
-            parent=self, title=f"'{label}' 내보내기",
-            defaultextension=".zip", initialfile=f"hwp_palette_{label}.zip",
-            filetypes=[("hwp_palette 라이브러리", "*.zip")])
-        if not path:
-            return
-        try:
-            n = library.export_items([(cat, it) for it in items], path)
-        except Exception as e:
-            applog.exc(f"라이브러리 내보내기 실패 ({cat})", e)
-            messagebox.showerror("내보내기 실패", f"{type(e).__name__}: {e}",
-                                 parent=self)
-            return
-        skipped = len(items) - n
-        msg = f"'{label}' {n}개를 내보냈습니다.\n{pathlib.Path(path).name}"
-        if skipped:
-            msg += f"\n\n(조각 파일이 없어 {skipped}개는 빠졌습니다 — app.log 참고)"
-        messagebox.showinfo("내보내기 완료", msg, parent=self)
+        **글자만 쓴다** (CLAUDE.md 디자인: AI티 금지 — emoji 남발 금지).
+        아이콘을 붙이면 두 갈래가 장식으로 구분되는데, 정작 구분해야 할 것은
+        '무엇이 담기는가'라 설명 한 줄이 훨씬 정확하다.
+        """
+        row = tk.Frame(self, bg=ROWBG, highlightbackground=BORDER,
+                       highlightthickness=1)
+        row.pack(fill="x", padx=16, pady=3)
+        info = tk.Frame(row, bg=ROWBG, padx=12, pady=8)
+        info.pack(side="left", fill="both", expand=True)
+        tk.Label(info, text=title, font=(FONT, theme.fs(10), "bold"),
+                 bg=ROWBG, fg=TEXT, anchor="w").pack(anchor="w")
+        tk.Label(info, text=desc, font=(FONT, theme.fs(8)), bg=ROWBG,
+                 fg=MUTED, anchor="w", justify="left").pack(anchor="w")
+        for wdg in (row, info, *info.winfo_children()):
+            wdg.config(cursor="hand2")
+            wdg.bind("<Button-1>", lambda e: command())
+            wdg.bind("<Enter>", lambda e, r=row: self._tint(r, ACCENT_SOFT))
+            wdg.bind("<Leave>", lambda e, r=row: self._tint(r, ROWBG))
+
+    @staticmethod
+    def _tint(row, bg):
+        row.config(bg=bg)
+        for w in row.winfo_children():
+            w.config(bg=bg)
+            for c in w.winfo_children():
+                c.config(bg=bg)
+
+    # ── 보내기 두 갈래 ───────────────────────────────
+    def _send_paints(self):
+        """물감 보내기 — 항목을 골라서 (창고는 목록이라 일부만 빼도 안 깨진다)."""
+        dlg = PaintPickDialog(self)
+        self.wait_window(dlg)
+
+    def _send_palette(self):
+        """팔레트 보내기 — 통째로 (배치가 곧 값이라 쪼개면 뜻이 없다)."""
+        dlg = PalettePickDialog(self)
+        self.wait_window(dlg)
 
     def _import(self):
         r"""불러오기 — **입구는 하나** (사용자 결정 2026-07-26).
@@ -1727,6 +1730,256 @@ class ChipInstallDialog(tk.Toplevel):
     def _go(self):
         self.ok = True
         self.destroy()
+
+
+class PaintPickDialog(tk.Toplevel):
+    r"""물감 보내기 — 보낼 항목을 **골라서** 담는다 (사용자 결정 2026-07-27).
+
+    예전에는 분류(서식/특수기호/템플릿/양식) 하나를 고르면 그 안이 통째로
+    나갔다. 템플릿 11개 중 2개만 주고 싶어도 방법이 없었다.
+    창고는 목록이라 일부만 빼도 아무것도 안 깨지므로, 골라 담는 것이 맞다.
+    (팔레트는 반대다 — 배치가 곧 값이라 통째로만 나간다)
+    """
+
+    def __init__(self, master):
+        super().__init__(master)
+        self.title(appinfo.WINDOW_TITLE)
+        self.configure(bg=BG)
+        self.attributes("-topmost", True)
+        self.bind("<Escape>", lambda e: self.destroy())
+
+        tk.Label(self, text="물감 보내기", font=(FONT, theme.fs(12), "bold"),
+                 bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(14, 2))
+        tk.Label(self, text="보낼 것에 체크하세요. 태그는 함께 가지 않습니다 "
+                            "(내 정리 습관이라 남에게는 뜻이 없습니다).",
+                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED,
+                 wraplength=380, justify="left").pack(anchor="w", padx=16,
+                                                      pady=(0, 8))
+
+        wrap = tk.Frame(self, bg=BG, padx=16)
+        wrap.pack(fill="both", expand=True)
+        canvas = tk.Canvas(wrap, bg=BG, highlightthickness=0,
+                           height=int(280 * (theme.FONT_SCALE or 1)))
+        sb = tk.Scrollbar(wrap, orient="vertical", command=canvas.yview)
+        body = tk.Frame(canvas, bg=BG)
+        win = canvas.create_window((0, 0), window=body, anchor="nw")
+        body.bind("<Configure>",
+                  lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>",
+                    lambda e: canvas.itemconfigure(win, width=e.width))
+        canvas.configure(yscrollcommand=sb.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+        canvas.bind("<Enter>", lambda e: canvas.bind_all(
+            "<MouseWheel>", lambda ev: canvas.yview_scroll(
+                -1 if ev.delta > 0 else 1, "units")))
+        canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
+
+        # 사진은 로컬 폴더 경로라 남에게 못 보낸다 (파일이 아니라 '연결'이다)
+        self.vars = []          # [(분류, 항목, BooleanVar), ...]
+        for c in CATS:
+            if c["key"] == "사진":
+                continue
+            items = library.list_items(c["key"])
+            if not items:
+                continue
+            head = tk.Frame(body, bg=BG)
+            head.pack(fill="x", pady=(8, 2))
+            tk.Label(head, text=c["label"], font=(FONT, theme.fs(9), "bold"),
+                     bg=BG, fg=MUTED).pack(side="left")
+            tk.Label(head, text=f"{len(items)}개", font=(FONT, theme.fs(8)),
+                     bg=BG, fg=MUTED).pack(side="left", padx=(6, 0))
+            for it in items:
+                v = tk.BooleanVar(value=False)
+                self.vars.append((c["key"], it, v))
+                tk.Checkbutton(
+                    body, text=f"{it['name']}   \\{it.get('label') or it['name']}\\",
+                    variable=v, font=(FONT, theme.fs(9)), bg=BG, fg=TEXT,
+                    activebackground=BG, activeforeground=TEXT,
+                    selectcolor=CARD, anchor="w", cursor="hand2").pack(
+                    anchor="w", fill="x")
+
+        if not self.vars:
+            tk.Label(body, text="아직 등록한 물감이 없습니다.",
+                     font=(FONT, theme.fs(9)), bg=BG, fg=MUTED).pack(
+                     anchor="w", pady=10)
+
+        foot = tk.Frame(self, bg=BG, padx=16, pady=12)
+        foot.pack(fill="x")
+        _dialog_btn(foot, "내보내기…", self._export, primary=True).pack(
+            side="right")
+        _dialog_btn(foot, "취소", self.destroy).pack(side="right", padx=(0, 6))
+        _dialog_btn(foot, "모두 선택", lambda: self._all(True)).pack(side="left")
+        _dialog_btn(foot, "모두 해제", lambda: self._all(False)).pack(
+            side="left", padx=(6, 0))
+
+        self.update_idletasks()
+        screens.place_beside(self, master)
+        self.grab_set()
+        ui_fx.attach_all(self)
+
+    def _all(self, on):
+        for _cat, _it, v in self.vars:
+            v.set(on)
+
+    def _export(self):
+        pairs = [(cat, it) for cat, it, v in self.vars if v.get()]
+        if not pairs:
+            messagebox.showwarning("고른 것이 없습니다",
+                                   "보낼 물감에 하나 이상 체크해주세요.",
+                                   parent=self)
+            return
+        path = filedialog.asksaveasfilename(
+            parent=self, title="물감 내보내기",
+            defaultextension=chip.CHIP_EXT,
+            initialfile=f"내 물감{chip.CHIP_EXT}",
+            filetypes=[("HwpPalette 물감·팔레트 파일", f"*{chip.CHIP_EXT}")])
+        if not path:
+            return
+        name = pathlib.Path(path).stem
+        note = simpledialog.askstring(
+            "설명 (없어도 됩니다)",
+            "받는 사람에게 한 줄로 알려줄 말:", parent=self) or ""
+        try:
+            r = chip.export_items(pairs, path, name=name, note=note)
+        except Exception as e:
+            applog.exc("물감 내보내기 실패", e)
+            messagebox.showerror("내보내기 실패", f"{type(e).__name__}: {e}",
+                                 parent=self)
+            return
+        skipped = len(pairs) - r["items"]
+        msg = (f"물감 {r['items']}개를 내보냈습니다.\n"
+               f"  {pathlib.Path(path).name}\n\n"
+               "받는 사람은 ⚙ → 물감 나누기 → [불러오기] 로 등록합니다.")
+        if skipped:
+            msg += f"\n\n(조각 파일이 없어 {skipped}개는 빠졌습니다 — 기록 참고)"
+        messagebox.showinfo("물감을 내보냈습니다", msg, parent=self)
+        self.destroy()
+
+
+class PalettePickDialog(tk.Toplevel):
+    r"""팔레트 보내기 — 어느 팔레트를 보낼지 고른다.
+
+    고른 뒤는 **통째로** 나간다. 담을 물감은 블럭의 ref 를 훑어 자동으로
+    정해지므로 사용자가 따로 고를 것이 없다.
+    """
+
+    def __init__(self, master):
+        super().__init__(master)
+        self.title(appinfo.WINDOW_TITLE)
+        self.configure(bg=BG)
+        self.resizable(False, False)
+        self.attributes("-topmost", True)
+        self.bind("<Escape>", lambda e: self.destroy())
+
+        tk.Label(self, text="팔레트 보내기", font=(FONT, theme.fs(12), "bold"),
+                 bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(14, 2))
+        tk.Label(self, text="보낼 팔레트를 고르세요. 그 팔레트가 쓰는 물감도 "
+                            "함께 담깁니다.",
+                 font=(FONT, theme.fs(8)), bg=BG, fg=MUTED,
+                 wraplength=380, justify="left").pack(anchor="w", padx=16,
+                                                      pady=(0, 8))
+
+        tabs = [t for t in palette.load_tabs()
+                if t.get("name") != palette.MAIN_TAB]
+        if not tabs:
+            tk.Label(self, text="보낼 팔레트가 없습니다.\n"
+                                "팔레트 설정에서 먼저 만들어 주세요.",
+                     font=(FONT, theme.fs(9)), bg=BG, fg=MUTED,
+                     justify="left").pack(anchor="w", padx=16, pady=8)
+        for tab in tabs:
+            n = len(tab.get("blocks", []))
+            uses = len(chip.required_items(tab))
+            self._card(tab, f"버튼 {n}개 · 물감 {uses}개")
+
+        foot = tk.Frame(self, bg=BG, padx=16, pady=12)
+        foot.pack(fill="x")
+        _dialog_btn(foot, "닫기", self.destroy).pack(side="right")
+
+        self.update_idletasks()
+        screens.place_beside(self, master)
+        self.grab_set()
+        ui_fx.attach_all(self)
+
+    def _card(self, tab, desc):
+        row = tk.Frame(self, bg=ROWBG, highlightbackground=BORDER,
+                       highlightthickness=1)
+        row.pack(fill="x", padx=16, pady=3)
+        info = tk.Frame(row, bg=ROWBG, padx=12, pady=8)
+        info.pack(side="left", fill="both", expand=True)
+        tk.Label(info, text=tab.get("name", "이름 없음"),
+                 font=(FONT, theme.fs(10), "bold"), bg=ROWBG, fg=TEXT,
+                 anchor="w").pack(anchor="w")
+        tk.Label(info, text=desc, font=(FONT, theme.fs(8)), bg=ROWBG,
+                 fg=MUTED, anchor="w").pack(anchor="w")
+        for wdg in (row, info, *info.winfo_children()):
+            wdg.config(cursor="hand2")
+            wdg.bind("<Button-1>", lambda e, t=tab: self._pick(t))
+            wdg.bind("<Enter>", lambda e, r=row: ShareDialog._tint(
+                r, ACCENT_SOFT))
+            wdg.bind("<Leave>", lambda e, r=row: ShareDialog._tint(r, ROWBG))
+
+    def _pick(self, tab):
+        self.grab_release()             # 파일 대화상자가 뒤에 깔리지 않게
+        if export_palette_flow(self, tab):
+            self.destroy()
+        else:
+            self.grab_set()
+
+
+def export_palette_flow(parent, tab):
+    r"""팔레트 하나를 파일로 내보내는 **공용 흐름**. 내보냈으면 True.
+
+    두 곳에서 부른다 — '물감 나누기 → 팔레트 보내기' 와 팔레트 설정의 탭
+    우클릭(지름길). 같은 일이라 한 곳에 둔다: 두 벌로 두면 한쪽만 고치는
+    사고가 난다 (2026-07-27).
+    """
+    if not tab.get("blocks"):
+        messagebox.showinfo("빈 팔레트", "이 팔레트에는 버튼이 없습니다.",
+                            parent=parent)
+        return False
+
+    missing = chip.missing_refs(tab)
+    if missing:
+        # 지워진 물감을 가리키는 버튼은 내보낼 수 없다. 조용히 빼면
+        # 받는 쪽에서 "왜 이 버튼만 안 되지"가 되므로 먼저 알린다.
+        if not messagebox.askokcancel(
+                "빠지는 버튼이 있습니다",
+                "다음 버튼이 가리키는 물감이 라이브러리에 없어\n"
+                "내보내지 않습니다:\n\n  "
+                + "\n  ".join(missing[:8])
+                + "\n\n그대로 내보낼까요?", parent=parent):
+            return False
+
+    items = chip.required_items(tab)
+    path = filedialog.asksaveasfilename(
+        parent=parent, title=f"'{tab['name']}' 팔레트 내보내기",
+        defaultextension=chip.CHIP_EXT,
+        initialfile=f"{tab['name']}{chip.CHIP_EXT}",
+        filetypes=[("HwpPalette 물감·팔레트 파일", f"*{chip.CHIP_EXT}")])
+    if not path:
+        return False
+    note = simpledialog.askstring(
+        "설명 (없어도 됩니다)",
+        "받는 사람에게 한 줄로 알려줄 말:", parent=parent) or ""
+    try:
+        r = chip.export_tab(tab, path, note=note)
+    except Exception as ex:
+        applog.exc(f"팔레트 내보내기 실패 ({tab['name']})", ex)
+        messagebox.showerror("내보내기 실패", f"{type(ex).__name__}: {ex}",
+                             parent=parent)
+        return False
+    messagebox.showinfo(
+        "팔레트를 내보냈습니다",
+        f"'{tab['name']}' 팔레트를 파일로 내보냈습니다.\n\n"
+        f"  버튼 {r['blocks']}개 · 물감 {r['items']}개\n"
+        f"  {pathlib.Path(path).name}\n\n"
+        "받는 사람은 ⚙ → 물감 나누기 → [불러오기] 로 등록합니다.\n"
+        "물감은 그 사람 창고에 들어가 다른 팔레트에서도 쓸 수 있습니다.",
+        parent=parent)
+    if items and not r["items"]:
+        applog.warn("팔레트 내보내기: 담긴 물감이 없습니다")
+    return True
 
 
 def open_share(master, on_saved=None):

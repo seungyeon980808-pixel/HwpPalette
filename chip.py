@@ -86,23 +86,29 @@ def missing_refs(tab):
 
 
 def export_tab(tab, dest_path, note="", author=""):
-    """팔레트 탭 하나를 칩으로 내보낸다. 반환: {"items": 개수, "blocks": 개수}.
+    """팔레트 탭 하나를 파일로 내보낸다. 반환: {"items": 담긴 개수, "blocks": 개수}.
 
     팔레트는 **통째로** 나간다(사용자 결정) — 배치 자체가 전달할 가치이고,
     일부만 빼면 빈 격자가 생겨 도면이 깨진다.
+    items 는 **실제로 담긴** 개수다 (조각 파일이 사라진 항목은 빠진다).
     """
     pairs = required_items(tab)
-    library.export_items(pairs, dest_path)      # 물감 + 조각 + manifest
+    n = library.export_items(pairs, dest_path)  # 물감 + 조각 + manifest
     _add_chip_parts(dest_path, tab=tab,
                     name=tab.get("name", "팔레트"), note=note, author=author)
-    return {"items": len(pairs), "blocks": len(tab.get("blocks", []))}
+    return {"items": n, "blocks": len(tab.get("blocks", []))}
 
 
 def export_items(pairs, dest_path, name, note="", author=""):
-    """고른 물감만 꾸러미로 내보낸다(탭 없음). 반환: {"items": 개수}."""
-    library.export_items(pairs, dest_path)
+    """고른 물감만 파일로 내보낸다(팔레트 없음). 반환: {"items": 담긴 개수}.
+
+    **실제로 담긴 개수**를 돌려준다 — 조각 파일이 사라진 항목은 library 쪽에서
+    건너뛰므로, 고른 개수를 그대로 보고하면 "5개 보냈다"고 해 놓고 4개만
+    간 것을 아무도 모른다.
+    """
+    n = library.export_items(pairs, dest_path)
     _add_chip_parts(dest_path, tab=None, name=name, note=note, author=author)
-    return {"items": len(pairs)}
+    return {"items": n}
 
 
 def _add_chip_parts(dest_path, tab, name, note, author):
