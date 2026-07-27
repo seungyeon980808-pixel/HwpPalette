@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<title>디자인 개편 시안 — 지금 vs 바꾼 뒤</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--accent:#0071e3;--soft:#e8f2fd;--bg:#f5f5f7;--card:#fff;--text:#1d1d1f;
+      --muted:#6e6e73;--border:#d2d2d7;--sub:#fafafa;
+      --free:#ddf4ff;--freeln:#54aeff;--here:#ffefe9;--hereln:#f0997b;
+      --sel:#e6f6ea;--selln:#2da44e;}
+*{box-sizing:border-box}
+body{margin:0;padding:28px 20px 80px;background:#e9ecef;color:var(--text);
+     font-family:'IBM Plex Sans KR',sans-serif;line-height:1.65}
+.wrap{max-width:1060px;margin:0 auto}
+h1{font-size:23px;font-weight:600;margin:0 0 4px}
+.lead{color:var(--muted);font-size:13.5px;margin:0 0 24px}
+section{background:#fff;border:1px solid var(--border);border-radius:12px;
+        padding:20px 22px;margin-bottom:18px}
+h2{font-size:16px;font-weight:600;margin:0 0 2px}
+h2 .n{display:inline-block;width:23px;height:23px;line-height:23px;text-align:center;
+      background:var(--accent);color:#fff;border-radius:6px;font-size:12px;margin-right:8px}
+.sub{color:var(--muted);font-size:13px;margin:0 0 14px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+.colh{font-size:12px;font-weight:600;margin:0 0 6px;display:flex;gap:6px;align-items:center}
+.b-now{color:#9b1c1c}.b-new{color:#116329}
+.pill{font-size:10px;padding:1px 7px;border-radius:999px;font-weight:400}
+.pill.now{background:#fff1f0;color:#9b1c1c}.pill.new{background:#e6f6ea;color:#116329}
+.note{font-size:12.5px;color:var(--muted);border-left:3px solid var(--border);
+      padding-left:11px;margin:14px 0 0}
+
+/* ── 가짜 앱 창 ── */
+.win{border:1px solid #c8c8cc;border-radius:10px;overflow:hidden;background:var(--bg);
+     box-shadow:0 1px 4px rgba(0,0,0,.10);font-size:12px}
+.tb{display:flex;align-items:center;gap:6px;background:#fff;border-bottom:1px solid var(--border);
+    padding:5px 9px;font-size:10.5px;color:var(--muted)}
+.tb .dot{width:9px;height:9px;border-radius:50%;background:#d2d2d7}
+.pad{padding:10px}
+
+/* 메인 창 — 지금 */
+.grid6{display:grid;grid-template-columns:repeat(6,1fr);gap:4px}
+.blk{height:40px;border-radius:7px;display:flex;align-items:center;justify-content:center;
+     text-align:center;font-size:11px;line-height:1.2;white-space:pre-line;border:1px solid transparent}
+.now-conv{background:#0071e3;color:#fff}
+.now-neon{background:#00e050;color:#003310}
+.now-cyan{background:#7de3f0;color:#00343a}
+.now-yell{background:#ffe066;color:#4a3b00}
+.now-plain{background:#fff;border-color:#d2d2d7}
+/* 메인 창 — 개편 */
+.new-conv{background:#0071e3;color:#fff;font-weight:500}
+.new-t1{background:#eef4fb;color:#1d3f66;border-color:#d7e4f2}
+.new-t2{background:#f1efe9;color:#4a4433;border-color:#e2ddd0}
+.new-t3{background:#eef7ef;color:#274a2c;border-color:#d8e9da}
+.new-plain{background:#fff;border-color:#e0e0e4;color:#6e6e73}
+.tabs{display:flex;gap:4px;margin-bottom:8px}
+.tab{padding:3px 10px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:11px;color:#4a4a4e}
+.tab.on{background:var(--soft);border-color:var(--accent);color:#0058b0;font-weight:500}
+.foot-now{display:flex;justify-content:space-between;font-size:9.5px;color:#a8a8ad;
+          padding:7px 4px 0;align-items:center}
+.statusbar{margin-top:8px;padding:5px 8px;border-radius:6px;background:#fff;
+           border:1px solid #e6e6ea;font-size:10px;color:var(--muted);
+           display:flex;justify-content:space-between;align-items:center}
+
+/* 대화상자 */
+.dlg-now{width:290px;border:1px solid #999;background:#f0f0f0;font-size:12px;margin:0 auto;
+         box-shadow:2px 2px 6px rgba(0,0,0,.25)}
+.dlg-now .cap{background:#fff;padding:4px 8px;font-size:11px;border-bottom:1px solid #ddd}
+.dlg-now .body{padding:14px 12px;display:flex;gap:10px;background:#fff}
+.dlg-now .ic{font-size:22px}
+.dlg-now .btns{background:#f0f0f0;padding:8px;display:flex;justify-content:flex-end;gap:6px}
+.dlg-now button{font-size:11px;padding:3px 16px;border:1px solid #adadad;background:#e1e1e1;border-radius:2px}
+.dlg-new{width:300px;border:1px solid var(--border);background:#fff;border-radius:12px;margin:0 auto;
+         box-shadow:0 4px 16px rgba(0,0,0,.10);overflow:hidden;font-size:12px}
+.dlg-new .body{padding:16px 16px 4px}
+.dlg-new .t{font-weight:600;font-size:13px;margin-bottom:4px}
+.dlg-new .d{color:var(--muted);font-size:11.5px}
+.dlg-new .btns{padding:12px 16px 14px;display:flex;justify-content:flex-end;gap:8px;align-items:center}
+.btn{font-size:11.5px;padding:6px 14px;border-radius:8px;border:1px solid var(--border);
+     background:#fff;cursor:pointer}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:500}
+.btn.danger-link{border:0;color:#9b1c1c;text-decoration:underline;font-size:11px;margin-right:auto;padding-left:0}
+
+/* 색 팔레트 */
+.sw{display:flex;gap:6px;flex-wrap:wrap}
+.sw div{width:44px;height:30px;border-radius:6px;border:1px solid rgba(0,0,0,.08);
+        display:flex;align-items:flex-end;justify-content:center;font-size:8.5px;color:rgba(0,0,0,.55);padding-bottom:2px}
+
+/* 컴포넌트 상태 */
+.staterow{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:6px 0}
+.rb{display:inline-block;padding:7px 16px;border-radius:8px;background:#e8e8ed;font-size:12px;cursor:default}
+.rb.h{background:#dcdce2}
+.rb.p{background:#cfcfd6;transform:translateY(1px)}
+.fld{display:inline-block;border:1px solid var(--border);border-radius:6px;padding:6px 10px;
+     font-size:12px;background:#fff;color:#333;min-width:130px}
+.fld.focus{border:2px solid var(--accent);padding:5px 9px}
+.cap2{font-size:10px;color:var(--muted);text-align:center;margin-top:3px}
+.tok{display:flex;gap:8px;align-items:flex-end;margin:8px 0}
+.tok div{background:var(--soft);border:1px solid var(--freeln);border-radius:4px;
+         display:flex;align-items:center;justify-content:center;font-size:9px;color:#0058b0}
+</style></head>
+<body><div class="wrap">
+
+<h1>디자인 개편 시안</h1>
+<p class="lead">왼쪽이 지금, 오른쪽이 바꾼 뒤입니다. 화려해지는 것이 아니라 조용해지는 방향입니다 — 실제 블럭·탭 이름 그대로 그렸습니다.</p>
+
+<section>
+<h2><span class="n">1</span>메인 팔레트 창 — 색이 말을 아낀다</h2>
+<p class="sub">지금은 장식 색(네온 초록·하늘색·노랑)이 내용보다 시끄럽습니다. 개편안은 강조색 하나 + 톤 낮춘 배경색 세 벌로 줄이고, 종류는 색이 아니라 이름이 말합니다.</p>
+<div class="two">
+  <div>
+    <p class="colh b-now">지금 <span class="pill now">원색 허용</span></p>
+    <div class="win"><div class="tb"><span class="dot"></span>HwpPalette v0.1.1</div>
+      <div class="pad">
+        <div class="tabs"><span class="tab on">메인</span><span class="tab">수능</span><span class="tab">학교 시험문제</span></div>
+        <div class="grid6">
+          <div class="blk now-conv" style="grid-column:span 2">마크다운
+변환</div>
+          <div class="blk now-yell" style="grid-column:span 2">글씨체</div>
+          <div class="blk now-cyan" style="grid-column:span 2">사진</div>
+          <div class="blk now-neon" style="grid-column:span 2">특수기호</div>
+          <div class="blk now-neon" style="grid-column:span 2">양식
+채우기</div>
+          <div class="blk now-cyan" style="grid-column:span 2">기본
+서식</div>
+        </div>
+        <div class="foot-now"><span>v0.1.1 · 2026-07-26</span><span>Copyright © 2026 …</span></div>
+      </div></div>
+  </div>
+  <div>
+    <p class="colh b-new">바꾼 뒤 <span class="pill new">강조 1 + 파스텔 3</span></p>
+    <div class="win"><div class="tb"><span class="dot"></span>HwpPalette</div>
+      <div class="pad">
+        <div class="tabs"><span class="tab on">메인</span><span class="tab">수능</span><span class="tab">학교 시험문제</span></div>
+        <div class="grid6">
+          <div class="blk new-conv" style="grid-column:span 2">마크다운
+변환</div>
+          <div class="blk new-t2" style="grid-column:span 2">글씨체</div>
+          <div class="blk new-t1" style="grid-column:span 2">사진</div>
+          <div class="blk new-t3" style="grid-column:span 2">특수기호</div>
+          <div class="blk new-t3" style="grid-column:span 2">양식
+채우기</div>
+          <div class="blk new-t1" style="grid-column:span 2">기본
+서식</div>
+        </div>
+        <div class="statusbar"><span>한글 연결됨 · 메인 팔레트</span><span style="color:#c6c6cb">v0.1.1</span></div>
+      </div></div>
+  </div>
+</div>
+<p class="note">변환 버튼만 강조색 — "이 프로그램의 본체"가 화면에서 저절로 드러납니다. 사용자 지정 색은 파스텔 12색 중에서 고르게 하고, 이미 고른 원색은 가장 가까운 파스텔로 자동 변환합니다. 하단 저작권 줄은 상태 표시줄로 바꿔 정보(연결 상태)가 장식을 대체합니다.</p>
+</section>
+
+<section>
+<h2><span class="n">2</span>대화상자 — 프로그램의 얼굴 통일</h2>
+<p class="sub">지금은 수십 곳에서 윈도우 기본 회색 창이 불쑥 나옵니다. 개편안은 모든 알림·확인을 프로그램과 같은 얼굴로 바꿉니다. 체감 개선의 절반이 여기서 나옵니다.</p>
+<div class="two">
+  <div>
+    <p class="colh b-now">지금 <span class="pill now">윈도우 기본</span></p>
+    <div class="dlg-now">
+      <div class="cap">삭제</div>
+      <div class="body"><span class="ic">⚠️</span><span>'5보기' 탭을 삭제할까요?</span></div>
+      <div class="btns"><button>예(Y)</button><button>아니요(N)</button></div>
+    </div>
+    <p class="cap2">글꼴·모서리·버튼이 전부 프로그램과 다른 얼굴</p>
+  </div>
+  <div>
+    <p class="colh b-new">바꾼 뒤 <span class="pill new">widgets.dialog</span></p>
+    <div class="dlg-new">
+      <div class="body">
+        <div class="t">'5보기' 를 어떻게 지울까요?</div>
+        <div class="d">팔레트에서 치워도 물감은 창고에 남습니다.</div>
+      </div>
+      <div class="btns">
+        <button class="btn danger-link">물감까지 없애기</button>
+        <button class="btn">취소</button>
+        <button class="btn pri">이 자리에서만 치우기</button>
+      </div>
+    </div>
+    <p class="cap2">기본 버튼(Enter)이 항상 안전한 쪽 · 위험한 길은 왼쪽에 작게</p>
+  </div>
+</div>
+</section>
+
+<section>
+<h2><span class="n">3</span>여백·크기 체계 — 보이지 않는 디테일</h2>
+<p class="sub">지금은 파일마다 6/8/10/12/14/16px 이 제각각입니다. 간격은 4의 배수 다섯 개, 모서리는 세 개, 글자 위계는 다섯 단계로 못박습니다.</p>
+<div class="tok">
+  <div style="width:16px;height:16px">4</div>
+  <div style="width:26px;height:26px">8</div>
+  <div style="width:36px;height:36px">12</div>
+  <div style="width:46px;height:46px">16</div>
+  <div style="width:60px;height:60px">24</div>
+  <span style="font-size:11px;color:var(--muted);margin-left:8px">간격 — 이 다섯 개 밖의 숫자는 쓰지 않는다</span>
+</div>
+<div class="staterow" style="margin-top:12px">
+  <span style="font-size:15px;font-weight:600">창 제목 12</span>
+  <span style="font-size:13px;font-weight:600">절 제목 10</span>
+  <span style="font-size:12px">본문 9</span>
+  <span style="font-size:11px;color:var(--muted)">보조 8</span>
+  <span style="font-size:10px;color:#a8a8ad">캡션 7</span>
+  <span style="font-size:11px;color:var(--muted);margin-left:10px">글자 — 자리마다 고르지 않고 역할로 정한다</span>
+</div>
+</section>
+
+<section>
+<h2><span class="n">4</span>손맛 — 애니메이션이 아니라 반응</h2>
+<p class="sub">움직임을 늘리지 않습니다. 블럭 클릭(하루 수백 번)은 지금처럼 무동작 즉시 실행이 정답입니다. 대신 <b>반응</b>을 넣습니다.</p>
+<div class="staterow">
+  <span><span class="rb">보통</span><p class="cap2">기본</p></span>
+  <span><span class="rb h">호버</span><p class="cap2">130ms 보간 (지금 것 유지)</p></span>
+  <span><span class="rb p">누름</span><p class="cap2">즉시 진해지고 1px 하강 — 새로</p></span>
+  <span style="margin-left:18px"><span class="fld">양식 이름</span><p class="cap2">평소</p></span>
+  <span><span class="fld focus">양식 이름</span><p class="cap2">포커스 링 — 새로</p></span>
+</div>
+<p class="note">여기에 더해: 한글 변환처럼 몇 초 걸리는 동안 버튼이 "여는 중…"으로 바뀌며 잠기고, <b>창이 스스로 커지거나 움직이는 일을 금지</b>합니다 — 내용이 넘치면 스크롤이 받습니다. 이번에 겪은 "버튼 누를 때마다 위젯이 도망가는" 문제의 재발 방지 규칙입니다.</p>
+</section>
+
+<section>
+<h2><span class="n">5</span>블럭 사용자 색 — 파스텔 12색</h2>
+<p class="sub">colorchooser 자유 선택을 없애고 이 중에서 고릅니다. 어떤 조합을 골라도 화면이 안 깨집니다.</p>
+<div class="sw">
+  <div style="background:#eef4fb">파랑</div><div style="background:#eef7ef">초록</div>
+  <div style="background:#fdf3e7">주황</div><div style="background:#fbeef0">분홍</div>
+  <div style="background:#f3eefb">보라</div><div style="background:#eff8f6">청록</div>
+  <div style="background:#f8f4e8">노랑</div><div style="background:#f1efe9">모래</div>
+  <div style="background:#eff1f4">회청</div><div style="background:#f6efe9">살구</div>
+  <div style="background:#edf6fb">하늘</div><div style="background:#f2f2f4">회색</div>
+</div>
+<p class="note">글자색은 각 배경의 진한 짝을 자동으로 붙입니다 — 사용자가 대비를 고민할 일이 없습니다.</p>
+</section>
+
+<section>
+<h2><span class="n">6</span>진행 순서</h2>
+<p class="sub" style="margin-bottom:6px">단계마다 실제 화면을 캡처해 확인받고 커밋합니다.</p>
+<table style="border-collapse:collapse;width:100%;font-size:13px">
+  <tr style="background:var(--sub)"><th style="border:1px solid var(--border);padding:7px 10px;text-align:left">단계</th><th style="border:1px solid var(--border);padding:7px 10px;text-align:left">내용</th><th style="border:1px solid var(--border);padding:7px 10px;text-align:left">크기</th></tr>
+  <tr><td style="border:1px solid var(--border);padding:7px 10px">1</td><td style="border:1px solid var(--border);padding:7px 10px">토큰 + 공용 위젯 (대화상자·포커스 링·누름 피드백·스크롤바)</td><td style="border:1px solid var(--border);padding:7px 10px">한 세션</td></tr>
+  <tr><td style="border:1px solid var(--border);padding:7px 10px">2</td><td style="border:1px solid var(--border);padding:7px 10px">메인 창 + 설정 창 적용 · 격자 색 정돈 ← <b>여기서 한 번 써 보고 판단</b></td><td style="border:1px solid var(--border);padding:7px 10px">한 세션</td></tr>
+  <tr><td style="border:1px solid var(--border);padding:7px 10px">3</td><td style="border:1px solid var(--border);padding:7px 10px">윈도우 기본 대화상자 ~70곳 일괄 교체</td><td style="border:1px solid var(--border);padding:7px 10px">한 세션</td></tr>
+  <tr><td style="border:1px solid var(--border);padding:7px 10px">4</td><td style="border:1px solid var(--border);padding:7px 10px">표 창·나머지 화면 + 기존 색 파스텔 매핑</td><td style="border:1px solid var(--border);padding:7px 10px">반 세션</td></tr>
+</table>
+</section>
+
+</div></body></html>
