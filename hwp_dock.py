@@ -46,7 +46,14 @@ class Dock:
 
     # ── 시작/추적 ─────────────────────────────────────
     def start(self):
-        """지금 자리를 기억하고 판 자리로 옮긴다. 성공 여부."""
+        r"""지금 자리를 기억하고 판 자리로 옮긴다. 성공 여부.
+
+        ⚠ 부르기 전에 반드시 `hwp_engine.ensure_visible()` 로 한글 창을 **COM
+        차원에서** 먼저 켜 둘 것 (실측 2026-07-28). 숨은 인스턴스를 여기의
+        SWP_SHOWWINDOW 로 먼저 보이게 하면 한글 내부는 여전히 '숨김'이라
+        렌더러가 꺼진 채 창만 떠서 **통째로 검게** 나온다 — RedrawWindow,
+        WM_EXITSIZEMOVE, 활성화, 숨겼다 펴기, 크기 흔들기 전부 소용없었다.
+        """
         try:
             if not win32gui.IsWindow(self.hwnd):
                 return False

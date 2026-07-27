@@ -696,6 +696,11 @@ class SettingsWindow(tk.Toplevel):
         self._show_editing_panel()
         self._enter_dock_layout()
         hwp_engine.bring_to_front()     # 도킹된 창에 초점까지 준다
+        # 한 박자 뒤 **다시 한 번** (실측 2026-07-28): COM 으로 창을 켠 직후의
+        # 활성화는 한글이 표시 처리를 끝내기 전이라 그림이 안 살아나는 채
+        # (검은 창) 남는 경우가 있다. 잠깐 뒤 재활성화가 렌더러를 확실히 깨운다.
+        self.after(350, lambda: (self._edit_ctx is not None
+                                 and hwp_engine.bring_to_front()))
         # Esc = 편집 취소 (창 닫기가 아니라) — 끝나면 _finish 가 되돌린다
         self.bind("<Escape>", lambda e: self._finish_content_edit(False))
 
@@ -762,6 +767,13 @@ class SettingsWindow(tk.Toplevel):
         self.zoom_pane.configure(width=hwp_dock.EDIT_PANE_W, height=edit_h)
         self._fit_window()
         self.update_idletasks()         # 판이 최종 자리를 잡은 뒤에 도킹한다
+        # **도킹(SetWindowPos)보다 먼저** COM 으로 창을 켠다 (실측 2026-07-28,
+        # "도킹된 한글이 새까맣게 나온다"): 숨은 인스턴스를 SWP_SHOWWINDOW 로
+        # 먼저 보이게 하면 한글 내부는 여전히 '숨김'이라 **렌더러가 꺼진 채**
+        # 창만 떠서 통째로 검게 나온다. 그 뒤의 ensure_visible 은 "이미
+        # 보인다"며 건너뛰어 영영 검은 채였다. COM(Visible=True)이 먼저면
+        # 한글이 제 손으로 창을 켜며 렌더러도 함께 켠다.
+        hwp_engine.ensure_visible()
         hwnd = hwp_engine.connected_hwnd()
         if hwnd:
             self._dock = hwp_dock.Dock(self, self._zoom_canvas, hwnd)

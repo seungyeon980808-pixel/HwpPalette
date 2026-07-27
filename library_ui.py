@@ -2171,6 +2171,12 @@ def begin_content_edit(master, cat, item):
     windows_before = hwp_engine.visible_window_handles()
     if not _ensure_hwp(master):
         return None
+    # 창을 **여기서 미리** 켠다 (실측 2026-07-28, "도킹된 한글이 새까맣다"):
+    # 숨은 인스턴스는 COM(Visible=True)으로 켜야 렌더러가 함께 켜지는데,
+    # 켜자마자 곧바로 SetWindowPos(도킹)를 하면 표시 처리가 끝나기 전이라
+    # 그림이 안 살아나는 경우가 있었다. 문서를 펼치는 아래 COM 작업이
+    # 1~3초 걸리므로, 그 시간이 자연스러운 완충이 된다.
+    hwp_engine.ensure_visible()
     # 화면 목록이 들고 있던 item 은 **옛 파일명**일 수 있다 (2026-07-27).
     # 덮어쓰기는 조각을 새 uuid 파일로 갈아치우고 옛 파일을 지우므로,
     # 갱신 전 목록으로 펼치면 이미 없는 파일을 가리켜 빈 탭이 떴다.
