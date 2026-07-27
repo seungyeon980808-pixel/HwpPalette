@@ -613,7 +613,20 @@ def _insert_edit_note(lines):
 def strip_edit_note():
     r"""안내문 줄들을 지운다 (저장 직전). 지운 줄 수를 돌려준다.
 
-    문단 단위로 지운다 — 표 안이 아니라 문서 맨 위 문단들이므로 안전하다.
+    **문단 통째로** 지운다 (2026-07-27 수정). 예전에는 `MoveSelLineEnd` 로
+    "그 줄 끝까지" 지웠는데, 한글의 '줄'은 문단이 아니라 **화면에서 접힌 한
+    줄**이다. 그래서 안내 문장이 길어 두 줄로 접히는 문서에서는 앞부분만
+    지워지고 꼬리가 남았다 — 사용자가 본 그 `다.` 다 (안내 첫 줄
+    "…여기서 고칩니**다.**" 의 끝).
+
+    더 나빴던 것은 **저장할 때마다 새로 하나씩 생겼다**는 점이다. 손으로
+    지워도 다음 저장에서 또 만들어지니 "지웠는데 계속 남는다"가 됐다.
+    실측(지문박스): 지금 코드 → `다.` 2개, 고친 방식 → 새로 안 생김.
+
+    `DeleteBack` 도 함께 뺐다 — 커서 앞 글자를 지우는 명령이라 **본문 글자를
+    먹는** 경우가 있었다(실측: '진짜본문내용' → '진짜본문내').
+    `MoveSelNextParaBegin` 은 다음 문단 첫머리까지 잡으므로 문단 나눔까지
+    한 번에 걷힌다.
     """
     hwp = _h()
     removed = 0
@@ -622,14 +635,39 @@ def strip_edit_note():
         if not hwp_engine.find_text(EDIT_NOTE_MARK):
             break
         try:
-            hwp.HAction.Run("MoveSelLineEnd")   # 그 줄 끝까지 선택
+            hwp.HAction.Run("MoveParaBegin")        # 찾은 자리가 문단 중간일 수 있다
+            hwp.HAction.Run("MoveSelNextParaBegin")  # 문단 전체 + 문단 나눔
             hwp.HAction.Run("Delete")
-            hwp.HAction.Run("DeleteBack")       # 남은 빈 문단도 지운다
             removed += 1
         except Exception as e:
             applog.exc("안내문 줄 삭제 실패 — 저장물에 안내가 남을 수 있음", e)
             break
+    if removed:
+        _strip_note_spacer()
     return removed
+
+
+def _strip_note_spacer():
+    r"""안내문과 본문 사이에 넣었던 빈 줄 하나를 걷는다.
+
+    `_insert_edit_note` 가 안내 끝에 빈 문단을 **하나** 넣는데 아무도 걷지
+    않아, 고칠 때마다 문서 맨 위에 빈 줄이 한 줄씩 쌓였다 (실측 2026-07-27).
+    넣은 것이 하나이므로 여기서도 **딱 하나만** 지운다 — 조각이 원래 빈 줄로
+    시작했다면 그것은 그대로 남는다.
+    """
+    hwp = _h()
+    try:
+        text = hwp.GetTextFile("TEXT", "") or ""
+        first = text.split("\n", 1)[0]
+        if first.strip():
+            return False                 # 빈 줄이 아니다 — 건드리지 않는다
+        hwp.MoveDocBegin()
+        hwp.HAction.Run("MoveSelNextParaBegin")
+        hwp.HAction.Run("Delete")
+        return True
+    except Exception as e:
+        applog.exc("안내문 빈 줄 정리 실패 (빈 줄이 남을 수 있음)", e)
+        return False
 
 
 # 어떤 문서에도 항상 들어 있는 컨트롤 — 구역 정의와 단 정의.
