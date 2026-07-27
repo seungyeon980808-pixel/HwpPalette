@@ -724,6 +724,41 @@ def _clear_doc():
         applog.exc("재시도 전 문서 비우기 실패", e)
 
 
+# 템플릿 편집 탭의 '좁게' 여백 (mm) — 상하좌우 10, 머리말/꼬리말 5.
+# 일반 프린터의 물리 여백이 4~5mm 라 10mm 는 인쇄 안전권이고, 한글 기본값
+# (좌우 30·위 20·아래 15) 대비 판면이 좌우 40mm·상하 15mm 넓어진다.
+_NARROW_MARGIN_MM = 10
+_NARROW_HEADFOOT_MM = 5
+
+
+def apply_narrow_page():
+    r"""지금 문서의 쪽 여백을 '좁게'로 바꾼다. 성공 여부.
+
+    왜 (사용자 결정 2026-07-27): 템플릿 편집 탭은 빈 새 탭이라 한글 기본
+    여백(좌우 30mm)으로 열리는데, 넓은 표 템플릿은 그 판면에 안 들어가
+    **다음 쪽으로 넘어가** 보였다. 여백을 좁히면 한 쪽에 들어온다.
+
+    **템플릿 편집 탭에만** 쓴다. 양식은 여백까지가 양식의 내용이라 건드리면
+    저장할 때 양식 자체가 바뀐다 (open_form_copy 는 부르지 않는다).
+    저장물에는 안 샌다 — 삽입은 keep_section=0 이라 쪽 정의를 버린다.
+
+    실패해도 편집은 계속돼야 하므로 예외를 삼키고 False 만 돌려준다.
+    """
+    hwp = _h()
+    try:
+        act, ps = hwp.HAction, hwp.HParameterSet
+        act.GetDefault("PageSetup", ps.HSecDef.HSet)
+        pd = ps.HSecDef.PageDef
+        pd.LeftMargin = pd.RightMargin = hwp.MiliToHwpUnit(_NARROW_MARGIN_MM)
+        pd.TopMargin = pd.BottomMargin = hwp.MiliToHwpUnit(_NARROW_MARGIN_MM)
+        pd.HeaderLen = pd.FooterLen = hwp.MiliToHwpUnit(_NARROW_HEADFOOT_MM)
+        ps.HSecDef.HSet.SetItem("ApplyTo", 3)      # 3 = 문서 전체
+        return bool(act.Execute("PageSetup", ps.HSecDef.HSet))
+    except Exception as e:
+        applog.exc("쪽 여백 좁히기 실패 — 기본 여백으로 계속", e)
+        return False
+
+
 class EditSession:
     r"""'내용 고치기'로 펼쳐 준 문서 한 벌 — 그 문서를 **정확히** 다시 찾기 위한 것.
 
@@ -799,6 +834,8 @@ def open_template_copy(path, note_lines=None):
         doc.SetActive_XHwpDocument()
     except Exception as e:
         applog.exc("새 탭 활성화 실패 — 활성 문서 그대로 진행", e)
+    # 삽입 **전에** 여백을 좁힌다 — 레이아웃 계산이 한 번으로 끝난다
+    apply_narrow_page()
 
     ok = False
     for attempt in (1, 2):

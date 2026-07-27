@@ -22,6 +22,8 @@ import palette
 import library
 import func_catalog
 import builtin_actions              # 프로그램 기능 블럭('도구') 카탈로그
+import engine_library               # 고치기 세션 마무리 (hide_window_if_ours)
+import hwp_dock                     # 고치는 동안 한글 창을 미리보기 판에 도킹
 import hwp_engine
 import library_ui                  # commit_ime · capture_template_dialog 공용
 
@@ -319,6 +321,9 @@ class SettingsWindow(tk.Toplevel):
         self._blocks_now = []      # 지금 그려진 블럭 스냅샷 (드래그 중 참조)
         self._size_tip = None      # 크기 조절 중 커서 옆에 뜨는 안내
         self._pending_block = None  # 창고에서 고른 뒤 '자리 고르는 중'인 물감
+        self._edit_ctx = None      # '내용 고치는 중' 상태 (세션·창 목록·topmost)
+        self._dock = None          # 편집 중 한글 창 도킹
+        self._edit_form = None     # 판에 심은 이름·태그 폼 (수정 상태)
 
         # 창 제목·설명 줄은 없앴다 (사용자 지적 2026-07-27: "윗부분에 남는
         # 공간이 너무 많다"). 판마다 머리말이 이미 있어서 — '팔레트',
@@ -341,6 +346,7 @@ class SettingsWindow(tk.Toplevel):
         main = tk.Frame(outer, bg=CARD, highlightbackground=BORDER,
                         highlightthickness=1)
         main.pack(side="left", fill="both", expand=True)
+        self._main_card = main     # '고치는 중'엔 접었다 편다 (_enter_dock_layout)
 
         self._store_grip = tk.Label(outer, text="⟩", bg=BG, fg=MUTED,
                                     font=(FONT, theme.fs(FS["sub"])), cursor="hand2",
@@ -550,7 +556,10 @@ class SettingsWindow(tk.Toplevel):
         2026-07-27: "미리보기 크기에 따라 버튼 위치가 변해서 불편하다").
         이제 그림이 창보다 커도 스크롤만 늘어나고 버튼은 항상 같은 자리다.
         """
+        if self._edit_ctx is not None:
+            return              # 고치는 중 — 판을 다른 내용으로 갈아끼우지 않는다
         self._detail = (cat, item)
+        self._edit_form = None
         for w in self._zoom_body.winfo_children():
             w.destroy()
         for w in self._zoom_foot.winfo_children():
@@ -600,11 +609,199 @@ class SettingsWindow(tk.Toplevel):
                      % (item.get("label") or item.get("name")),
                      font=(FONT, theme.fs(FS["caption"])), bg=CARD, fg=MUTED).pack(side="left")
         if cat in ("템플릿", "양식"):
+            # 창(MetaDialog)을 띄우지 않고 이 판을 수정 폼으로 갈아끼운다
+            # (사용자 결정 2026-07-27 — "미리보기 창이 템플릿 수정으로 치환")
             RoundButton(acts, text="수정",
-                        command=lambda: self.store.edit_item(cat, item),
+                        command=lambda: self._show_edit_form(cat, item),
                         bg=SOFT, fg=TEXT, radius=theme.RADIUS["ctl"], font=(FONT, theme.fs(FS["body"])),
                         outline="", zone_bg=CARD).fit(pad_x=12, pad_y=5).pack(
                         side="left", padx=(6, 0))
+
+    # ── 미리보기 판의 상태 전환: 미리보기 → 수정 → 고치는 중 ──────────
+    # 셋 다 **같은 판**의 내용(_zoom_body)과 버튼 줄(_zoom_foot)만 갈아끼운다.
+    # 창을 새로 띄우거나 판을 늘리지 않는 것이 규칙이다 (사용자 결정
+    # 2026-07-27 — "최대한 위젯 창을 늘리지 않는 로직").
+
+    def _clear_zoom(self):
+        for w in self._zoom_body.winfo_children():
+            w.destroy()
+        for w in self._zoom_foot.winfo_children():
+            w.destroy()
+        self._zoom_canvas.yview_moveto(0)
+
+    def _show_edit_form(self, cat, item):
+        """[수정] — 미리보기 자리에 이름·태그 폼을 심는다 (창 없음)."""
+        if self._edit_ctx is not None:
+            return
+        self._clear_zoom()
+        self.zoom_hint.config(text=f"{item.get('name', '')} · 수정")
+        form = library_ui.MetaForm(
+            self._zoom_body, name=item["name"], exclude_id=item["id"],
+            bg=CARD, on_submit=lambda: self._save_edit_form(cat, item))
+        try:
+            form.tags_var.set(" ".join(item.get("tags") or []))
+        except Exception:
+            pass
+        form.pack(fill="x", padx=SP["m"], pady=SP["s"])
+        self._edit_form = form
+
+        acts = tk.Frame(self._zoom_foot, bg=CARD)
+        acts.pack(fill="x", padx=SP["m"] - 2, pady=SP["s"])
+        RoundButton(acts, text="저장",
+                    command=lambda: self._save_edit_form(cat, item),
+                    bg=ACCENT, fg="white", radius=theme.RADIUS["ctl"],
+                    font=(FONT, theme.fs(FS["body"]), "bold"), outline="",
+                    zone_bg=CARD).fit(pad_x=12, pad_y=5).pack(side="right")
+        RoundButton(acts, text="취소",
+                    command=lambda: self._show_detail(cat, item),
+                    bg=SOFT, fg=TEXT, radius=theme.RADIUS["ctl"],
+                    font=(FONT, theme.fs(FS["body"])), outline="",
+                    zone_bg=CARD).fit(pad_x=12, pad_y=5).pack(
+                    side="right", padx=(0, 6))
+        if cat in ("템플릿", "양식"):
+            RoundButton(acts, text="내용 고치기…",
+                        command=lambda: self._start_content_edit(cat, item),
+                        bg=SOFT, fg=TEXT, radius=theme.RADIUS["ctl"],
+                        font=(FONT, theme.fs(FS["body"])), outline="",
+                        zone_bg=CARD).fit(pad_x=12, pad_y=5).pack(side="left")
+
+    def _save_edit_form(self, cat, item):
+        form = self._edit_form
+        if form is None or not form.winfo_exists():
+            return
+        got = form.collect()
+        if got is None:
+            return                  # 오류창이 떴다 — 폼을 열어 둔 채 고치게
+        name, label, tags = got
+        label = library.resolve_edited_label(
+            item["name"], item.get("label", ""), name, label)
+        library.update_item(cat, item["id"], name=name, label=label, tags=tags)
+        self._notify()              # 창고 색·메인 창 라벨이 함께 바뀐다
+        fresh = library.find_by_id(cat, item["id"]) or item
+        self._show_detail(cat, fresh)
+
+    # ── '내용 고치기' — 판이 '고치는 중'이 되고 한글이 그 자리에 도킹 ──
+    def _start_content_edit(self, cat, item):
+        if self._edit_ctx is not None:
+            return
+        got = library_ui.begin_content_edit(self, cat, item)
+        if got is None:
+            return
+        session, item, windows_before = got
+        self._edit_ctx = {
+            "cat": cat, "item": item, "session": session,
+            "windows_before": windows_before,
+            "was_topmost": library_ui._pop_topmost(self),
+        }
+        self._show_editing_panel()
+        self._enter_dock_layout()
+        hwp_engine.bring_to_front()     # 도킹된 창에 초점까지 준다
+        # Esc = 편집 취소 (창 닫기가 아니라) — 끝나면 _finish 가 되돌린다
+        self.bind("<Escape>", lambda e: self._finish_content_edit(False))
+
+    def _show_editing_panel(self):
+        ctx = self._edit_ctx
+        self._clear_zoom()
+        self._edit_form = None
+        self.zoom_hint.config(text=f"{ctx['item']['name']} · 고치는 중")
+        # 판 몸통은 한글 창이 덮는다 — 한글이 다른 데로 가면 보이는 대비용 안내
+        tk.Label(self._zoom_body,
+                 text="한글 창이 이 자리에 떠 있습니다.\n"
+                      "안 보이면 작업 표시줄에서 한글을 눌러 주세요.",
+                 font=(FONT, theme.fs(FS["sub"])), bg=CARD, fg=MUTED,
+                 justify="left").pack(anchor="nw", padx=SP["m"], pady=SP["m"])
+        # 버튼 줄(항상 보이는 아래 고정 영역)에 안내 한 줄 + 저장/취소
+        tk.Label(self._zoom_foot,
+                 text="빈칸은 \\ · 이름 빈칸은 \\학년\\ 처럼 — 위→아래, "
+                      "왼쪽→오른쪽 순서로 채워집니다",
+                 font=(FONT, theme.fs(FS["caption"])), bg=CARD, fg=MUTED,
+                 anchor="w").pack(fill="x", padx=SP["m"] - 2,
+                                  pady=(SP["xs"], 0))
+        acts = tk.Frame(self._zoom_foot, bg=CARD)
+        acts.pack(fill="x", padx=SP["m"] - 2, pady=SP["s"])
+        RoundButton(acts, text="이 내용으로 덮어쓰기",
+                    command=lambda: self._finish_content_edit(True),
+                    bg=ACCENT, fg="white", radius=theme.RADIUS["ctl"],
+                    font=(FONT, theme.fs(FS["body"]), "bold"), outline="",
+                    zone_bg=CARD).fit(pad_x=12, pad_y=5).pack(side="right")
+        RoundButton(acts, text="취소",
+                    command=lambda: self._finish_content_edit(False),
+                    bg=SOFT, fg=TEXT, radius=theme.RADIUS["ctl"],
+                    font=(FONT, theme.fs(FS["body"])), outline="",
+                    zone_bg=CARD).fit(pad_x=12, pad_y=5).pack(
+                    side="right", padx=(0, 6))
+
+    def _enter_dock_layout(self):
+        r"""고치는 동안 격자·창고를 접고 판을 넓혀 한글을 그 자리에 붙인다.
+
+        '둘 다 접기' (사용자 결정 2026-07-27): 넓힌 창(1330px+)은 세로
+        주모니터(가상 폭 1080)를 넘는다. 고치는 중에는 격자를 만질 일이
+        없으므로 판 하나만 남기면 1060px 안쪽으로 들어온다.
+        """
+        # winfo_ismapped 가 아니라 **winfo_manager 로** 본다 (실측 2026-07-27):
+        # ismapped 는 창이 WM 에 실리기 전이면 packed 상태여도 0 을 줘서,
+        # 창고를 "안 보임"으로 오판해 접지 않았고 복귀 순서까지 어긋났다.
+        self._dock_saved = {
+            "store_packed": self._store_card.winfo_manager() == "pack"}
+        self._main_card.pack_forget()
+        self._store_grip.pack_forget()
+        if self._dock_saved["store_packed"]:
+            self._store_card.pack_forget()
+        self.zoom_pane.configure(width=hwp_dock.EDIT_PANE_W)
+        self._fit_window()
+        self.update_idletasks()         # 판이 최종 자리를 잡은 뒤에 도킹한다
+        hwnd = hwp_engine.connected_hwnd()
+        if hwnd:
+            self._dock = hwp_dock.Dock(self, self._zoom_canvas, hwnd)
+            if not self._dock.start():
+                self._dock = None       # 도킹 실패 — 한글은 제자리에 그냥 뜬다
+
+    def _exit_dock_layout(self):
+        if self._dock is not None:
+            self._dock.stop()
+            self._dock = None
+        self.zoom_pane.configure(width=ZOOM_W)
+        saved = getattr(self, "_dock_saved", None) or {}
+        # 원래 순서(격자·손잡이·창고·판)로 — 각각 판 앞에 차례로 끼우면 된다
+        self._main_card.pack(side="left", fill="both", expand=True,
+                             before=self.zoom_pane)
+        self._store_grip.pack(side="left", fill="y", before=self.zoom_pane)
+        if saved.get("store_packed", True):
+            self._store_card.pack(side="left", fill="y", before=self.zoom_pane)
+        self._fit_window()
+
+    def _finish_content_edit(self, save):
+        """저장이든 취소든 '고치는 중'을 끝내고 판·창·topmost 를 되돌린다."""
+        ctx = self._edit_ctx
+        if ctx is None:
+            return
+        if save:
+            ok, _closed = library_ui.overwrite_content(
+                ctx["session"], ctx["cat"], ctx["item"], parent=self)
+            if not ok:
+                return              # 오류창이 떴다 — 편집 상태를 유지한다
+        self._edit_ctx = None
+        self._exit_dock_layout()
+        try:
+            # 우리가 띄우거나 켠 한글 창이면 되돌린다 (빈 창이 남지 않게).
+            # 취소면 편집 탭이 남아 있어 알아서 비껴간다.
+            engine_library.hide_window_if_ours(ctx["windows_before"])
+        except Exception as e:
+            applog.exc("한글 창 되돌리기 실패 (빈 창이 남을 수 있음)", e)
+        if ctx["was_topmost"]:
+            try:
+                self.attributes("-topmost", True)
+            except Exception:
+                pass
+        self.bind("<Escape>", lambda e: self._close())      # Esc 원복
+        if save:
+            self._notify()          # 창고 미리보기·메인 창이 새 내용을 반영
+        fresh = library.find_by_id(ctx["cat"], ctx["item"]["id"])
+        if fresh is not None:
+            self._show_detail(ctx["cat"], fresh)
+        else:
+            self._clear_zoom()
+            self.zoom_hint.config(text="물감을 고르면 보입니다")
 
     def _route_wheel(self, e):
         """마우스 휠 중앙 처리 — 커서가 창고 위면 창고를, 미리보기 위면 그쪽을."""
@@ -1801,6 +1998,10 @@ class SettingsWindow(tk.Toplevel):
         self._notify()
 
     def _close(self):
+        if self._edit_ctx is not None:
+            # 고치는 중에 창을 닫으면 — 취소로 마무리해 한글 창·topmost 를
+            # 되돌린 뒤 닫는다 (도킹된 한글이 판 자리에 버려지지 않게)
+            self._finish_content_edit(save=False)
         self._notify()
         self.destroy()
 
