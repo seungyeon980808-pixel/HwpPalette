@@ -1467,13 +1467,16 @@ class _RecaptureCoach(tk.Toplevel):
     """
 
     def __init__(self, master, item, cat="템플릿", on_saved=None,
-                 master_was_topmost=False):
+                 master_was_topmost=False, session=None):
         super().__init__(master)
         self._manager = master
         self._item = item
         self._cat = cat
         self._on_saved = on_saved
         self._master_was_topmost = master_was_topmost
+        # 펼쳐 준 문서를 그대로 들고 있는다 — 저장·닫기가 '활성 문서'라는
+        # 가정에 기대지 않게 (engine_library.EditSession 머리말 참고)
+        self._session = session
         self.title(appinfo.WINDOW_TITLE)
         self.configure(bg=BG)
         self.resizable(False, False)
@@ -1514,17 +1517,18 @@ class _RecaptureCoach(tk.Toplevel):
         if not _ensure_hwp(self):
             return
         try:
+            if self._session is not None:
+                # 고치던 그 탭을 확실히 활성으로 — 사용자가 다른 탭으로
+                # 갈아탔더라도 엉뚱한 문서를 저장하지 않는다
+                self._session.activate()
             engine_library.strip_edit_note()   # 안내문은 저장물에 넣지 않는다
-            if self._cat == "양식":
-                # 양식은 용지·여백·머리말까지가 내용이라 **문서를 통째로** 저장한다
-                save_to = engine_library.save_active_as
-            else:
-                engine_library.select_all()  # 지금 문서 전체를 캡처 대상으로
-                save_to = engine_library.capture_fragment
+            # 템플릿도 양식과 **같은 길**로 저장한다 (2026-07-27). 예전에는
+            # 템플릿만 select_all→복사→새 탭에 붙여넣기→저장(capture_fragment)
+            # 이었는데, 편집 탭이 이미 저장할 내용 그대로라 임시 탭이 헛돌았다.
+            # 그 임시 탭의 개폐가 "창이 여러 개 닫히는 모션"의 절반이었다.
             ok = library.replace_template_fragment(
-                self._item["id"], save_to, category=self._cat)
-            if ok:
-                make_clean_preview(self._cat, self._item["id"])
+                self._item["id"], engine_library.save_active_as,
+                category=self._cat)
         except Exception as e:
             applog.exc("템플릿 덮어쓰기 실패", e)
             messagebox.showerror("덮어쓰기 실패", f"{type(e).__name__}: {e}",
@@ -1536,9 +1540,25 @@ class _RecaptureCoach(tk.Toplevel):
                                  parent=self)
             self._close()
             return
-        # 고치던 탭은 프로그램이 닫는다 (사용자 결정 2026-07-26) — 저장이
-        # 끝난 뒤에도 남아 있으면 "이건 저장된 건가?" 하고 헷갈린다.
-        closed = engine_library.close_active_doc()
+        # 미리보기 뽑기와 탭 닫기를 **한 탭 안에서** 끝낸다 (사용자 결정
+        # 2026-07-26: 고치던 탭은 프로그램이 닫는다 — 남아 있으면 "이건 저장된
+        # 건가?" 하고 헷갈린다).
+        closed = True
+        if self._session is not None:
+            try:
+                import preview as _preview
+                _preview.cached_path(self._item["id"]).unlink(missing_ok=True)
+            except Exception as e:
+                applog.exc("옛 미리보기 그림 지우기 실패 (무해)", e)
+            try:
+                _made, closed = engine_library.finish_edit_session(
+                    self._session, self._item["id"])
+            except Exception as e:
+                applog.exc("고치기 마무리 실패", e)
+                closed = False
+        else:
+            make_clean_preview(self._cat, self._item["id"])
+            closed = engine_library.close_active_doc()
         self._close()
         # 이 창은 관리 창의 자식이라, 여기가 살아 있으면 관리 창도 살아 있다
         try:
@@ -2128,10 +2148,10 @@ def edit_content(master, cat, item, on_saved=None):
     item = library.find_by_id(cat, item.get("id")) or item
     try:
         if cat == "양식":
-            engine_library.open_form_copy(library.template_path(item),
-                                          _FORM_EDIT_NOTE)
+            session = engine_library.open_form_copy(
+                library.template_path(item), _FORM_EDIT_NOTE)
         else:
-            engine_library.open_template_copy(
+            session = engine_library.open_template_copy(
                 library.template_path(item), LibraryManager._EDIT_NOTE)
     except Exception as e:
         applog.exc(f"{cat} 꺼내기 실패", e)
@@ -2152,7 +2172,7 @@ def edit_content(master, cat, item, on_saved=None):
     master_was_topmost = _pop_topmost(master)
     hwp_engine.bring_to_front()
     _RecaptureCoach(master, item, cat=cat, on_saved=on_saved,
-                    master_was_topmost=master_was_topmost)
+                    master_was_topmost=master_was_topmost, session=session)
     return True
 
 

@@ -686,6 +686,54 @@ def _clear_doc():
         applog.exc("재시도 전 문서 비우기 실패", e)
 
 
+class EditSession:
+    r"""'내용 고치기'로 펼쳐 준 문서 한 벌 — 그 문서를 **정확히** 다시 찾기 위한 것.
+
+    왜 필요한가 (2026-07-27, 사용자 지적 "수정하고 나면 빈 한글 창이 남는다"):
+    여태 저장할 때 `Active_XHwpDocument`(지금 활성 문서)를 저장하고 닫았다.
+    그런데 저장 과정에서 임시 탭이 몇 번 열리고 닫히므로 '활성'이 어느 것인지
+    가정에 기대야 했고, 사용자가 편집 중 다른 탭으로 갈아타면 **엉뚱한 문서를
+    저장하거나 닫을** 수 있었다. 펼칠 때 받은 문서 객체를 그대로 들고 있다가
+    그것만 활성화하고 그것만 닫으면 그 가정이 통째로 사라진다.
+
+    temp_path: 양식 편집이 만든 사본(편집중_*.hwp). 저장이 끝나면 지운다.
+    """
+
+    def __init__(self, doc, temp_path=None):
+        self.doc = doc
+        self.temp_path = temp_path
+
+    def activate(self):
+        """저장·닫기 전에 이 문서를 활성으로 되돌린다. 성공 여부."""
+        try:
+            self.doc.SetActive_XHwpDocument()
+            return True
+        except Exception as e:
+            applog.exc("고치던 문서를 활성화하지 못했습니다", e)
+            return False
+
+    def close(self):
+        """이 문서만 저장 없이 닫는다. 성공 여부.
+
+        사용자가 이미 손으로 닫았을 수 있으므로 실패를 오류로 보지 않는다.
+        """
+        try:
+            self.doc.Close(isDirty=False)
+            return True
+        except Exception as e:
+            applog.exc("고치던 탭 닫기 실패 — 사용자가 직접 닫아야 한다", e)
+            return False
+
+    def cleanup(self):
+        """양식 편집이 만든 사본 파일을 지운다 (저장이 끝난 뒤)."""
+        if not self.temp_path:
+            return
+        try:
+            pathlib.Path(self.temp_path).unlink(missing_ok=True)
+        except OSError as e:
+            applog.exc(f"양식 사본 삭제 실패 (남아도 무해) — {self.temp_path}", e)
+
+
 def open_template_copy(path, note_lines=None):
     r"""템플릿 조각을 **새 탭**에 펼친다 — '꺼내서 고치기'용 (2026-07-25).
 
@@ -744,7 +792,7 @@ def open_template_copy(path, note_lines=None):
     if note_lines:
         _insert_edit_note(note_lines)
         hwp.MoveDocBegin()
-    return doc
+    return EditSession(doc)
 
 
 def open_form_copy(path, note_lines=None):
@@ -754,18 +802,87 @@ def open_form_copy(path, note_lines=None):
     내용이라 insert 로는 그것들이 안 따라온다. 그렇다고 원본을 직접 열면 한글이
     그 파일을 붙들어(WinError 32 계보) 덮어쓰기가 막힌다. 그래서 사본을 연다 —
     저장은 어차피 새 이름의 조각 파일로 하므로 원본 잠금과 무관하다.
+
+    **새 탭에 연다** (2026-07-27, 사용자 지적 "빈 한글 창이 남는다"):
+    여태 `hwp.FileNew()` 를 썼는데, 이 이름과 달리 pyhwpx 의 FileNew 는 새
+    탭이 아니라 **새 문서 창**을 여는 명령이다(pyhwpx 문서에 명시. 새 탭은
+    FileNewTab 이 따로 있다). 그래서 편집이 끝나 문서를 닫아도 그 창은 남아
+    빈 한글 창이 됐다. `XHwpDocuments.Add(1)` 은 이 코드베이스가 이미 여러
+    곳에서 쓰는 검증된 '새 탭' 방법이다.
     """
     hwp = _h()
+    src = pathlib.Path(path)
+    if not src.is_file():
+        raise FileNotFoundError(f"양식 파일이 없습니다 — {src}")
     work = paths.data_dir() / "양식작업"
     work.mkdir(parents=True, exist_ok=True)
-    copy_path = work / f"편집중_{pathlib.Path(path).name}"
-    shutil.copy2(str(path), str(copy_path))
-    hwp.FileNew()
+    copy_path = work / f"편집중_{src.name}"
+    shutil.copy2(str(src), str(copy_path))
+
+    before = hwp.XHwpDocuments.Count
+    doc = hwp.XHwpDocuments.Add(1)          # 1 = 새 탭 (FileNew 는 새 '창'이다)
+    try:
+        doc.SetActive_XHwpDocument()
+    except Exception as e:
+        applog.exc("새 탭 활성화 실패 — 활성 문서 그대로 진행", e)
     hwp.open(str(copy_path))
+    if hwp.XHwpDocuments.Count <= before:
+        # open 이 새 탭을 쓰지 않고 기존 문서를 갈아치웠다는 뜻 — 이 경우
+        # 우리가 들고 있는 doc 이 사용자 문서일 수 있어 닫으면 안 된다.
+        applog.warn("양식 편집: 새 탭이 늘지 않았습니다 — 탭 자동 닫기를 건너뜁니다")
+        return EditSession(None, temp_path=copy_path)
+    # open 뒤에는 활성 문서를 다시 받아 둔다 — 탭을 여는 것과 파일을 여는 것이
+    # 별개라, Add 가 준 객체가 그대로 그 문서를 가리킨다고 단정할 수 없다.
+    try:
+        doc = hwp.XHwpDocuments.Active_XHwpDocument
+    except Exception as e:
+        applog.exc("양식 편집: 활성 문서 다시 읽기 실패 — Add 가 준 객체를 쓴다", e)
+
     if note_lines:
         _insert_edit_note(note_lines)
         hwp.MoveDocBegin()
-    return copy_path
+    return EditSession(doc, temp_path=copy_path)
+
+
+def finish_edit_session(session, item_id):
+    r"""고치기를 마무리한다 — 미리보기를 뽑고 편집 탭을 닫는다. 반환: (미리보기 성공, 탭 닫음).
+
+    **편집 탭을 그대로 재활용한다** (2026-07-27, 사용자 지적 "창이 여러 개
+    닫히는 듯한 모션"). 예전에는 저장 한 번에 한글 탭이 다섯 번 열리고 닫혔다 —
+    캡처용 임시 탭, 미리보기용 임시 탭, 그리고 편집 탭. 그런데 편집 탭은 이미
+    저장할 내용 그대로이고 미리보기도 여기서 뽑을 수 있다. 이제 눈에 보이는
+    움직임은 **'고치던 탭 하나가 닫히는 것'** 뿐이다.
+
+    순서가 중요하다: 탭을 **닫은 뒤에** 임시 파일을 읽는다. 한글이 붙들고
+    있는 동안은 지울 수도 없고(WinError 32 계보), PrvImage 는 olefile 로
+    읽으므로 한글이 필요 없다.
+    """
+    hwp = _h()
+    work = paths.data_dir() / "미리보기작업"
+    tmp = None
+    try:
+        work.mkdir(parents=True, exist_ok=True)
+        tmp = work / f"_prv_{item_id}.hwp"
+        strip_marks()                   # 자리표시(\)가 찍힌 그림은 지저분하다
+        hwp.save_as(str(tmp), format="HWP")
+    except Exception as e:
+        applog.exc(f"미리보기 뽑기 실패 (무해) — {item_id}", e)
+        tmp = None
+
+    closed = session.close() if session.doc is not None else False
+    session.cleanup()
+
+    ok = False
+    if tmp is not None:
+        try:
+            ok = preview.save_cache(item_id, tmp)
+        except Exception as e:
+            applog.exc(f"미리보기 캐시 저장 실패 (무해) — {item_id}", e)
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass                        # 남아도 무해하다
+    return ok, closed
 
 
 def build_clean_preview(src_path, item_id):
