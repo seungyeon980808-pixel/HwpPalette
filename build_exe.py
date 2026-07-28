@@ -13,6 +13,18 @@ import shutil
 import subprocess
 import sys
 
+# 콘솔을 UTF-8 로 못박는다 (2026-07-29 실측).
+#
+# 이 스크립트의 출력을 파이프로 넘기면 파이썬이 인코딩을 윈도우 기본
+# 코드페이지(한국어 = cp949)로 잡는다. 그러면 안내 문구의 줄표(—) 한 글자에서
+# UnicodeEncodeError 로 **빌드가 시작도 못 하고 죽는다.** 콘솔에서 직접 칠 때는
+# 안 나므로 오래 숨어 있었다.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass                    # 아주 옛 파이썬 — 글자가 깨져도 빌드는 된다
+
 HERE = pathlib.Path(__file__).resolve().parent
 SPEC = HERE / "hwp_palette.spec"
 DIST = HERE / "dist"
