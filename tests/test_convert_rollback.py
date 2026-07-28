@@ -16,7 +16,7 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-import engine_library        # noqa: E402
+from hwp_palette.hwp import engine_library        # noqa: E402
 
 
 class FakeHwp:
@@ -87,7 +87,7 @@ class RestoreTextTest(unittest.TestCase):
     def test_되돌리기가_실패해도_예외를_흘리지_않는다(self):
         """이미 실패를 수습하는 중이다 — 여기서 또 터지면 안내조차 못 한다."""
         fake = FakeHwp(fail_at=2)
-        with mock.patch("engine_library.applog.exc"):
+        with mock.patch("hwp_palette.hwp.engine_library.applog.exc"):
             self.assertFalse(self._run("첫 줄\n둘째 줄", fake))
 
 

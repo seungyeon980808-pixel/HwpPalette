@@ -13,8 +13,8 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-import tutorial            # noqa: E402
-import tutorials          # noqa: E402
+from hwp_palette.ui import tutorial            # noqa: E402
+from hwp_palette.ui import tutorials          # noqa: E402
 
 
 class FakeWidget:
@@ -78,7 +78,7 @@ class MonitorBoundsTest(unittest.TestCase):
     안내가 엉뚱한 곳으로 튀었다 — 모니터 사이 빈 구간에 놓였다)."""
 
     def setUp(self):
-        import screens
+        from hwp_palette.core import screens
         self.screens = screens
 
     def test_한_모니터는_합친_바탕화면_안에_있다(self):

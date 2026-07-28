@@ -14,7 +14,7 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-import library        # noqa: E402
+from hwp_palette.model import library        # noqa: E402
 
 
 class ArchiveRoundTripTest(unittest.TestCase):

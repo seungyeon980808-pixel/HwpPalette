@@ -12,9 +12,11 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-import settings      # noqa: E402
+from hwp_palette.core import settings      # noqa: E402
 
-MAIN = pathlib.Path(__file__).resolve().parent.parent / "main.py"
+from tests.srcpath import src        # noqa: E402
+
+MAIN = src("app")
 
 
 def _extract(name):

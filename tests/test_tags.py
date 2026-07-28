@@ -20,7 +20,7 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-import library            # noqa: E402
+from hwp_palette.model import library            # noqa: E402
 
 
 class TempLibrary(unittest.TestCase):
@@ -209,7 +209,8 @@ class SearchQueryTest(unittest.TestCase):
     def setUp(self):
         # library_ui 는 tkinter 를 부르므로, 순수 함수만 떼어 와 검사한다
         import re
-        src = pathlib.Path(__file__).resolve().parent.parent / "library_ui.py"
+        from tests.srcpath import src as _src   # noqa: E402
+        src = _src("library_ui")
         text = src.read_text(encoding="utf-8")
         m = re.search(r"    @staticmethod\n    def split_query.*?\n"
                       r"        return tags, \" \"\.join\(words\)\n",

@@ -15,8 +15,8 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-import builtin_actions        # noqa: E402
-import palette                # noqa: E402
+from hwp_palette.model import builtin_actions        # noqa: E402
+from hwp_palette.model import palette                # noqa: E402
 
 
 class CatalogTest(unittest.TestCase):

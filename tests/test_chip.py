@@ -16,9 +16,9 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-import chip                  # noqa: E402
-import library               # noqa: E402
-import palette               # noqa: E402
+from hwp_palette.model import chip                  # noqa: E402
+from hwp_palette.model import library               # noqa: E402
+from hwp_palette.model import palette               # noqa: E402
 
 
 class ChipTestCase(unittest.TestCase):
@@ -298,7 +298,7 @@ class ReportedCountTest(_Base):
 
         dest = self.root / f"물감{chip.CHIP_EXT}"
         pairs = [("템플릿", library.find_by_id("템플릿", x)) for x in (a, b)]
-        with mock.patch("library.applog.warn"):
+        with mock.patch("hwp_palette.model.library.applog.warn"):
             r = chip.export_items(pairs, dest, name="물감")
         self.assertEqual(r["items"], 1, "담긴 개수를 그대로 보고해야 한다")
 
@@ -311,7 +311,7 @@ class ReportedCountTest(_Base):
             {"type": "template", "ref": a, "template": "멀쩡한표"},
             {"type": "template", "ref": b, "template": "조각잃은표"}]}
         dest = self.root / f"수능{chip.CHIP_EXT}"
-        with mock.patch("library.applog.warn"):
+        with mock.patch("hwp_palette.model.library.applog.warn"):
             r = chip.export_tab(tab, dest)
         self.assertEqual(r["items"], 1)
         self.assertEqual(r["blocks"], 2, "버튼 수는 배치 그대로다")
@@ -374,7 +374,7 @@ class RelinkTest(unittest.TestCase):
     def test_못_이은_블럭은_버리지_않고_센다(self):
         """지우면 배치에 구멍이 생겨 무엇이 빠졌는지도 모른다."""
         blocks = [{"type": "template", "ref": "old", "template": "표"}]
-        with mock.patch("chip.applog.warn"):
+        with mock.patch("hwp_palette.model.chip.applog.warn"):
             out, lost = chip.relink(blocks, {})
         self.assertEqual(len(out), 1)
         self.assertEqual(lost, 1)

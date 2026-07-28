@@ -9,7 +9,7 @@ import zipfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-import form_fill        # noqa: E402
+from hwp_palette.model import form_fill        # noqa: E402
 
 
 def make_hwpx(path, runs, sections=1):

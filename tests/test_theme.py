@@ -13,8 +13,8 @@ import unittest.mock as mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-import settings   # noqa: E402
-import theme      # noqa: E402
+from hwp_palette.core import settings   # noqa: E402
+from hwp_palette.design import theme      # noqa: E402
 
 WCAG_BODY = 4.5     # 본문 글자 최소 대비
 WCAG_LARGE = 3.0    # 큰 글자·보조 표기 최소 대비

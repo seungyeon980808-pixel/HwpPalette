@@ -7,12 +7,14 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-import theme
-import dialogs
+from hwp_palette.design import theme
+from hwp_palette.design import dialogs
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-UI_FILES = ["main.py", "palette_ui.py", "library_ui.py", "store_ui.py",
-            "form_table_ui.py", "form_fill_ui.py"]
+from tests.srcpath import src        # noqa: E402
+
+UI_FILES = ["app", "palette_ui", "library_ui", "store_ui",
+            "form_table_ui", "form_fill_ui"]
 
 
 class TokenTest(unittest.TestCase):
@@ -71,16 +73,16 @@ class DialogApiTest(unittest.TestCase):
     def test_윈도우_기본_대화상자를_안_쓴다(self):
         """UI 파일이 tkinter.messagebox 를 직접 임포트하면 얼굴이 깨진다."""
         for fn in UI_FILES:
-            src = (ROOT / fn).read_text(encoding="utf-8")
+            source = src(fn).read_text(encoding="utf-8")
             self.assertNotRegex(
-                src, r"from tkinter import[^\n]*\bmessagebox\b",
+                source, r"from tkinter import[^\n]*\bmessagebox\b",
                 f"{fn}: dialogs 를 써야 한다")
 
     def test_자유_색_고르개는_블럭에_안_쓴다(self):
         """블럭 색은 12색 파스텔로만 고른다 (문서 글자색은 예외)."""
-        src = (ROOT / "palette_ui.py").read_text(encoding="utf-8")
-        for m in re.finditer(r"colorchooser\.askcolor", src):
-            head = src[max(0, m.start() - 300):m.start()]
+        source = src("palette_ui").read_text(encoding="utf-8")
+        for m in re.finditer(r"colorchooser\.askcolor", source):
+            head = source[max(0, m.start() - 300):m.start()]
             self.assertIn("문서 글자색", head,
                           "블럭 색 고르기는 _PastelDialog 를 써야 한다")
 

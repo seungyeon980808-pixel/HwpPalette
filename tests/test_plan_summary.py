@@ -12,7 +12,9 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-MAIN = pathlib.Path(__file__).resolve().parent.parent / "main.py"
+from tests.srcpath import src        # noqa: E402
+
+MAIN = src("app")
 
 
 def _load_plan_summary():

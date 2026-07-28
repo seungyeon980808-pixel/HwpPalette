@@ -10,7 +10,7 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-import hotkey        # noqa: E402
+from hwp_palette.core import hotkey        # noqa: E402
 
 CTRL, ALT, SHIFT = 0x0002, 0x0001, 0x0004
 NOREPEAT = hotkey.MOD_NOREPEAT

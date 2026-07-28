@@ -12,8 +12,8 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-import backup        # noqa: E402
-import palette       # noqa: E402
+from hwp_palette.core import backup        # noqa: E402
+from hwp_palette.model import palette       # noqa: E402
 
 
 class RotateTest(unittest.TestCase):

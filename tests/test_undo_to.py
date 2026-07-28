@@ -19,7 +19,7 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-import hwp_engine        # noqa: E402
+from hwp_palette.hwp import hwp_engine        # noqa: E402
 
 
 class FakeAction:

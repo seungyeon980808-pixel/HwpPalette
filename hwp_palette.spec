@@ -20,6 +20,8 @@ import pathlib
 HERE = pathlib.Path(SPECPATH)
 
 a = Analysis(
+    # 뿌리의 main.py 는 hwp_palette.app 을 부르기만 하는 얇은 진입점이다
+    # (2026-07-28 폴더 개편). pathex 에 뿌리가 있어야 그 패키지가 잡힌다.
     ["main.py"],
     pathex=[str(HERE)],
     binaries=[],
@@ -37,6 +39,11 @@ a = Analysis(
         # 놓치면 exe 에서만 복사·붙여넣기가 조용히 실패한다
         "win32clipboard",
         "pyhwpx",
+        # 패키지로 나눈 뒤로는 하위 묶음도 명시한다 — app.py 가 전부 정적으로
+        # 임포트하므로 지금은 분석이 잡지만, 지연 임포트(store_ui → library_ui)
+        # 가 있어 한 번 놓치면 exe 에서만 죽는다
+        "hwp_palette", "hwp_palette.core", "hwp_palette.design",
+        "hwp_palette.model", "hwp_palette.hwp", "hwp_palette.ui",
     ],
     hookspath=[],
     runtime_hooks=[],

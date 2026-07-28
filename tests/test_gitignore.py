@@ -16,7 +16,7 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-import backup   # noqa: E402
+from hwp_palette.core import backup   # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
@@ -54,8 +54,11 @@ class IgnoreRuleTest(unittest.TestCase):
 
     def test_소스는_무시되지_않는다(self):
         # 규칙을 너무 넓게 잡아 코드까지 빠뜨리는 반대 방향 실수도 막는다
-        for name in ("main.py", "theme.py", "paths.py", "backup.py",
-                     "hwp_palette.spec", "README.md"):
+        # data/ 를 통째로 막은 뒤로는 **패키지 안의 소스**도 함께 확인한다 —
+        # 규칙이 'hwp_palette' 같은 이름에 걸리면 본체가 통째로 사라진다.
+        from tests.srcpath import rel                          # noqa: E402
+        for name in ("main.py", "hwp_palette.spec", "README.md",
+                     rel("theme"), rel("paths"), rel("backup"), rel("app")):
             r = _git("check-ignore", "-q", name)
             self.assertNotEqual(r.returncode, 0, f"{name} 이 무시되고 있습니다")
 

@@ -20,8 +20,8 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-import clipboard            # noqa: E402
-import hwp_engine           # noqa: E402
+from hwp_palette.core import clipboard            # noqa: E402
+from hwp_palette.hwp import hwp_engine           # noqa: E402
 
 
 class FakeHwp:
@@ -105,7 +105,7 @@ class SelectionReadTest(unittest.TestCase):
     def test_두_길이_다_막히면_빈손이되_기록을_남긴다(self):
         self._use(FakeHwp(block="", mode=1))
         with mock.patch.object(clipboard, "get_text", return_value=""), \
-                mock.patch("hwp_engine.applog.warn") as warned:
+                mock.patch("hwp_palette.hwp.hwp_engine.applog.warn") as warned:
             self.assertEqual(hwp_engine.read_selection_text(), "")
         self.assertTrue(warned.called)      # 원인을 찾을 수 있게 남긴다
 
@@ -116,7 +116,7 @@ class SelectionReadTest(unittest.TestCase):
             side_effect=RuntimeError("COM 끊김"))
         self._use(broken)
         # 일부러 터뜨리는 테스트라 app.log 에 오류를 남기지 않는다
-        with mock.patch("hwp_engine.applog.exc"):
+        with mock.patch("hwp_palette.hwp.hwp_engine.applog.exc"):
             self.assertEqual(hwp_engine.read_selection_text(), "")
             self.assertFalse(hwp_engine.has_selection())
 

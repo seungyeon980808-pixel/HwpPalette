@@ -12,7 +12,7 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-import library        # noqa: E402
+from hwp_palette.model import library        # noqa: E402
 
 
 def _fake_data(**by_category):
@@ -206,7 +206,7 @@ class PhotoLookupTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.dir = pathlib.Path(self.tmp.name)
-        import settings
+        from hwp_palette.core import settings
         # 폴더가 여러 개가 된 뒤로는 get_photo_dirs 가 실제 조회 경로다
         # (get_photo_dir 만 목킹하면 사용자가 UI 로 폴더를 추가해 둔 순간
         #  실제 config 값이 새어 들어와 테스트가 흔들린다, 2026-07-26)
@@ -229,12 +229,12 @@ class PhotoLookupTest(unittest.TestCase):
         self.assertTrue(item["path"].endswith("실험사진1.png"))
 
     def test_폴더_미설정이면_빈_결과(self):
-        import settings
+        from hwp_palette.core import settings
         with mock.patch.object(settings, "get_photo_dirs", return_value=[]):
             self.assertEqual(library._photo_lookup(), {})
 
     def test_없는_폴더면_빈_결과(self):
-        import settings
+        from hwp_palette.core import settings
         with mock.patch.object(settings, "get_photo_dirs",
                                return_value=[str(self.dir / "없는폴더")]):
             self.assertEqual(library._photo_lookup(), {})

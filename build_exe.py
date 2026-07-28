@@ -20,7 +20,9 @@ DIST = HERE / "dist"
 # 이것들은 **개인 데이터**다. exe 안에 섞여 들어가면 남에게 건넬 때 내 팔레트와
 # 저장해둔 조각이 통째로 딸려 간다. spec 의 datas 에 없으니 지금은 안 들어가지만,
 # 나중에 누가 datas 에 "." 을 넣는 실수를 하면 조용히 새어 나간다.
-PRIVATE = ["config.json", "library.json", "fragments", "app.log"]
+# 2026-07-28 폴더 개편 뒤로는 이것들이 전부 data/ 안에 있다. 폴더 이름 하나만
+# 막으면 되지만, 옛 이름도 함께 둔다 — spec 을 손보다 실수로 되살릴 수 있다.
+PRIVATE = ["data", "config.json", "library.json", "fragments", "app.log"]
 
 
 def check():
@@ -81,7 +83,7 @@ def main():
     print("\n건네기 전에 확인할 것")
     print("  1. 파이썬이 없는 PC 에서 실행되는지 (다른 컴퓨터에서 한 번)")
     print("  2. 한글을 켜고 → 표시등이 파란지 → 변환이 되는지")
-    print("  3. 껐다 켰을 때 팔레트가 남아 있는지 (exe 옆 config.json 확인)")
+    print("  3. 껐다 켰을 때 팔레트가 남아 있는지 (exe 옆 '내 물감' 폴더 확인)")
     print("  4. 백신이 막지 않는지 — 서명이 없어 경고가 뜰 수 있습니다")
     return 0
 

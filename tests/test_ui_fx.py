@@ -11,7 +11,7 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-import ui_fx        # noqa: E402
+from hwp_palette.design import ui_fx        # noqa: E402
 
 
 class HexTest(unittest.TestCase):
@@ -88,13 +88,13 @@ class FontPickTest(unittest.TestCase):
 
     def test_글꼴은_아는_것_중_하나다(self):
         # Pretendard(Medium 우선)가 있으면 그것, 없으면 맑은 고딕
-        import theme
+        from hwp_palette.design import theme
         self.assertIn(theme.FONT,
                       ("Pretendard Medium", "Pretendard", "맑은 고딕"))
 
     def test_프리텐다드면_크기를_1pt_올린다(self):
         # 같은 pt 에서 맑은 고딕보다 작게 보여 보정한다 (시인성 실측 2026-07-25)
-        import theme
+        from hwp_palette.design import theme
         expect = 1 if theme.FONT.startswith("Pretendard") else 0
         self.assertEqual(theme.FONT_BOOST, expect)
 

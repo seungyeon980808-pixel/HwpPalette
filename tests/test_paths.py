@@ -14,7 +14,7 @@ import unittest.mock as mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-import paths   # noqa: E402
+from hwp_palette.core import paths   # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
@@ -38,8 +38,8 @@ class SourceRunTest(unittest.TestCase):
         self.assertEqual(paths.resource_dir(), ROOT)
 
     def test_설정_경로가_data_아래로_간다(self):
-        import settings
-        import library
+        from hwp_palette.core import settings
+        from hwp_palette.model import library
         data = ROOT / paths.SRC_DATA_FOLDER_NAME
         self.assertEqual(settings.CONFIG_PATH, data / "config.json")
         self.assertEqual(library.LIBRARY_PATH, data / "library.json")

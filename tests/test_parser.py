@@ -14,7 +14,7 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-import parser as md_parser        # noqa: E402
+from hwp_palette.model import parser as md_parser        # noqa: E402
 
 
 class ParseExamTest(unittest.TestCase):
