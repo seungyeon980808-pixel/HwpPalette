@@ -123,4 +123,36 @@ class Disclosure(tk.Frame):
                 body.insert("end", text, tags)
             body.insert("end", "\n")
         body.config(state="disabled")
+        # 높이를 **줄 수가 아니라 실제로 그려진 줄 수**로 다시 잡는다.
+        #
+        # 왜 (2026-07-29 실측): height 는 논리적인 줄 수를 세는데, 화면에서
+        # 긴 줄은 접혀서 두 줄을 차지한다. 접히는 줄이 셋 있으면 마지막 세
+        # 줄이 판 밖으로 밀려 **글자가 잘린 채 보인다** — 안내가 잘리면
+        # 안내가 아니다. 여기서 미리 잴 수 없는 이유는 폭이 아직 안 정해져서다
+        # (pack 전이라 wrap 위치를 모른다). 배치가 끝난 뒤 재서 고친다.
+        # 줄 수가 아니라 **픽셀**로 재는 이유: 소제목에 spacing1(줄 위 여백)이
+        # 붙어 있어서, 줄 수만 맞추면 그 여백만큼(소제목 4개 × 6px) 모자라
+        # 마지막 줄이 잘린다 (실측 2026-07-29).
+        import tkinter.font as tkfont
+
+        def fit(_e=None):
+            try:
+                if not body.winfo_exists():
+                    return
+                got = body.count("1.0", "end", "ypixels")
+                if not got:
+                    return
+                line_px = tkfont.Font(font=body.cget("font")).metrics("linespace")
+                # 위아래 안쪽 여백(pady)도 글자가 쓸 자리를 잡아먹는다 —
+                # 빼먹으면 딱 한 줄이 모자라 마지막 줄이 반쯤 잘린다.
+                want = int(got[0]) + int(body.cget("pady")) * 2
+                need = -(-want // max(1, line_px))           # 올림 나눗셈
+                if need != int(body.cget("height")):
+                    body.config(height=max(3, need))
+            except Exception:
+                pass            # 못 재면 처음 잡은 높이 그대로 (잘려도 안 죽는다)
+
+        body.after_idle(fit)
+        # 창 폭이 바뀌면 접히는 자리도 바뀐다 — 그때마다 다시 잰다
+        body.bind("<Configure>", fit, add="+")
         return body
