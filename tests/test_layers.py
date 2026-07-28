@@ -112,9 +112,7 @@ class LayerTest(unittest.TestCase):
         """main.py 말고 다른 .py 가 뿌리에 늘어나면 평면 구조로 되돌아간다."""
         root = PKG.parent
         stray = sorted(p.name for p in root.glob("*.py")
-                       if p.name not in ("main.py", "build_exe.py",
-                                         # 아직 자리를 못 정한 작업 중 스크립트
-                                         "excel_form.py", "excel_import.py"))
+                       if p.name not in ("main.py", "build_exe.py"))
         self.assertEqual(stray, [], f"뿌리에 소스가 늘었습니다: {stray}")
 
 
