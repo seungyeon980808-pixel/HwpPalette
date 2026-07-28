@@ -1660,15 +1660,35 @@ class SettingsWindow(tk.Toplevel):
                          highlightbackground=ACCENT if selected else BORDER,
                          highlightthickness=2 if selected else 1)
         tile.pack_propagate(False)
+        # 아이콘을 이름 **위**에 얹는다 — 메인 창 블럭과 같은 규칙 (H안 2026-07-29).
+        # 여기가 그 블럭의 미리보기이므로 얼굴이 다르면 다른 물건으로 보인다.
+        # 종류별 배경색이 없어진 뒤로는 이것이 유일한 종류 표시이기도 하다 —
+        # 빼먹으면 이 창의 칸이 전부 똑같은 흰 네모가 된다.
+        text = self._tile_text(blk, span)
+        icon = theme.block_icon(blk)
+        parts = []
+        if icon:
+            icon_fg = (theme.colors()["muted"]
+                       if theme.text_on(bg) != "#ffffff" else "#ffffff")
+            parts.append(tk.Label(
+                tile, text=icon, bg=bg, fg=icon_fg,
+                font=(FONT, theme.fs(9 if "\n" in text else 11))))
+            parts[-1].pack(fill="x", pady=(3, 0))
         # 글자색은 배경 밝기에 맞춰 정한다 — 어두운 색을 골라도 읽히게 (제안 18)
-        # 글자는 왼쪽에 붙인다 — 메인 창 블럭과 같은 규칙 (RoundButton.align).
-        # 여기가 그 블럭의 미리보기이므로 자리가 다르면 다른 물건으로 보인다.
-        lab = tk.Label(tile, text=self._tile_text(blk, span), bg=bg,
-                       fg=theme.text_on(bg), anchor="w", justify="left",
-                       font=(FONT, theme.fs(10 if blk["type"] == "char" else 8)))
-        lab.pack(expand=True, fill="both", padx=(TILE_TEXT_PAD, 0))
+        # 아이콘이 있으면 가운데, 없으면 예전처럼 왼쪽에 붙인다
+        # (RoundButton.align 과 같은 규칙).
+        lab = tk.Label(tile, text=text, bg=bg,
+                       fg=theme.text_on(bg),
+                       anchor="center" if icon else "w",
+                       justify="center" if icon else "left",
+                       font=(FONT, theme.fs(
+                           10 if blk["type"] == "char"
+                           else (7 if icon and "\n" in text else 8))))
+        lab.pack(expand=True, fill="both",
+                 padx=(0 if icon else TILE_TEXT_PAD, 0))
+        parts.append(lab)
         self._tiles[i] = tile
-        for w in (tile, lab):
+        for w in [tile] + parts:
             self._tile_map[str(w)] = i
             w.bind("<ButtonPress-1>", lambda e, idx=i: self._on_press(idx, e))
             w.bind("<B1-Motion>", self._on_drag)

@@ -1574,7 +1574,9 @@ _BLOCK_COLOR = theme.block_colors()
 # 팔레트 한 칸의 한 변(px). 칸은 정사각형이고, **칸 수에 맞춰 크기가 변한다** —
 # 고정 크기로 두면 칸 수가 적을 때 오른쪽에 빈 공간이 크게 남는다.
 # 글자를 25% 키우면서 칸도 같이 키웠다 (34→42) — 안 키우면 두 줄 이름이 넘친다
-_BLOCK_CELL_MAX_PX = 42   # SCALE 적용 전 기준값     # 칸 수가 적어도 이보다 크게는 안 키운다
+# 2026-07-29: 아이콘이 이름 위 한 줄을 차지하면서 42px 로는 두 줄 이름이
+# 넘쳤다(아이콘 + 두 줄 = 42px 를 그대로 채운다). 아이콘 줄 몫으로 키운 값이다.
+_BLOCK_CELL_MAX_PX = 58   # SCALE 적용 전 기준값     # 칸 수가 적어도 이보다 크게는 안 키운다
 _BLOCK_CELL_MIN_PX = 20     # 칸 수가 많아도 이보다 작아지면 못 누른다
 _BLOCK_GAP_PX = 2
 # 블럭 안쪽 글자 여백 — 왼쪽 정렬이라 이 값이 곧 **글머리 자리**다.
@@ -1757,28 +1759,62 @@ def _add_tooltip(widget, text, force=False):
     # Toplevel 을 버튼의 자식으로 만들었기 때문에 Tk 가 함께 정리한다(실측 확인).
 
 
+# 아이콘 글자 크기 — 이름보다 **한 단계 크다**. 기호는 획이 적어서 같은 pt 로
+# 두면 한글 옆에서 작아 보인다. 색을 흐리게 하는 것과 짝이다: 크되 옅게.
+#
+# 두 줄 이름일 때는 한 단계 내린다 (실측 2026-07-29): 아이콘 + 두 줄이
+# 칸 높이를 넘겨 **아래 줄이 잘렸다**. 이름이 잘리느니 기호가 작은 편이 낫다.
+_BLOCK_ICON_FS = 11
+_BLOCK_ICON_FS_2LINE = 9
+
+
+def _block_icon_fg(bg):
+    """블럭 배경 위의 아이콘 색 — 이름보다 한 단계 흐리게.
+
+    흰 카드에서는 MUTED, 강조색(변환)처럼 어두운 배경에서는 흰 글자 그대로다.
+    어두운 배경에 MUTED 회색을 얹으면 대비가 모자라 기호가 뭉개진다.
+    """
+    return MUTED if theme.text_on(bg) != "#ffffff" else "#ffffff"
+
+
 def _make_block_button(parent, blk, span=1):
-    # 자동 아이콘(▦ ƒ 📄)은 넣지 않는다 — 사용자가 정한 이름 그대로.
-    # 종류 구분은 배경색이 하고, 색은 사용자가 지정할 수도 있다(blk["color"]).
+    # 아이콘을 **이름 위 한 줄**에 얹는다 (H안, 사용자 결정 2026-07-29).
+    #
+    # 2026-07-19 에 뺐던 그 아이콘이 아니다: 그때는 이름 옆에 붙어 글자 자리를
+    # 먹었다. 이번엔 윗줄에 따로 서고, 대신 **종류별 배경색이 없어졌다** —
+    # 색이 하던 '무슨 종류인가'를 아이콘이 넘겨받는다.
+    # 사용자가 블럭 색을 직접 고른 경우(blk["color"])는 그 색이 그대로 우선한다.
     full = _block_label(blk)
     label = _fit_label(full, span)
     bg = theme.block_color(blk)     # 사용자 지정 > 도구 강조(변환) > 종류별 기본
+    icon = theme.block_icon(blk)
     # 두 줄 이상이면 글자를 한 단계 줄인다 (사용자 결정 2026-07-25) —
     # 9pt 두 줄은 42px 칸에 빈틈없이 꽉 차 답답했다. 칸 크기는 그대로 두고
     # 글자만 줄이면 위아래 숨이 트인다.
-    size = 8 if "\n" in label else 9
+    # 아이콘이 윗줄을 차지하면 남는 키가 더 줄어드니 한 단계 더 내린다.
+    two_lines = "\n" in label
+    size = (7 if two_lines else 8) if icon else (8 if two_lines else 9)
     # RoundButton (A안): 곡률 8px + 호버 보간 + 누름 침하.
     # 글자색을 TEXT 로 고정하면 사용자가 남색·빨강을 고르거나 어두운 모드로
     # 바꿨을 때 글자가 배경에 묻힌다 (UI 제안 18) — text_on 이 밝기를 재서 정한다.
     # 초점 테두리(키보드 Tab 이동)는 RoundButton 이 자체로 그린다.
     # 이름은 **왼쪽에 붙인다** (사용자 결정 2026-07-28) — 칸 크기와 비율은
     # 그대로 두고 글자 자리만 옮겼다. 자세한 이유는 RoundButton 의 align.
+    # 아이콘이 있으면 이름은 **가운데**로 간다 (RoundButton 이 알아서 그렇게
+    # 그린다). 2026-07-28 의 왼쪽 정렬은 아이콘이 없던 때의 규칙이다 — 아이콘만
+    # 가운데이고 이름은 왼쪽이면 두 줄이 계단처럼 어긋나 보인다.
     btn = RoundButton(parent, text=label,
                       command=lambda b=blk: run_palette_block(b),
                       bg=bg, fg=theme.text_on(bg), radius=theme.RADIUS["ctl"], font=_font(size),
-                      outline=BORDER, focus_color=ACCENT,
+                      outline=theme.block_edge(), focus_color=ACCENT,
                       zone_bg=parent.cget("bg"),
-                      align="left", justify="left", pad_in=_BLOCK_TEXT_PAD)
+                      align="center" if icon else "left",
+                      justify="center" if icon else "left",
+                      pad_in=_BLOCK_TEXT_PAD,
+                      icon=icon,
+                      icon_font=_font(_BLOCK_ICON_FS_2LINE if two_lines
+                                      else _BLOCK_ICON_FS),
+                      icon_fg=_block_icon_fg(bg))
     # 도구 블럭은 이름표를 달아 둔다 — 튜토리얼이 '마크다운 변환' 버튼을
     # 짚으려면 그 위젯을 찾을 수 있어야 한다 (2026-07-26).
     if blk.get("type") == "builtin" and blk.get("key"):
