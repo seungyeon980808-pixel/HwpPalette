@@ -63,10 +63,24 @@ def _writable(d):
 # "이 폴더가 내 자산이구나"가 읽히고, 백업할 때 무엇을 챙길지 분명해진다.
 DATA_FOLDER_NAME = "내 물감"
 
+# 소스로 실행할 때 쓰는 데이터 폴더 (2026-07-28, 폴더 개편 2단계).
+#
+# exe 는 이미 '내 물감' 폴더에 모아 두는데, **소스 실행만 프로젝트 루트에 그대로
+# 쏟아내고 있었다** — config.json + 백업 3벌, library.json + 백업 3벌, app.log,
+# fragments/, 미리보기/, 미리보기작업/, 양식작업/ 까지 파일 10개와 폴더 4개가
+# 소스 파일 42개와 같은 자리에 섞였다. 개발하는 사람이 폴더를 열 때마다
+# "무엇이 코드이고 무엇이 내 데이터인가"를 매번 골라내야 했다.
+#
+# 이름을 exe 쪽('내 물감')과 다르게 'data' 로 둔 이유: 이쪽은 **개발용 작업
+# 폴더**라 .gitignore 한 줄로 통째로 막는 것이 목적이고, 그 자리에서는
+# 영어 한 단어가 규칙으로 읽힌다. 사용자가 받는 exe 쪽 이름은 그대로 둔다.
+SRC_DATA_FOLDER_NAME = "data"
+
 # 폴더 방식으로 바꾸기 전(v0.1.1)에 exe 옆에 흩어져 있던 것들. 그 시절 exe 를
 # 써 본 사람의 팔레트가 조용히 사라지지 않게 한 번만 옮겨 준다.
+# 소스 실행에서 루트에 흩어져 있던 것들도 같은 목록으로 옮긴다.
 _LEGACY_NAMES = ("config.json", "library.json", "app.log", "fragments",
-                 "window_diag.log")
+                 "window_diag.log", "미리보기", "미리보기작업", "양식작업")
 
 
 def _migrate_legacy(beside, folder):
@@ -79,7 +93,7 @@ def _migrate_legacy(beside, folder):
     moved = 0
     for name in _LEGACY_NAMES:
         for src in beside.glob(name + "*"):     # .bak1~3 까지 함께
-            if src.name == DATA_FOLDER_NAME:
+            if src.name in (DATA_FOLDER_NAME, SRC_DATA_FOLDER_NAME):
                 continue
             try:
                 dest = folder / src.name
@@ -144,7 +158,13 @@ def data_dir():
     나는 오류가 여기서 나는 오류보다 다루기 쉽다).
     """
     if not is_frozen():
-        return _HERE                       # 소스 실행 — 지금까지와 동일
+        # 소스 실행 — 프로젝트 루트의 data/ (2026-07-28). 쓸 수 없는 자리면
+        # 예전처럼 루트를 그대로 쓴다: 데이터를 못 쓰는 것보다 지저분한 편이 낫다.
+        folder = _HERE / SRC_DATA_FOLDER_NAME
+        if not _writable(folder):
+            return _HERE
+        _migrate_legacy(_HERE, folder)     # 루트에 흩어져 있던 것 한 번만 이사
+        return folder
 
     beside = pathlib.Path(sys.executable).resolve().parent
     folder = beside / DATA_FOLDER_NAME

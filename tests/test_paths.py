@@ -20,23 +20,30 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
 class SourceRunTest(unittest.TestCase):
-    """소스로 실행할 때는 지금까지와 똑같아야 한다 — 기존 설정을 그대로 쓴다."""
+    r"""소스로 실행할 때 — 데이터는 **data/ 아래 한 곳**에 모인다 (2026-07-28).
+
+    예전에는 프로젝트 루트에 그대로 쏟아졌다. 코드와 사용자 데이터가 같은
+    자리에 섞이면 폴더를 열 때마다 무엇이 무엇인지 골라내야 한다.
+    자원(assets 등)은 소스에 딸려온 것이라 그대로 루트다.
+    """
 
     def test_frozen_이_아니다(self):
         self.assertFalse(paths.is_frozen())
 
-    def test_데이터_폴더는_프로젝트_폴더(self):
-        self.assertEqual(paths.data_dir(), ROOT)
+    def test_데이터_폴더는_data(self):
+        self.assertEqual(paths.data_dir(),
+                         ROOT / paths.SRC_DATA_FOLDER_NAME)
 
-    def test_자원_폴더도_프로젝트_폴더(self):
+    def test_자원_폴더는_프로젝트_폴더(self):
         self.assertEqual(paths.resource_dir(), ROOT)
 
-    def test_기존_설정_경로가_안_바뀐다(self):
+    def test_설정_경로가_data_아래로_간다(self):
         import settings
         import library
-        self.assertEqual(settings.CONFIG_PATH, ROOT / "config.json")
-        self.assertEqual(library.LIBRARY_PATH, ROOT / "library.json")
-        self.assertEqual(library.FRAGMENTS_DIR, ROOT / "fragments")
+        data = ROOT / paths.SRC_DATA_FOLDER_NAME
+        self.assertEqual(settings.CONFIG_PATH, data / "config.json")
+        self.assertEqual(library.LIBRARY_PATH, data / "library.json")
+        self.assertEqual(library.FRAGMENTS_DIR, data / "fragments")
 
 
 class FrozenTest(unittest.TestCase):
