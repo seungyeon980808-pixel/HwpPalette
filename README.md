@@ -188,37 +188,75 @@ python build_exe.py          # → dist/hwp_palette.exe (약 46MB)
 
 ## 파일 구조
 
+층 규칙 한 줄: **`core → design·model → hwp → ui`, 화살표는 아래로만.**
+`tests/test_layers.py` 가 이 규칙을 검사한다 — 어기면 테스트가 깨진다.
+
 ```
-main.py            Tkinter UI · 진입점
-hwp_engine.py      한컴 자동화(pyhwpx) 코어 — 연결·문서·선택·글꼴·표 생성·찾기
-exam_engine.py     시험문제 조판 (발문·자료박스·보기박스·선지 표)
-engine_library.py  라이브러리 캡처/적용 · 팔레트 블럭 실행 · \라벨\ 변환 실행
-parser.py          마크다운 파싱 (시험문제 문법 + \라벨\ 문법)
+main.py                 실행 진입점 (hwp_palette.app 을 부르기만 한다)
+hwp_palette.spec        PyInstaller 빌드 설정
+build_exe.py            exe 빌드 스크립트 (점검 후 PyInstaller 호출)
 
-palette.py         커스텀 팔레트(탭·블럭) 저장소
-palette_ui.py      환경설정 창 (탭 관리 + 블럭 격자 드래그 편집)
-func_catalog.py    서식 조합 블럭에 담을 한글 조작 목록
+hwp_palette/
+  app.py                창 조립 · 버튼 동작 · 단축키 (옛 main.py)
 
-library.py         라이브러리(서식·문자·템플릿) 저장소
-library_ui.py      라이브러리 관리 창
-builtin_chars.py   내장 문자(원문자·로마숫자·낫표)
+  core/                 기반 — 위 어느 것도 부르지 않는다
+    appinfo.py            이름·버전·슬로건
+    applog.py             앱 로그 (app.log — 실패 원인 추적용)
+    paths.py              파일 저장 위치 (소스 실행 / exe 실행 구분)
+    settings.py           설정·양식 프리셋 저장소
+    backup.py             개인 데이터 롤링 백업 (.bak1~3)
+    clipboard.py          클립보드 (Tk 잠금 회피)
+    screens.py            여러 모니터를 합친 좌표
+    hotkey.py             전역 단축키 (Ctrl+Alt+T)
 
-settings.py        양식 프리셋 저장소
-settings_ui.py     양식 설정 창
-bogi_visual_ui.py  보기박스 시각 편집
-form_fill.py       양식 채우기 — HWPX 빈칸 뽑기/채우기 (표준 라이브러리만)
-form_fill_ui.py    양식 채우기 창
-applog.py          앱 로그 (app.log — 실패 원인 추적용)
-backup.py          개인 데이터 롤링 백업 (.bak1~3)
-theme.py           화면 색 (밝게/어둡게) · 대비 계산
-paths.py           파일 저장 위치 (소스 실행 / exe 실행 구분)
-onboarding.py      첫 실행 안내 (4쪽)
-hwp_palette.spec   PyInstaller 빌드 설정
-build_exe.py       exe 빌드 스크립트 (점검 후 PyInstaller 호출)
-tests/             단위 테스트 (한글 없이 실행: python -m unittest discover -s tests)
-config.json        개인 설정 · 팔레트 탭 (git 제외)
-library.json       개인 라이브러리 (git 제외)
-fragments/         템플릿 조각 .hwp (git 제외)
+  design/               생김새 부품 — core 만 부른다
+    theme.py              색·간격·글자 위계 토큰 (밝게/어둡게)
+    ui_fx.py              호버 보간 · 창 페이드
+    roundbtn.py           둥근 버튼(RoundButton)·타일(RoundTile)
+    popover.py            앱과 같은 얼굴의 팝업 메뉴
+    dialogs.py            앱과 같은 얼굴의 대화상자
+    disclosure.py         접었다 펴는 안내
+
+  model/                데이터·규칙 — 한글도 화면도 모른다
+    palette.py            팔레트(탭·블럭) 저장소
+    library.py            물감(서식·기호·템플릿·양식) 저장소
+    chip.py               팔레트·물감 주고받기 (파일 하나로 묶기)
+    parser.py             마크다운 파싱 (시험문제 문법 + \라벨\ 문법)
+    form_fill.py          양식 빈칸 뽑기/채우기 (표준 라이브러리만)
+    builtin_actions.py    팔레트에 놓는 '앱 기능' 목록
+    builtin_chars.py      내장 기호 425개
+    func_catalog.py       서식 조합 블럭에 담을 한글 조작 목록
+
+  hwp/                  한글 COM — model 까지만 부른다
+    hwp_engine.py         한컴 자동화(pyhwpx) 코어 — 연결·선택·글꼴·표·되돌리기
+    engine_library.py     물감 캡처/적용 · 블럭 실행 · \라벨\ 변환 실행
+    exam_engine.py        시험문제 조판 (발문·자료박스·보기박스·선지 표)
+    preview.py            물감 미리보기 그림
+    hwp_dock.py           한글 창을 판 자리에 붙이기 (양식 수정)
+    form_markdown.py      양식 → 마크다운 (AI 왕복용 보여주기)
+
+  ui/                   화면 — 위를 다 부른다
+    palette_ui.py         팔레트 설정 창 (격자 드래그 편집)
+    store_ui.py           물감 창고
+    library_ui.py         물감 관리·주고받기
+    form_fill_ui.py       양식 채우기 창
+    form_table_ui.py      양식 빈칸 채우기 표
+    help_ui.py            도움말 창
+    help_content.py       도움말 본문
+    onboarding.py         첫 실행 안내
+    tutorial.py           튜토리얼 엔진 (스포트라이트)
+    tutorials.py          튜토리얼 대본
+
+tests/                  단위 테스트 (한글 없이: python -m unittest discover -s tests)
+  srcpath.py              소스 파일 자리를 한 곳에서 알려준다
+  test_layers.py          층 규칙 검사
+
+data/                   개인 데이터 — 통째로 git 제외
+  config.json             설정 · 팔레트 탭
+  library.json            내 물감
+  fragments/              템플릿 조각 .hwp
+  미리보기/ 미리보기작업/ 양식작업/   작업 파일
+  app.log
 ```
 
 ---
