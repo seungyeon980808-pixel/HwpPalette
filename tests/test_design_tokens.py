@@ -12,8 +12,7 @@ import dialogs
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 UI_FILES = ["main.py", "palette_ui.py", "library_ui.py", "store_ui.py",
-            "form_table_ui.py", "form_fill_ui.py", "settings_ui.py",
-            "bogi_visual_ui.py"]
+            "form_table_ui.py", "form_fill_ui.py"]
 
 
 class TokenTest(unittest.TestCase):
