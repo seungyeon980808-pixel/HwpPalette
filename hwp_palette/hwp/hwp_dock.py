@@ -25,6 +25,7 @@ r"""한글 창 도킹 — 편집하는 동안 미리보기 판 자리에 딱 맞
 import threading
 import time
 
+import win32api
 import win32con
 import win32gui
 
@@ -38,6 +39,28 @@ _TICK_S = 0.03            # 추적 주기 — 33fps 면 눈에는 연속으로 �
 _EASE = 0.45              # 매 틱 남은 거리의 45% 씩 접근 (~150ms 에 정착)
 _SNAP_PX = 2              # 이 안쪽이면 정확히 맞춰 붙인다
 _MOVE_FLAGS = win32con.SWP_SHOWWINDOW | win32con.SWP_NOACTIVATE
+
+
+def fit_on_screen(hwnd, w, h):
+    r"""그 창을 w×h 로 키울 때 **화면 밖으로 안 나가는** 좌상단 좌표.
+
+    왜 필요한가 (2026-07-29, 감싸기 도킹): 평소 창은 화면 오른쪽 위에 선다
+    (한글을 가리지 않으려고). 거기서 폭 1180 으로 키우면 오른쪽 절반이 화면
+    밖으로 나가 도구줄이 통째로 안 보인다.
+
+    창이 놓인 모니터의 작업 영역 안으로 밀어 넣는다 — 그 모니터가 창보다
+    작으면 왼쪽 위에 붙인다(잘려도 왼쪽부터 보이는 편이 낫다).
+    """
+    try:
+        l, t, _r, _b = win32gui.GetWindowRect(hwnd)
+        mon = win32api.MonitorFromWindow(hwnd, win32con.MONITOR_DEFAULTTONEAREST)
+        wl, wt, wr, wb = win32api.GetMonitorInfo(mon)["Work"]
+        x = min(max(l, wl + 8), max(wl + 8, wr - w - 8))
+        y = min(max(t, wt + 8), max(wt + 8, wb - h - 8))
+        return int(x), int(y)
+    except Exception as e:
+        applog.exc("감싸기 창 자리 계산 실패 — 있던 자리에서 키운다", e)
+        return None
 
 
 def preposition(hwnd, host_widget):
