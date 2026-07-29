@@ -2069,15 +2069,16 @@ _MODE_LABEL = {"embed": "임베드", "dock": "도킹"}
 
 
 def _dock_mode():
-    r"""감싸는 방식 — "embed"(한글이 우리 판의 자식 창) 또는 "dock"(남남인 창).
+    r"""감싸는 방식 — "dock"(남남인 창, 기본) 또는 "embed"(한글이 자식 창).
 
-    사용자 요청 2026-07-30: "결국 임베드를 포기할 수가 없다. 한번 써 보고
-    결정하겠다." 그래서 기본을 임베드로 두되 **도구줄에서 바로 갈아탈 수 있게**
-    설정에 남긴다 — 둘을 번갈아 써 보고 고르는 것이 이 값의 존재 이유다.
-    위험 비교는 docs/EMBED_검토.md.
+    사용자 결정 2026-07-30 (최종): **임베드 포기, 도킹이 기본.** 임베드는
+    강제 종료 때 문서 창이 통째로 사라지는 위험(docs/EMBED_검토.md)을 안고
+    가는데, 도킹의 유일한 단점이던 버벅임을 이벤트 훅으로 없앤 뒤로는
+    (hwp_dock 실측: 끌기 중 어긋남 평균 34px→0px) 임베드를 쓸 이유가 없다.
+    갈아타기 단추는 남긴다 — 훅이 안 먹는 환경에서 빠져나갈 문이다.
     """
-    v = settings.get_config_value("dock_mode", "embed")
-    return v if v in ("embed", "dock") else "embed"
+    v = settings.get_config_value("dock_mode", "dock")
+    return v if v in ("embed", "dock") else "dock"
 
 
 def fn_dock_hwp():

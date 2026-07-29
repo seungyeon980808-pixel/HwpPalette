@@ -16,8 +16,18 @@ r"""한글 창 도킹 — 편집하는 동안 미리보기 판 자리에 딱 맞
 따라온다"): 제목줄을 끄는 동안 윈도우는 모달 이동 루프에 들어가 Tk 의 after
 타이머가 멎는다 — <Configure> 디바운스 방식은 그래서 놓은 뒤에야 따라왔다.
 스레드는 Win32 호출만 쓰므로(Tk·COM 금지) 그 루프와 무관하게 계속 돈다.
-매 틱 남은 거리의 절반쯤을 다가가는 완화(easing)라 처음 붙을 때도, 끌 때도
-미끄러지듯 따라온다.
+
+따라오는 방식 (2026-07-30 재작성, 사용자 지시 "버벅임을 최소화하라"):
+    첫 판은 30ms 폴링 + 완화(easing 45%)였다. 그런데 그 둘이 곧 버벅임이었다 —
+    폴링은 잠들어 있다 깨어나는 시간(최대 30ms)만큼 늦고, 완화는 **일부러**
+    ~150ms 에 걸쳐 따라붙는다. '미끄러지듯'은 곧 '늦게'다.
+    이제는 **윈도우 이벤트 훅**(SetWinEventHook, EVENT_OBJECT_LOCATIONCHANGE)
+    이다. 우리 창이 1px 이라도 움직이면 OS 가 그 즉시 이벤트를 쏘고, 훅
+    스레드는 받은 즉시 완화 없이 **한 번에 스냅**한다. 기다리는 시간 자체가
+    없다. 훅 등록이 실패하면 옛 폴링(8ms, 완화 없음)으로 물러난다.
+    이벤트가 밀릴 때의 뭉개짐은 걱정할 것 없다 — 목표 좌표를 이벤트가 아니라
+    **처리 시점의 GetWindowRect** 에서 다시 읽으므로, 밀린 이벤트는 '이미 맞는
+    자리'를 확인만 하고 지나간다 (자연스러운 병합).
 
 좌표 규칙 (실측 2026-07-27, dock_spike):
     이 프로세스는 DPI 미인식이라 winfo_rootx 같은 Tk 좌표는 4K 모니터에서
@@ -26,8 +36,10 @@ r"""한글 창 도킹 — 편집하는 동안 미리보기 판 자리에 딱 맞
     주모니터·4K·모니터 사이 빈 구간까지 오차 0px 로 맞았다.
 """
 
+import ctypes
 import threading
 import time
+from ctypes import wintypes
 
 import win32api
 import win32con
@@ -39,9 +51,19 @@ from hwp_palette.core import applog
 # 들어가는 상한이다 (사용자 결정 2026-07-27: '둘 다 접기' 안).
 EDIT_PANE_W = 1010
 
-_TICK_S = 0.03            # 추적 주기 — 33fps 면 눈에는 연속으로 보인다
-_EASE = 0.45              # 매 틱 남은 거리의 45% 씩 접근 (~150ms 에 정착)
+_FALLBACK_TICK_S = 0.008  # 훅 실패 시 폴링 주기 — 8ms 면 지연이 눈에 안 띈다
+_EASE = 0.45              # restore() 의 되돌아가는 활강에만 쓴다 (추적엔 안 씀)
 _SNAP_PX = 2              # 이 안쪽이면 정확히 맞춰 붙인다
+
+# ── 이벤트 훅 상수 (ctypes — pywin32 에 SetWinEventHook 이 없다) ──
+_EVENT_OBJECT_LOCATIONCHANGE = 0x800B
+_OBJID_WINDOW = 0
+_QS_ALLINPUT = 0x04FF
+_WINEVENTPROC = ctypes.WINFUNCTYPE(
+    None, wintypes.HANDLE, wintypes.DWORD, wintypes.HWND,
+    ctypes.c_long, ctypes.c_long, wintypes.DWORD, wintypes.DWORD)
+_user32 = ctypes.windll.user32
+_kernel32 = ctypes.windll.kernel32
 # **z순서를 건드리지 않는다** (실측 2026-07-30, spikes/dock_click_spike.py):
 # 여태 매 틱 HWND_TOPMOST 로 밀어 올렸는데, 우리 창도 '항상 위'라 둘이 같은
 # 띠에서 자리다툼을 했다. 그 결과 한글이 활성화되는 순간 우리 빈 판이 위로
@@ -115,6 +137,8 @@ class Dock:
         self.hwnd = hwnd
         self._placement = None       # 원복용 — 시작할 때의 창 배치
         self._host_hwnd = None
+        self._root_hwnd = None       # 우리 최상위 창 — 이벤트 훅이 지켜보는 대상
+        self._hook_tid = None        # 훅 스레드의 Win32 스레드 id (WM_QUIT 용)
         self._stop_evt = threading.Event()
         self._thread = None
 
@@ -130,6 +154,10 @@ class Dock:
                 win32gui.ShowWindow(self.hwnd, win32con.SW_RESTORE)
             # 스레드에서는 Tk 를 못 부른다 — 핸들을 지금(주 스레드) 떠 둔다
             self._host_hwnd = self.host.winfo_id()
+            # 훅은 **최상위 창**을 지켜본다 — 판(host)은 자식 창이라 부모가
+            # 움직여도 자기 좌표는 그대로여서 LOCATIONCHANGE 가 안 온다.
+            self._root_hwnd = win32gui.GetAncestor(self._host_hwnd,
+                                                   win32con.GA_ROOT)
             self._stop_evt.clear()
             self._thread = threading.Thread(target=self._follow_loop,
                                             daemon=True, name="hwp-dock")
@@ -155,39 +183,90 @@ class Dock:
             applog.exc("한글 창 올리기 실패 — 우리 판 뒤에 있을 수 있음", e)
 
     # ── 추적 (별도 스레드 — Win32 호출만, Tk·COM 금지) ──
+    def _snap(self):
+        """한글을 판 자리에 **즉시** 맞춘다. 이미 맞으면 아무것도 안 한다.
+
+        목표 좌표를 부르는 쪽이 아니라 **여기서, 지금** 읽는다 — 이벤트가
+        밀려 있어도 늦은 이벤트는 이미 맞는 자리를 확인만 하고 지나간다.
+        """
+        try:
+            if not (win32gui.IsWindow(self.hwnd)
+                    and win32gui.IsWindow(self._host_hwnd)):
+                return
+            # 최소화 중이면 판 좌표가 (-32000…) 쓰레기 값이다 — 건드리지 않는다
+            if self._root_hwnd and win32gui.IsIconic(self._root_hwnd):
+                return
+            l, t, r, b = win32gui.GetWindowRect(self._host_hwnd)
+            tw, th = max(r - l, 200), max(b - t, 200)
+            cl, ct, cr, cb = win32gui.GetWindowRect(self.hwnd)
+            if (cl, ct, cr - cl, cb - ct) != (l, t, tw, th):
+                win32gui.SetWindowPos(self.hwnd, 0, l, t, tw, th, _MOVE_FLAGS)
+        except Exception:
+            pass                         # 창 파괴 경합 등 — 다음 이벤트에 다시
+
     def _follow_loop(self):
-        while not self._stop_evt.is_set():
-            try:
+        r"""이벤트 훅으로 따라간다. 훅이 안 잡히면 8ms 폴링으로 물러난다.
+
+        훅(WINEVENT_OUTOFCONTEXT)의 콜백은 **이 스레드의 메시지 펌프 안**에서
+        불린다 — 그래서 GetMessage 대신 MsgWaitForMultipleObjects(200ms) +
+        PeekMessage 로 펌프를 돌린다. 200ms 타임아웃은 안전망이다: 이벤트를
+        놓치는 일이 있어도(모니터 전환 등) 드리프트가 이내 바로잡힌다.
+        """
+        self._hook_tid = _kernel32.GetCurrentThreadId()
+
+        @_WINEVENTPROC
+        def _on_event(_hook, _event, hwnd, obj_id, _child, _tid, _time):
+            # 우리 최상위 창의 '창 자체' 이동만 본다 — 커서(OBJID_CURSOR=-9)
+            # 이동도 같은 이벤트로 오므로 거르지 않으면 초당 수백 번 스냅한다.
+            if hwnd == self._root_hwnd and obj_id == _OBJID_WINDOW:
+                self._snap()
+
+        tk_tid = _user32.GetWindowThreadProcessId(self._root_hwnd, None)
+        hook = _user32.SetWinEventHook(
+            _EVENT_OBJECT_LOCATIONCHANGE, _EVENT_OBJECT_LOCATIONCHANGE,
+            0, _on_event, 0, tk_tid, 0)          # 0 = WINEVENT_OUTOFCONTEXT
+        if not hook:
+            applog.warn("도킹 이벤트 훅 등록 실패 — 8ms 폴링으로 물러남")
+            self._poll_fallback()
+            return
+        self._snap()                             # 시작하자마자 한 번 맞춘다
+        try:
+            msg = wintypes.MSG()
+            while not self._stop_evt.is_set():
+                _user32.MsgWaitForMultipleObjects(0, None, False, 200,
+                                                  _QS_ALLINPUT)
+                while _user32.PeekMessageW(ctypes.byref(msg), 0, 0, 0, 1):
+                    _user32.TranslateMessage(ctypes.byref(msg))
+                    _user32.DispatchMessageW(ctypes.byref(msg))
                 if not (win32gui.IsWindow(self.hwnd)
                         and win32gui.IsWindow(self._host_hwnd)):
                     break
-                l, t, r, b = win32gui.GetWindowRect(self._host_hwnd)
-                tw, th = max(r - l, 200), max(b - t, 200)
-                cl, ct, cr, cb = win32gui.GetWindowRect(self.hwnd)
-                cw, ch = cr - cl, cb - ct
-                dl, dt = l - cl, t - ct
-                dw, dh = tw - cw, th - ch
-                if all(abs(v) <= _SNAP_PX for v in (dl, dt, dw, dh)):
-                    if (dl, dt, dw, dh) != (0, 0, 0, 0):
-                        win32gui.SetWindowPos(self.hwnd, 0,
-                                              l, t, tw, th, _MOVE_FLAGS)
-                    time.sleep(0.05)     # 정착 — 천천히 살핀다
-                    continue
-                win32gui.SetWindowPos(
-                    self.hwnd, 0,
-                    cl + int(dl * _EASE), ct + int(dt * _EASE),
-                    cw + int(dw * _EASE), ch + int(dh * _EASE), _MOVE_FLAGS)
-            except Exception:
-                pass                     # 창 파괴 경합 등 — 다음 틱에 다시 본다
-            time.sleep(_TICK_S)
+                self._snap()                     # 200ms 안전망 (드리프트 교정)
+        finally:
+            _user32.UnhookWinEvent(hook)
+
+    def _poll_fallback(self):
+        """훅이 안 잡히는 환경용 — 완화 없이 빠르게 스냅만 반복한다."""
+        while not self._stop_evt.is_set():
+            if not (win32gui.IsWindow(self.hwnd)
+                    and win32gui.IsWindow(self._host_hwnd)):
+                break
+            self._snap()
+            time.sleep(_FALLBACK_TICK_S)
 
     # ── 멈춤과 원복 (둘로 나뉜 이유: 사이에 '숨기기'가 끼어야 한다) ──
     def stop_follow(self):
         """추적 스레드만 멈춘다. 창은 아직 판 자리에 있다."""
         self._stop_evt.set()
+        if self._hook_tid:               # 대기 중인 펌프를 즉시 깨운다
+            try:
+                _user32.PostThreadMessageW(self._hook_tid, 0x0012, 0, 0)  # WM_QUIT
+            except Exception:
+                pass
         t, self._thread = self._thread, None
         if t is not None:
             t.join(timeout=0.5)
+        self._hook_tid = None
 
     def restore(self):
         r"""한글 창을 원래 자리·상태로 되돌린다.

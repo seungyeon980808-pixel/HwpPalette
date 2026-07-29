@@ -63,6 +63,23 @@ class WrapRules(unittest.TestCase):
         self.assertGreaterEqual(int(line.split("=")[1].split("#")[0].strip()),
                                 250)
 
+    def test_추적은_이벤트_훅이고_완화가_없다(self):
+        r"""사용자 지시 2026-07-30: "버벅임을 최소화하라."
+
+        실측(spikes/dock_lag_spike.py): 폴링 30ms + 완화 45% 는 끌기 중
+        평균 34px 어긋나고 정착에 592ms 걸렸다. 이벤트 훅 + 즉시 스냅은
+        0px / 2.5ms. 그러므로:
+          · 추적은 SetWinEventHook 이벤트로 깨어난다 (잠들어 기다리지 않는다)
+          · 스냅에는 완화(_EASE)를 섞지 않는다 — 완화가 곧 지연이다
+        _EASE 는 restore() 의 되돌아가는 활강에만 남는다.
+        """
+        code = _read("hwp_dock")
+        self.assertIn("SetWinEventHook", code)
+        # _fn_body 는 모듈 함수용이라(들여쓴 def 를 못 자름) 직접 자른다
+        snap = code.split("def _snap")[1].split("    def ")[0]
+        self.assertNotIn("_EASE", snap,
+                         "스냅에 완화를 섞으면 '미끄러지듯'이라는 이름의 지연이 돌아온다")
+
 
 class BarRules(unittest.TestCase):
 
