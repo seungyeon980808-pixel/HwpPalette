@@ -283,6 +283,17 @@ def _auto(app):
 
     IME·대화상자처럼 사람이 봐야 하는 항목은 여기서 못 잰다 — 그건 손으로.
     """
+    if "--hold" in sys.argv:
+        # 임베드한 채 가만히 있는다 — 밖에서 이 파이썬을 강제 종료(taskkill /F)
+        # 해 보려고 만든 모드. 우리 정리 코드가 한 줄도 못 도는 죽음의 재현이다.
+        def _mark():
+            with open(LOG_PATH.replace(".log", ".pids"), "w") as f:
+                f.write(f"{os.getpid()} {app.pid}\n")
+            app.log(f"HOLD: python={os.getpid()} hwp={app.pid} — 밖에서 죽여 보라")
+        for d, fn in ((500, app.spawn), (2500, app.embed), (1000, _mark)):
+            _auto.t = getattr(_auto, "t", 0) + d
+            app.after(_auto.t, fn)
+        return
     if "--clean" in sys.argv:      # 정상 경로: 임베드 → 해제 → 종료
         steps = [
             (500, app.spawn),
