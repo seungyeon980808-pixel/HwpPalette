@@ -37,7 +37,7 @@ class DockBar(tk.Frame):
 
     def __init__(self, master, *, scale, font_fn, run_block, label_fn,
                  block_color_fn, tabs_fn, tab_index_fn, on_pick_tab,
-                 on_undock):
+                 on_undock, mode_label=None, on_toggle_mode=None):
         super().__init__(master, bg=CARD)
         self._font = font_fn
         self._run = run_block
@@ -68,6 +68,16 @@ class DockBar(tk.Frame):
                              focus_color=ACCENT, zone_bg=CARD)
         undock.fit(pad_x=9, pad_y=3)
         undock.pack(side="right")
+        # 감싸는 방식 갈아타기 (2026-07-30) — 임베드와 도킹을 번갈아 써 보고
+        # 고르라고 둔 단추다. 누르면 뗐다가 반대 방식으로 다시 문다.
+        if on_toggle_mode is not None:
+            swap = RoundButton(head, text=f"⇄  {mode_label or '방식'}",
+                               command=on_toggle_mode,
+                               bg=SUBBG, fg=MUTED, radius=theme.RADIUS["ctl"],
+                               font=font_fn(7), outline=BORDER,
+                               focus_color=ACCENT, zone_bg=CARD)
+            swap.fit(pad_x=9, pad_y=3)
+            swap.pack(side="right", padx=(0, 6))
 
         self._flow = tk.Frame(self, bg=CARD)
         self._flow.pack(fill="x", padx=8, pady=(5, 7))

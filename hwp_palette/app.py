@@ -63,6 +63,7 @@ from hwp_palette.ui import onboarding
 from hwp_palette.model import parser as md_parser
 from hwp_palette.hwp import hwp_engine
 from hwp_palette.hwp import hwp_dock                      # 한글 창을 우리 판 자리로 끌어온다 (감싸기)
+from hwp_palette.hwp import hwp_embed                     # 한글 창을 우리 판 '안'에 넣는다 (임베드)
 from hwp_palette.ui import dock_bar                       # 감쌌을 때 위쪽 물감 도구줄
 from hwp_palette.hwp import engine_library
 from hwp_palette.hwp import exam_engine
@@ -2060,10 +2061,23 @@ for _i in range(1, 10):
 # dock_bar 가 하고, 여기서는 **모드 전환**만 맡는다 — 평소 화면을 접었다 펴는 일.
 # ══════════════════════════════════════════════════════
 _dock = {"dock": None, "bar": None, "host": None, "job": None,
-         "packs": None, "geo": None}
+         "packs": None, "geo": None, "mode": None}
 _DOCK_ALIVE_MS = 500       # 한글이 살아 있는지만 보는 느린 확인 (자리 추적은 스레드가)
 # 감쌌을 때의 창 크기 — 화면을 다 먹지 않으면서 한글 한 쪽이 통째로 보이는 선.
 _DOCK_W, _DOCK_H = 1180, 900
+_MODE_LABEL = {"embed": "임베드", "dock": "도킹"}
+
+
+def _dock_mode():
+    r"""감싸는 방식 — "embed"(한글이 우리 판의 자식 창) 또는 "dock"(남남인 창).
+
+    사용자 요청 2026-07-30: "결국 임베드를 포기할 수가 없다. 한번 써 보고
+    결정하겠다." 그래서 기본을 임베드로 두되 **도구줄에서 바로 갈아탈 수 있게**
+    설정에 남긴다 — 둘을 번갈아 써 보고 고르는 것이 이 값의 존재 이유다.
+    위험 비교는 docs/EMBED_검토.md.
+    """
+    v = settings.get_config_value("dock_mode", "embed")
+    return v if v in ("embed", "dock") else "embed"
 
 
 def fn_dock_hwp():
@@ -2119,11 +2133,13 @@ def _enter_dock(hwnd):
         if w is not misc_row:
             w.pack_forget()
 
+    _dock["mode"] = _dock_mode()
     _dock["bar"] = dock_bar.DockBar(
         root, scale=SCALE, font_fn=_font, run_block=run_palette_block,
         label_fn=_block_label, block_color_fn=theme.block_color,
         tabs_fn=palette.load_tabs, tab_index_fn=lambda: _pal_state["tab"],
-        on_pick_tab=_dock_pick_tab, on_undock=_exit_dock)
+        on_pick_tab=_dock_pick_tab, on_undock=_exit_dock,
+        mode_label=_MODE_LABEL[_dock["mode"]], on_toggle_mode=_dock_toggle_mode)
     _dock["bar"].pack(fill="x")
     tk.Frame(root, bg=BORDER, height=1).pack(fill="x")
 
@@ -2134,6 +2150,14 @@ def _enter_dock(hwnd):
     _dock["host"].pack(fill="both", expand=True, padx=6, pady=(4, 6))
 
     root.resizable(True, True)          # 감싼 창은 사용자가 키울 수 있어야 한다
+    # '항상 위'는 **감싸는 동안 끈다** (실측 2026-07-30, dock_click_spike):
+    # 우리 창이 항상 위면 한글이 활성화되는 순간 우리 빈 판이 한글을 덮어
+    # 마우스·키보드를 가로챈다 — "한글 안이 클릭이 안 된다"의 정체다.
+    # 감싸고 있을 때는 한글이 우리 창 안에 있으므로 항상 위가 필요 없다.
+    try:
+        root.attributes("-topmost", False)
+    except Exception as e:
+        applog.exc("도킹 중 '항상 위' 끄기 실패 — 클릭이 막힐 수 있음", e)
     # 평소 창은 화면 오른쪽 위에 서 있다 — 거기서 그냥 키우면 오른쪽이 화면
     # 밖으로 나간다. 작업 영역 안으로 밀어 넣고 키운다.
     spot = hwp_dock.fit_on_screen(root.winfo_id(), _DOCK_W, _DOCK_H)
@@ -2144,8 +2168,12 @@ def _enter_dock(hwnd):
     root.update_idletasks()
 
     hwp_engine.ensure_visible()         # 숨은 인스턴스면 먼저 켜야 한다
-    hwp_dock.preposition(hwnd, _dock["host"])   # 숨긴 채 미리 자리로
-    dock = hwp_dock.Dock(root, _dock["host"], hwnd)
+    if _dock["mode"] == "embed":
+        # 임베드는 자리를 미리 잡을 필요가 없다 — SetParent 하는 순간 판 안이다
+        dock = hwp_embed.Embed(root, _dock["host"], hwnd)
+    else:
+        hwp_dock.preposition(hwnd, _dock["host"])   # 숨긴 채 미리 자리로
+        dock = hwp_dock.Dock(root, _dock["host"], hwnd)
     if not dock.start():
         _restore_normal_layout()
         notify("error", "한글 창을 감싸지 못했습니다 — 도킹을 취소합니다")
@@ -2153,7 +2181,21 @@ def _enter_dock(hwnd):
     _dock["dock"] = dock
     _dock_btn.retint(bg=ACCENT, fg=CARD)
     _dock["job"] = root.after(_DOCK_ALIVE_MS, _dock_watch)
-    notify("ok", "한글을 감쌌습니다")
+    notify("ok", f"한글을 감쌌습니다 ({_MODE_LABEL[_dock['mode']]})")
+
+
+def _dock_toggle_mode():
+    r"""임베드 ↔ 도킹 갈아타기 — 뗐다가 반대 방식으로 다시 감싼다.
+
+    두 방식은 창 관계 자체가 달라 중간에 바꿀 수 없다. 한 번 풀고 다시 문다
+    (한글 문서는 그대로다 — 우리가 만지는 것은 창뿐이다).
+    """
+    hwnd = hwp_engine.connected_hwnd()
+    settings.set_config_value(
+        "dock_mode", "dock" if _dock_mode() == "embed" else "embed")
+    _exit_dock()
+    if hwnd:
+        root.after(150, lambda: _enter_dock(hwnd))
 
 
 def _dock_pick_tab(i):
@@ -2218,6 +2260,12 @@ def _restore_normal_layout():
         _dock["geo"] = None
     root.update_idletasks()
     root.resizable(False, False)
+    # 감쌀 때 껐던 '항상 위'를 사용자 설정대로 되돌린다 (_enter_dock 참고).
+    try:
+        root.attributes("-topmost",
+                        bool(settings.get_config_value(_TOP_KEY, True)))
+    except Exception as e:
+        applog.exc("'항상 위' 복원 실패", e)
     try:
         _fit_window()
     except Exception as e:

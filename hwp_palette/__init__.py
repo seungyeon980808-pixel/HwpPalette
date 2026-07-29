@@ -13,7 +13,8 @@ r"""HwpPalette 본체.
               builtin_actions builtin_chars func_catalog
       ↓
     hwp     한글 COM. model 까지만 부른다
-              hwp_engine engine_library exam_engine preview hwp_dock form_markdown
+              hwp_engine engine_library exam_engine preview form_markdown
+              hwp_dock (창을 끌어온다) hwp_embed (창을 판 안에 넣는다)
       ↓
     ui      화면. 위를 다 부른다
               palette_ui store_ui library_ui form_fill_ui form_table_ui
