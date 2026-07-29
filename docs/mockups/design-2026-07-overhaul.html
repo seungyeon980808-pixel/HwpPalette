@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HwpPalette 전면 개편 시안 10 — 2026-07</title>
+<style>
+  *{box-sizing:border-box}
+  body{
+    margin:0;padding:26px 20px 80px;background:#e7e9ec;color:#0d1117;
+    font-family:"Pretendard","맑은 고딕","Malgun Gothic",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  header{max-width:1560px;margin:0 auto 26px}
+  h1{font-size:20px;margin:0 0 6px;letter-spacing:-.3px}
+  header p{margin:0;color:#57606a;font-size:13px;line-height:1.75;max-width:900px}
+  header code{background:#fff;border:1px solid #d0d7de;border-radius:4px;padding:1px 5px;font-size:12px}
+
+  .rack{max-width:1560px;margin:0 auto;display:flex;flex-wrap:wrap;gap:30px 28px;align-items:flex-start}
+  .slot{flex:0 0 auto;width:352px}
+  .slot > h2{font-size:14px;margin:0 0 4px;display:flex;align-items:center;gap:7px;letter-spacing:-.2px}
+  .slot > h2 b{font-size:11px;font-weight:700;color:#fff;background:#24292f;border-radius:4px;padding:2px 7px;letter-spacing:.5px}
+  .cost{font-size:10px;font-weight:600;border-radius:3px;padding:1px 6px;margin-left:auto;letter-spacing:.3px}
+  .c1{background:#e8f7ee;color:#0a6b2e}
+  .c2{background:#fff4e0;color:#8a5300}
+  .c3{background:#fdecec;color:#9b1c1c}
+  .ask{font-size:11.5px;color:#0969da;margin:0 0 4px;font-weight:600}
+  .why{font-size:12px;color:#57606a;line-height:1.65;margin:0 0 12px;min-height:78px}
+  .why strong{color:#0d1117}
+  .why em{font-style:normal;color:#8a5300;background:#fff4e0;border-radius:3px;padding:0 3px}
+
+  /* 창 껍데기 */
+  .win{border:1px solid #c9ced6;border-radius:8px;overflow:hidden;box-shadow:0 8px 24px rgba(16,22,26,.14)}
+  .tb{display:flex;align-items:center;gap:8px;height:31px;padding:0 4px 0 10px;
+    background:#f3f3f3;border-bottom:1px solid #e3e3e3;font-size:12px;color:#1a1a1a}
+  .tb i{width:13px;height:13px;border-radius:3px;background:#0071e3;flex:0 0 auto;font-style:normal}
+  .tb .s{flex:1}
+  .tb b{width:32px;text-align:center;color:#3c3c3c;font-weight:400;line-height:31px}
+  .win.dk .tb{background:#26262a;border-bottom-color:#35353a;color:#eee}
+  .win.dk .tb b{color:#ddd}
+
+  .cp{text-align:center;font-size:10px;color:#a8adb5;padding:8px 0 9px}
+
+  /* ══ K 물감판 ══ */
+  .K{background:#f7f5f2}
+  .K .zl{font-size:10px;letter-spacing:1.6px;font-weight:700;color:#a89c8c;padding:13px 14px 8px}
+  .K .g{display:grid;grid-template-columns:repeat(4,1fr);gap:9px 6px;padding:0 12px 12px}
+  .K .b{text-align:center;font-size:11.5px;color:#3a332b;line-height:1.3}
+  .K .dot{width:30px;height:30px;border-radius:50%;margin:0 auto 5px;border:1px solid rgba(0,0,0,.07)}
+  .K .b.big .dot{width:36px;height:36px}
+  .K .z2{background:#f1ede7;border-top:1px solid #e4ddd2}
+  .K .zh{display:flex;align-items:center;gap:7px;padding:12px 14px 8px}
+  .K .pick{font-size:11px;border:1px solid #ddd4c6;border-radius:12px;padding:2px 9px;background:#fffdfa;color:#5c5245}
+  .K .cp{color:#bdb3a4}
+
+  /* ══ L 콘솔 ══ */
+  .L{background:#141619;font-family:"Pretendard","맑은 고딕",sans-serif}
+  .L .zl{font-size:9.5px;letter-spacing:2px;font-weight:700;color:#5a6472;padding:12px 12px 6px;
+    font-family:ui-monospace,Consolas,monospace}
+  .L .g{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:#242830;
+    border-top:1px solid #242830;border-bottom:1px solid #242830}
+  .L .b{background:#181b20;padding:9px 11px;font-size:12px;color:#ced4dd;display:flex;align-items:center;gap:8px}
+  .L .b .k{margin-left:auto;font-size:9.5px;color:#5a6472;font-family:ui-monospace,Consolas,monospace}
+  .L .b .d{width:5px;height:5px;border-radius:1px;background:#3f8cff;flex:0 0 auto}
+  .L .b.acc{background:#0b2b52;color:#fff}
+  .L .b.acc .k{color:#7fb4ff}
+  .L .zh{display:flex;align-items:center;gap:8px;padding:12px 12px 6px}
+  .L .pick{font-size:10px;font-family:ui-monospace,Consolas,monospace;color:#9aa4b2;
+    border:1px solid #2d3340;border-radius:3px;padding:1px 6px;background:#1b1f26}
+  .L .cp{color:#3d444f;font-family:ui-monospace,Consolas,monospace}
+
+  /* ══ M 메모지 ══ */
+  .M{background:#eceae4}
+  .M .zl{font-size:10px;letter-spacing:1.2px;font-weight:700;color:#938d80;padding:13px 14px 7px}
+  .M .g{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;padding:0 12px 12px}
+  .M .b{padding:10px 8px;font-size:11.5px;line-height:1.3;color:#3a352c;min-height:52px;
+    border:1px solid rgba(0,0,0,.05);border-bottom-width:2px;border-bottom-color:rgba(0,0,0,.09)}
+  .M .n1{background:#fdf6d8}.M .n2{background:#e6f2dc}.M .n3{background:#fbe3dc}
+  .M .n4{background:#dfeaf6}.M .n5{background:#f0e4f2}.M .n6{background:#fff}
+  .M .b.acc{background:#0071e3;color:#fff;border-color:#0060c4;font-weight:600}
+  .M .z2{background:#e4e1da;border-top:1px solid #d6d2c8}
+  .M .zh{display:flex;align-items:center;gap:7px;padding:12px 14px 7px}
+  .M .pick{font-size:11px;border:1px solid #cfcabe;border-radius:4px;padding:1px 7px;background:#fdfcf9}
+
+  /* ══ N 설정앱 ══ */
+  .N{background:#f2f2f7}
+  .N .zl{font-size:11px;color:#8a8a8e;padding:14px 16px 6px;letter-spacing:.2px}
+  .N .card{background:#fff;border-radius:10px;margin:0 12px 12px;overflow:hidden}
+  .N .r{display:flex;align-items:center;gap:10px;padding:8px 11px;font-size:13px;color:#1d1d1f;
+    border-bottom:1px solid #ececf0}
+  .N .r:last-child{border-bottom:0}
+  .N .bd{width:26px;height:26px;border-radius:7px;flex:0 0 auto;color:#fff;
+    display:flex;align-items:center;justify-content:center;font-size:13px}
+  .N .r .go{margin-left:auto;color:#c4c4c8;font-size:12px}
+  .N .zh{display:flex;align-items:center;gap:7px;padding:14px 16px 6px}
+  .N .zh .zl2{font-size:11px;color:#8a8a8e}
+  .N .pick{font-size:11px;color:#0071e3}
+
+  /* ══ O 리본 ══ */
+  .O{background:#f6f6f6}
+  .O .tabs{display:flex;gap:0;border-bottom:1px solid #d9dade;background:#efefef;padding:0 6px}
+  .O .tab{font-size:11.5px;padding:6px 12px;color:#5b6068;border-bottom:2px solid transparent}
+  .O .tab.on{background:#f6f6f6;color:#0d1117;border-bottom-color:#0071e3;font-weight:600}
+  .O .grp{display:flex;padding:8px 4px 4px}
+  .O .col{flex:1;text-align:center;border-right:1px solid #e4e5e8;padding:0 3px}
+  .O .col:last-child{border-right:0}
+  .O .col .gt{font-size:9.5px;color:#8b9098;margin-top:6px;letter-spacing:.4px}
+  .O .items{display:flex;justify-content:center;gap:2px;flex-wrap:wrap}
+  .O .it{width:52px;padding:5px 2px;font-size:10.5px;color:#2f343b;line-height:1.25}
+  .O .it .ic{display:block;font-size:15px;color:#5a6069;margin-bottom:2px}
+  .O .it.acc{background:#e3efFB;border-radius:4px}
+  .O .it.acc .ic{color:#0071e3}
+  .O .z2{border-top:1px solid #e2e3e6;background:#fbfbfb;padding:6px 8px 8px}
+  .O .zh{display:flex;align-items:center;gap:7px;padding:2px 4px 6px}
+  .O .zh .zl2{font-size:10px;color:#8b9098;letter-spacing:.6px}
+  .O .pick{font-size:11px;border:1px solid #d6d8dc;border-radius:3px;padding:1px 7px;background:#fff}
+  .O .chips{display:flex;flex-wrap:wrap;gap:4px}
+  .O .chip{font-size:11px;border:1px solid #dcdee2;background:#fff;border-radius:3px;padding:3px 8px}
+
+  /* ══ P 타이포 ══ */
+  .P{background:#fff}
+  .P .zl{font-size:10px;letter-spacing:2.4px;font-weight:700;color:#c2c6cc;padding:16px 18px 10px}
+  .P .g{display:grid;grid-template-columns:1fr 1fr;gap:2px 20px;padding:0 18px 14px}
+  .P .b{font-size:14px;color:#16181c;padding:5px 0;letter-spacing:-.3px}
+  .P .b.acc{font-weight:800;color:#0071e3}
+  .P .b .s{display:block;font-size:10px;color:#b6bbc2;letter-spacing:.3px;margin-top:1px}
+  .P .z2{border-top:1px solid #f0f1f3}
+  .P .zh{display:flex;align-items:center;gap:8px;padding:16px 18px 10px}
+  .P .zh .zl2{font-size:10px;letter-spacing:2.4px;font-weight:700;color:#c2c6cc}
+  .P .pick{font-size:11px;color:#16181c;border-bottom:1px solid #16181c}
+
+  /* ══ Q 여백 ══ */
+  .Q{background:#fbfbfc}
+  .Q .zl{font-size:10px;letter-spacing:1.8px;font-weight:600;color:#9aa1ab;padding:20px 20px 12px}
+  .Q .g{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 18px 18px}
+  .Q .b{background:#fff;border:1px solid #ebedf0;border-radius:10px;padding:14px 13px;
+    font-size:13px;color:#1a1d21;min-height:58px;display:flex;flex-direction:column;justify-content:space-between}
+  .Q .b .s{font-size:10px;color:#a9b0b9;margin-top:6px}
+  .Q .b.acc{background:#0071e3;border-color:#0071e3;color:#fff;font-weight:600}
+  .Q .b.acc .s{color:#bcdcfb}
+  .Q .z2{border-top:1px solid #f0f1f4}
+  .Q .zh{display:flex;align-items:center;gap:9px;padding:20px 20px 12px}
+  .Q .zh .zl2{font-size:10px;letter-spacing:1.8px;font-weight:600;color:#9aa1ab}
+  .Q .pick{font-size:11px;border:1px solid #e4e7eb;border-radius:14px;padding:2px 10px;background:#fff}
+
+  /* ══ R 입체 ══ */
+  .R{background:#e8eaed}
+  .R .zl{font-size:10px;letter-spacing:1.2px;font-weight:700;color:#8d949d;padding:13px 13px 8px}
+  .R .g{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;padding:0 12px 12px}
+  .R .b{background:#f7f8fa;border-radius:7px;padding:9px 7px;min-height:50px;
+    font-size:11.5px;line-height:1.3;color:#2b3038;text-align:center;
+    border:1px solid #c8ccd2;border-top-color:#fff;box-shadow:0 1px 0 #c1c6cd}
+  .R .b .ic{display:block;font-size:14px;color:#767d87;margin-bottom:3px}
+  .R .b.acc{background:#0d7ce8;border-color:#0a5fb4;border-top-color:#4ea2f5;color:#fff;
+    box-shadow:0 1px 0 #084a8c;font-weight:600}
+  .R .b.acc .ic{color:#cbe4fb}
+  .R .z2{background:#dfe2e6;border-top:1px solid #cfd3d9}
+  .R .zh{display:flex;align-items:center;gap:7px;padding:12px 13px 8px}
+  .R .pick{font-size:11px;border:1px solid #c3c8ce;border-top-color:#fff;border-radius:5px;
+    padding:2px 8px;background:#f5f6f8;box-shadow:0 1px 0 #c1c6cd}
+
+  /* ══ S 배지 격자 ══ */
+  .S{background:#f5f6f8}
+  .S .zl{font-size:10px;letter-spacing:1.2px;font-weight:700;color:#8f97a1;padding:13px 13px 8px}
+  .S .g{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:0 12px 12px}
+  .S .b{background:#fff;border:1px solid #e3e6ea;border-radius:7px;padding:8px;min-height:54px;
+    font-size:11.5px;line-height:1.3;color:#22262b;position:relative}
+  .S .bd{width:16px;height:16px;border-radius:5px;display:flex;align-items:center;justify-content:center;
+    font-size:9px;color:#fff;margin-bottom:5px}
+  .S .b.acc{background:#0071e3;border-color:#0071e3;color:#fff;font-weight:600}
+  .S .b.acc .bd{background:rgba(255,255,255,.28)}
+  .S .z2{background:#fafbfc;border-top:1px solid #eaecef}
+  .S .zh{display:flex;align-items:center;gap:7px;padding:12px 13px 8px}
+  .S .pick{font-size:11px;border:1px solid #dcdfe4;border-radius:5px;padding:1px 8px;background:#fff}
+
+  /* ══ T 야간 도구 ══ */
+  .T{background:#1e1f22}
+  .T .zl{font-size:10px;letter-spacing:1.4px;font-weight:700;color:#6e747d;padding:13px 13px 8px}
+  .T .g{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:0 12px 12px}
+  .T .b{background:#2b2d31;border:1px solid #383b41;border-radius:7px;padding:9px 8px;min-height:52px;
+    font-size:11.5px;line-height:1.3;color:#dcdee2}
+  .T .b .ic{display:block;font-size:13px;color:#7f858e;margin-bottom:4px}
+  .T .b.acc{background:#3f7ee8;border-color:#3f7ee8;color:#fff;font-weight:600}
+  .T .b.acc .ic{color:#d3e3fa}
+  .T .z2{background:#26282b;border-top:1px solid #34363b}
+  .T .zh{display:flex;align-items:center;gap:7px;padding:12px 13px 8px}
+  .T .pick{font-size:11px;border:1px solid #3d4046;border-radius:5px;padding:1px 8px;
+    background:#2b2d31;color:#c4c7cc}
+  .T .cp{color:#4d525a}
+
+  .note{max-width:1560px;margin:36px auto 0;padding:18px 20px;background:#fff;
+    border:1px solid #d0d7de;border-radius:8px;font-size:13px;line-height:1.85;color:#24292f}
+  .note h3{margin:0 0 8px;font-size:14px}
+  .note h3:not(:first-child){margin-top:16px}
+  .note ul{margin:0;padding-left:19px}
+  .note li{margin:4px 0}
+  .note .w{color:#8a5300}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>전면 개편 시안 10 — K부터 T까지</h1>
+  <p>
+    앞의 A–E는 색·여백, F–J는 구조를 건드렸습니다. 이번 열 개는 <strong>“이 프로그램이 무엇으로 보여야 하는가”</strong>를
+    각각 다르게 답합니다. 시안마다 <strong class="ask">그 시안이 답하려는 질문</strong>을 위에 적었습니다.<br>
+    전부 <strong>Tk로 만들 수 있는 것만</strong> 그렸습니다 — 그라데이션·블러·부드러운 그림자·둥근 창모서리 없음.
+    오른쪽 위 배지는 <strong>작업 크기</strong>입니다: <span class="cost c1">가벼움</span> 색·글꼴 위주 ·
+    <span class="cost c2">중간</span> 배치 손봄 · <span class="cost c3">큼</span> 격자 코드 재작성.
+  </p>
+</header>
+
+<div class="rack">
+
+  <!-- ═══ K ═══ -->
+  <section class="slot">
+    <h2><b>K</b> 물감판 <span class="cost c2">중간</span></h2>
+    <p class="ask">이 프로그램의 이름값을 화면이 해내고 있는가?</p>
+    <p class="why">이름이 <strong>팔레트</strong>고 슬로건이 “나만의 물감, 나만의 팔레트”인데 화면은 그냥 버튼 격자입니다.
+      블럭을 <strong>물감 방울(원)</strong>로 그리고 이름을 밑에 답니다. 색이 다시 주인공이 되지만
+      이번엔 <em>네모 덩어리가 아니라 점</em>이라 면적이 작아 시끄럽지 않습니다.</p>
+    <div class="win K">
+      <div class="tb"><i></i><span>HwpPalette</span><span class="s"></span><b>─</b><b>□</b><b>✕</b></div>
+      <div class="zl">공통 팔레트</div>
+      <div class="g">
+        <div class="b big"><div class="dot" style="background:#0071e3"></div>마크다운<br>변환</div>
+        <div class="b"><div class="dot" style="background:#e8d9bf"></div>글씨체</div>
+        <div class="b"><div class="dot" style="background:#d9cfe8"></div>사진</div>
+        <div class="b"><div class="dot" style="background:#d9cfe8"></div>특수기호</div>
+        <div class="b"><div class="dot" style="background:#c9e2cd"></div>양식<br>채우기</div>
+        <div class="b"><div class="dot" style="background:#cddef0"></div>기본<br>서식</div>
+        <div class="b"><div class="dot" style="background:#d9cfe8"></div>통합<br>찾기</div>
+        <div class="b"><div class="dot" style="background:#cddef0"></div>기본<br>서식2</div>
+      </div>
+      <div class="z2">
+        <div class="zh"><span style="font-size:10px;letter-spacing:1.6px;font-weight:700;color:#a89c8c">개인 팔레트</span><span class="pick">수능 ▾</span></div>
+        <div class="g">
+          <div class="b"><div class="dot" style="background:#cddef0"></div>소1사진</div>
+          <div class="b"><div class="dot" style="background:#cddef0"></div>소2사진</div>
+          <div class="b"><div class="dot" style="background:#c9e2cd"></div>수능양식</div>
+          <div class="b"><div class="dot" style="background:#cddef0"></div>대1사진</div>
+        </div>
+      </div>
+      <div class="cp">Copyright © 2026. 박승연 | SOMC</div>
+    </div>
+  </section>
+
+  <!-- ═══ L ═══ -->
+  <section class="slot">
+    <h2><b>L</b> 콘솔 <span class="cost c3">큼</span></h2>
+    <p class="ask">단축키를 쓰는 사람에게 최적화하면?</p>
+    <p class="why">모든 블럭 옆에 <strong>단축키가 늘 보입니다.</strong> 지금은 Ctrl+1~9가 있어도
+      화면 어디에도 안 적혀 있어 아무도 모릅니다. 칸 사이를 1px 선으로만 나눠 밀도를 최대로 올렸습니다.
+      <em>마우스로 쓰기엔 정 없어 보입니다.</em></p>
+    <div class="win dk L">
+      <div class="tb"><i></i><span>HwpPalette</span><span class="s"></span><b>─</b><b>□</b><b>✕</b></div>
+      <div class="zl">COMMON</div>
+      <div class="g">
+        <div class="b acc"><span class="d" style="background:#fff"></span>마크다운 변환<span class="k">^1</span></div>
+        <div class="b"><span class="d" style="background:#b08b52"></span>글씨체<span class="k">^2</span></div>
+        <div class="b"><span class="d" style="background:#7c5cd6"></span>사진<span class="k">^3</span></div>
+        <div class="b"><span class="d" style="background:#7c5cd6"></span>특수기호<span class="k">^4</span></div>
+        <div class="b"><span class="d" style="background:#1f9254"></span>양식 채우기<span class="k">^5</span></div>
+        <div class="b"><span class="d" style="background:#3f8cff"></span>기본 서식<span class="k">^6</span></div>
+        <div class="b"><span class="d" style="background:#7c5cd6"></span>통합 찾기<span class="k">^K</span></div>
+        <div class="b"><span class="d" style="background:#3f8cff"></span>기본 서식2<span class="k">^7</span></div>
+      </div>
+      <div class="zh"><span style="font-size:9.5px;letter-spacing:2px;font-weight:700;color:#5a6472;font-family:ui-monospace,Consolas,monospace">PERSONAL</span><span class="pick">수능 ▾</span></div>
+      <div class="g">
+        <div class="b"><span class="d"></span>소1사진<span class="k">^8</span></div>
+        <div class="b"><span class="d"></span>소2사진<span class="k">^9</span></div>
+        <div class="b"><span class="d" style="background:#1f9254"></span>수능양식<span class="k">—</span></div>
+        <div class="b"><span class="d"></span>대1사진<span class="k">—</span></div>
+      </div>
+      <div class="cp">© 2026 박승연 · SOMC</div>
+    </div>
+  </section>
+
+  <!-- ═══ M ═══ -->
+  <section class="slot">
+    <h2><b>M</b> 메모지 <span class="cost c1">가벼움</span></h2>
+    <p class="ask">사무용 도구가 꼭 사무적이어야 하나?</p>
+    <p class="why">블럭을 <strong>책상에 붙인 포스트잇</strong>처럼. 색은 지금과 같은 파스텔이지만
+      <strong>아래쪽 테두리만 진하게</strong> 줘서 종이가 살짝 들린 느낌을 냅니다(Tk에서 그림자 대신 쓸 수 있는 유일한 수법).
+      친근하지만 <em>진지한 자리에선 가벼워 보일 수 있습니다.</em></p>
+    <div class="win M">
+      <div class="tb"><i></i><span>HwpPalette</span><span class="s"></span><b>─</b><b>□</b><b>✕</b></div>
+      <div class="zl">공통 팔레트</div>
+      <div class="g">
+        <div class="b acc">마크다운<br>변환</div>
+        <div class="b n1">글씨체</div>
+        <div class="b n5">사진</div>
+        <div class="b n5">특수기호</div>
+        <div class="b n2">양식<br>채우기</div>
+        <div class="b n4">기본<br>서식</div>
+        <div class="b n3">통합<br>찾기</div>
+        <div class="b n4">기본<br>서식2</div>
+      </div>
+      <div class="z2">
+        <div class="zh"><span style="font-size:10px;letter-spacing:1.2px;font-weight:700;color:#938d80">개인 팔레트</span><span class="pick">수능 ▾</span></div>
+        <div class="g">
+          <div class="b n4">소1사진</div>
+          <div class="b n4">소2사진</div>
+          <div class="b n2">수능양식</div>
+          <div class="b n4">대1사진</div>
+        </div>
+      </div>
+      <div class="cp">Copyright © 2026. 박승연 | SOMC</div>
+    </div>
+  </section>
+
+  <!-- ═══ N ═══ -->
+  <section class="slot">
+    <h2><b>N</b> 설정앱 <span class="cost c3">큼</span></h2>
+    <p class="ask">배우지 않고도 쓸 수 있으려면?</p>
+    <p class="why">아이폰 설정 화면의 문법 그대로 — <strong>둥근 흰 카드 안에 줄이 쌓이고, 왼쪽에 색 배지</strong>.
+      이 배치는 거의 모든 사람이 이미 압니다. 이름이 <em>절대 안 잘리고</em> 블럭이 늘어도 그냥 밑으로 이어집니다.
+      대신 한 화면에 보이는 개수가 격자보다 적습니다.</p>
+    <div class="win N">
+      <div class="tb"><i></i><span>HwpPalette</span><span class="s"></span><b>─</b><b>□</b><b>✕</b></div>
+      <div class="zl">공통 팔레트</div>
+      <div class="card">
+        <div class="r"><span class="bd" style="background:#0071e3">⇒</span>마크다운 변환<span class="go">›</span></div>
+        <div class="r"><span class="bd" style="background:#b08b52">가</span>글씨체<span class="go">›</span></div>
+        <div class="r"><span class="bd" style="background:#7c5cd6">▨</span>사진<span class="go">›</span></div>
+        <div class="r"><span class="bd" style="background:#7c5cd6">※</span>특수기호<span class="go">›</span></div>
+        <div class="r"><span class="bd" style="background:#1f9254">▤</span>양식 채우기<span class="go">›</span></div>
+        <div class="r"><span class="bd" style="background:#3478f6">¶</span>기본 서식<span class="go">›</span></div>
+        <div class="r"><span class="bd" style="background:#8a8a8e">⌕</span>통합 찾기<span class="go">›</span></div>
+      </div>
+      <div class="zh"><span class="zl2">개인 팔레트</span><span class="pick">수능 ▾</span></div>
+      <div class="card">
+        <div class="r"><span class="bd" style="background:#3478f6">▦</span>소1사진<span class="go">›</span></div>
+        <div class="r"><span class="bd" style="background:#3478f6">▦</span>소2사진<span class="go">›</span></div>
+        <div class="r"><span class="bd" style="background:#1f9254">▤</span>수능양식<span class="go">›</span></div>
+        <div class="r"><span class="bd" style="background:#3478f6">▦</span>합답형1 만들기<span class="go">›</span></div>
+      </div>
+      <div class="cp">Copyright © 2026. 박승연 | SOMC</div>
+    </div>
+  </section>
+
+  <!-- ═══ O ═══ -->
+  <section class="slot">
+    <h2><b>O</b> 리본 <span class="cost c3">큼</span></h2>
+    <p class="ask">한글의 확장 기능처럼 보이려면?</p>
+    <p class="why">한글·오피스의 <strong>리본 문법</strong>을 그대로 빌립니다. 팔레트가 위쪽 탭이 되고,
+      아래는 아이콘 + 작은 글자, 그룹 사이는 세로선과 <strong>그룹 이름</strong>으로 나눕니다.
+      한글 쓰는 사람에게 가장 익숙합니다. 대신 <em>오래된 인상</em>이고 세로 공간을 많이 씁니다.</p>
+    <div class="win O">
+      <div class="tb"><i></i><span>HwpPalette</span><span class="s"></span><b>─</b><b>□</b><b>✕</b></div>
+      <div class="tabs">
+        <div class="tab on">공통</div><div class="tab">수능</div><div class="tab">학교시험</div><div class="tab">공문</div><div class="tab">＋</div>
+      </div>
+      <div class="grp">
+        <div class="col">
+          <div class="items">
+            <div class="it acc"><span class="ic">⇒</span>마크다운<br>변환</div>
+          </div>
+          <div class="gt">변환</div>
+        </div>
+        <div class="col">
+          <div class="items">
+            <div class="it"><span class="ic">가</span>글씨체</div>
+            <div class="it"><span class="ic">¶</span>기본<br>서식</div>
+          </div>
+          <div class="gt">서식</div>
+        </div>
+        <div class="col">
+          <div class="items">
+            <div class="it"><span class="ic">▨</span>사진</div>
+            <div class="it"><span class="ic">※</span>특수<br>기호</div>
+            <div class="it"><span class="ic">▤</span>양식</div>
+          </div>
+          <div class="gt">넣기</div>
+        </div>
+      </div>
+      <div class="z2">
+        <div class="zh"><span class="zl2">개인 팔레트</span><span class="pick">수능 ▾</span></div>
+        <div class="chips">
+          <span class="chip">소1사진</span><span class="chip">소2사진</span>
+          <span class="chip">수능양식</span><span class="chip">대1사진</span>
+          <span class="chip">합답형1 만들기</span>
+        </div>
+      </div>
+      <div class="cp">Copyright © 2026. 박승연 | SOMC</div>
+    </div>
+  </section>
+
+  <!-- ═══ P ═══ -->
+  <section class="slot">
+    <h2><b>P</b> 타이포만 <span class="cost c2">중간</span></h2>
+    <p class="ask">장식을 전부 빼면 무엇이 남는가?</p>
+    <p class="why">테두리·배경·아이콘을 <strong>전부 없앴습니다.</strong> 남은 것은 글자 크기·굵기·색뿐.
+      가장 조용하고 가장 빨리 읽힙니다. 이름 밑의 작은 회색 글씨가 종류를 말합니다.
+      <em>다만 “눌리는 것”이라는 신호가 가장 약합니다</em> — 마우스를 올렸을 때 색이 변하는 것에 전적으로 기댑니다.</p>
+    <div class="win P">
+      <div class="tb"><i></i><span>HwpPalette</span><span class="s"></span><b>─</b><b>□</b><b>✕</b></div>
+      <div class="zl">공통</div>
+      <div class="g">
+        <div class="b acc">마크다운 변환<span class="s">도구 · Ctrl+1</span></div>
+        <div class="b">글씨체<span class="s">서식 조합</span></div>
+        <div class="b">사진<span class="s">도구</span></div>
+        <div class="b">특수기호<span class="s">도구</span></div>
+        <div class="b">양식 채우기<span class="s">도구</span></div>
+        <div class="b">기본 서식<span class="s">도구</span></div>
+        <div class="b">통합 찾기<span class="s">도구 · Ctrl+K</span></div>
+        <div class="b">기본 서식2<span class="s">서식 조합</span></div>
+      </div>
+      <div class="z2">
+        <div class="zh"><span class="zl2">개인</span><span class="pick">수능 ▾</span></div>
+        <div class="g">
+          <div class="b">소1사진<span class="s">템플릿</span></div>
+          <div class="b">소2사진<span class="s">템플릿</span></div>
+          <div class="b">수능양식<span class="s">양식</span></div>
+          <div class="b">대1사진<span class="s">템플릿</span></div>
+        </div>
+      </div>
+      <div class="cp">Copyright © 2026. 박승연 | SOMC</div>
+    </div>
+  </section>
+
+  <!-- ═══ Q ═══ -->
+  <section class="slot">
+    <h2><b>Q</b> 여백 <span class="cost c2">중간</span></h2>
+    <p class="ask">싸구려로 안 보이려면?</p>
+    <p class="why">칸 수를 <strong>넷에서 둘로 줄이고</strong> 그만큼을 전부 여백으로 씁니다.
+      값비싼 도구는 대체로 빽빽하지 않습니다. 이름이 안 잘리고 종류 설명까지 들어갑니다.
+      대신 <em>같은 개수를 보려면 창이 훨씬 길어집니다</em> — 블럭이 많은 사람에겐 안 맞습니다.</p>
+    <div class="win Q">
+      <div class="tb"><i></i><span>HwpPalette</span><span class="s"></span><b>─</b><b>□</b><b>✕</b></div>
+      <div class="zl">공통 팔레트</div>
+      <div class="g">
+        <div class="b acc">마크다운 변환<span class="s">Ctrl+Alt+T</span></div>
+        <div class="b">글씨체<span class="s">서식 조합</span></div>
+        <div class="b">사진<span class="s">도구</span></div>
+        <div class="b">특수기호<span class="s">도구</span></div>
+        <div class="b">양식 채우기<span class="s">도구</span></div>
+        <div class="b">기본 서식<span class="s">도구</span></div>
+      </div>
+      <div class="z2">
+        <div class="zh"><span class="zl2">개인 팔레트</span><span class="pick">수능 ▾</span></div>
+        <div class="g">
+          <div class="b">소1사진<span class="s">템플릿</span></div>
+          <div class="b">수능양식<span class="s">양식</span></div>
+        </div>
+      </div>
+      <div class="cp">Copyright © 2026. 박승연 | SOMC</div>
+    </div>
+  </section>
+
+  <!-- ═══ R ═══ -->
+  <section class="slot">
+    <h2><b>R</b> 입체 <span class="cost c1">가벼움</span></h2>
+    <p class="ask">눌러야 하는 것처럼 보이려면?</p>
+    <p class="why">블럭에 <strong>진짜 버튼의 부피</strong>를 줍니다 — 위 테두리는 밝게, 아래는 1px 진하게.
+      Tk에서 부드러운 그림자는 못 하지만 <strong>이 두 줄짜리 수법은 됩니다.</strong>
+      누르면 그 1px이 사라져 실제로 들어가는 느낌이 납니다. <em>요즘 유행은 아닙니다.</em></p>
+    <div class="win R">
+      <div class="tb"><i></i><span>HwpPalette</span><span class="s"></span><b>─</b><b>□</b><b>✕</b></div>
+      <div class="zl">공통 팔레트</div>
+      <div class="g">
+        <div class="b acc"><span class="ic">⇒</span>마크다운<br>변환</div>
+        <div class="b"><span class="ic">가</span>글씨체</div>
+        <div class="b"><span class="ic">▨</span>사진</div>
+        <div class="b"><span class="ic">※</span>특수기호</div>
+        <div class="b"><span class="ic">▤</span>양식<br>채우기</div>
+        <div class="b"><span class="ic">¶</span>기본<br>서식</div>
+        <div class="b"><span class="ic">⌕</span>통합<br>찾기</div>
+        <div class="b"><span class="ic">¶</span>기본<br>서식2</div>
+      </div>
+      <div class="z2">
+        <div class="zh"><span style="font-size:10px;letter-spacing:1.2px;font-weight:700;color:#8d949d">개인 팔레트</span><span class="pick">수능 ▾</span></div>
+        <div class="g">
+          <div class="b"><span class="ic">▦</span>소1사진</div>
+          <div class="b"><span class="ic">▦</span>소2사진</div>
+          <div class="b"><span class="ic">▤</span>수능양식</div>
+          <div class="b"><span class="ic">▦</span>대1사진</div>
+        </div>
+      </div>
+      <div class="cp">Copyright © 2026. 박승연 | SOMC</div>
+    </div>
+  </section>
+
+  <!-- ═══ S ═══ -->
+  <section class="slot">
+    <h2><b>S</b> 배지 격자 <span class="cost c1">가벼움</span></h2>
+    <p class="ask">지금 화면을 가장 적게 고쳐서 가장 많이 좋아지려면?</p>
+    <p class="why">격자·크기·자리 전부 그대로. <strong>왼쪽 위에 작은 색 배지 하나</strong>만 얹고 배경은 흰 카드로.
+      색은 남지만 <em>면적이 1/20으로 줄어</em> 화면을 지배하지 않습니다.
+      지금 만든 H안(아이콘)과 형제 관계 — H는 아이콘이 크게 가운데, S는 작게 구석입니다.</p>
+    <div class="win S">
+      <div class="tb"><i></i><span>HwpPalette</span><span class="s"></span><b>─</b><b>□</b><b>✕</b></div>
+      <div class="zl">공통 팔레트</div>
+      <div class="g">
+        <div class="b acc"><span class="bd"></span>마크다운<br>변환</div>
+        <div class="b"><span class="bd" style="background:#b08b52"></span>글씨체</div>
+        <div class="b"><span class="bd" style="background:#7c5cd6"></span>사진</div>
+        <div class="b"><span class="bd" style="background:#7c5cd6"></span>특수기호</div>
+        <div class="b"><span class="bd" style="background:#1f9254"></span>양식<br>채우기</div>
+        <div class="b"><span class="bd" style="background:#3478f6"></span>기본<br>서식</div>
+        <div class="b"><span class="bd" style="background:#7c5cd6"></span>통합<br>찾기</div>
+        <div class="b"><span class="bd" style="background:#3478f6"></span>기본<br>서식2</div>
+      </div>
+      <div class="z2">
+        <div class="zh"><span style="font-size:10px;letter-spacing:1.2px;font-weight:700;color:#8f97a1">개인 팔레트</span><span class="pick">수능 ▾</span></div>
+        <div class="g">
+          <div class="b"><span class="bd" style="background:#3478f6"></span>소1사진</div>
+          <div class="b"><span class="bd" style="background:#3478f6"></span>소2사진</div>
+          <div class="b"><span class="bd" style="background:#1f9254"></span>수능양식</div>
+          <div class="b"><span class="bd" style="background:#3478f6"></span>대1사진</div>
+        </div>
+      </div>
+      <div class="cp">Copyright © 2026. 박승연 | SOMC</div>
+    </div>
+  </section>
+
+  <!-- ═══ T ═══ -->
+  <section class="slot">
+    <h2><b>T</b> 야간 도구 <span class="cost c1">가벼움</span></h2>
+    <p class="ask">어두운 모드를 기본으로 삼으면?</p>
+    <p class="why">지금 어두운 모드는 <strong>밝은 화면을 뒤집은 것</strong>이라 어중간합니다.
+      아예 어두움을 기준으로 다시 짭니다 — 짙은 회색 계단, 강조색 딱 하나, 종류색 없음.
+      <em>흰 한글 문서 옆에 두면 대비가 셉니다</em>. 밤에 오래 작업하는 사람에게 맞습니다.</p>
+    <div class="win dk T">
+      <div class="tb"><i></i><span>HwpPalette</span><span class="s"></span><b>─</b><b>□</b><b>✕</b></div>
+      <div class="zl">공통 팔레트</div>
+      <div class="g">
+        <div class="b acc"><span class="ic">⇒</span>마크다운<br>변환</div>
+        <div class="b"><span class="ic">가</span>글씨체</div>
+        <div class="b"><span class="ic">▨</span>사진</div>
+        <div class="b"><span class="ic">※</span>특수기호</div>
+        <div class="b"><span class="ic">▤</span>양식<br>채우기</div>
+        <div class="b"><span class="ic">¶</span>기본<br>서식</div>
+        <div class="b"><span class="ic">⌕</span>통합<br>찾기</div>
+        <div class="b"><span class="ic">¶</span>기본<br>서식2</div>
+      </div>
+      <div class="z2">
+        <div class="zh"><span style="font-size:10px;letter-spacing:1.4px;font-weight:700;color:#6e747d">개인 팔레트</span><span class="pick">수능 ▾</span></div>
+        <div class="g">
+          <div class="b"><span class="ic">▦</span>소1사진</div>
+          <div class="b"><span class="ic">▦</span>소2사진</div>
+          <div class="b"><span class="ic">▤</span>수능양식</div>
+          <div class="b"><span class="ic">▦</span>대1사진</div>
+        </div>
+      </div>
+      <div class="cp">Copyright © 2026. 박승연 | SOMC</div>
+    </div>
+  </section>
+
+</div>
+
+<div class="note">
+  <h3>전면 개편이라면 — 고르는 순서</h3>
+  <ul>
+    <li><strong>1단계 · 골격을 먼저 정합니다.</strong> 격자(K·M·P·Q·R·S·T)냐 목록(L·N)이냐 리본(O)이냐.
+      이게 정해져야 나머지가 따라옵니다. 되돌리기 제일 비싼 결정이기도 합니다.</li>
+    <li><strong>2단계 · 색의 몫을 정합니다.</strong> 색이 종류를 말할지(K·M·S), 강조 하나만 남길지(P·Q·T), 아예 안 쓸지(P).</li>
+    <li><strong>3단계 · 질감을 정합니다.</strong> 평평하게(대부분) / 입체로(R) / 종이로(M).</li>
+    <li>세 단계를 <strong>서로 다른 시안에서 하나씩 골라 섞어도 됩니다</strong> — 예: “N의 골격 + T의 색 + 평평하게”.</li>
+  </ul>
+
+  <h3>제가 보기에</h3>
+  <ul>
+    <li><strong>N(설정앱)</strong>이 실제 문제를 가장 많이 없앱니다 — 이름 잘림, 블럭 늘어날 때의 한계, 단축키가 안 보이는 것.
+      다만 격자를 버리는 것이라 <span class="w">드래그로 자리 옮기기·8칸 규칙·튜토리얼이 짚는 위치가 전부 다시 짜여야 합니다.</span></li>
+    <li><strong>S(배지 격자)</strong>가 비용 대비 효과가 가장 좋습니다. 지금 코드에서 거의 색만 바꾸면 됩니다.</li>
+    <li><strong>K(물감판)</strong>는 다른 어느 안도 못 주는 것을 줍니다 — <strong>이 프로그램만의 얼굴</strong>.
+      나머지 아홉은 어느 앱에 갖다 놔도 어울리지만 K는 이 앱 것입니다.</li>
+  </ul>
+
+  <h3>어느 안이든 같이 바꿔야 하는 것</h3>
+  <ul>
+    <li>메인 창만 바꾸면 <strong>설정 창·라이브러리·표 창이 남의 집처럼 보입니다.</strong> 전면 개편이면 창 열 개 남짓이 대상입니다.</li>
+    <li>제목표시줄은 못 바꿉니다(윈도우가 그립니다). 직접 그리면 창 끌기·스냅·최대화를 전부 다시 만들어야 합니다.</li>
+    <li>이모지 아이콘은 윈도우에서 컬러로 나옵니다 — 색을 아끼는 안(P·Q·T)에서는 흑백 기호만 써야 뜻이 맞습니다.</li>
+  </ul>
+</div>
+
+</body>
+</html>

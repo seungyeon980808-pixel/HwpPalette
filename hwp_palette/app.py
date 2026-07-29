@@ -62,6 +62,8 @@ from hwp_palette.core import clipboard                    # 윈도우 클립보�
 from hwp_palette.ui import onboarding
 from hwp_palette.model import parser as md_parser
 from hwp_palette.hwp import hwp_engine
+from hwp_palette.hwp import side_dock                     # 한글 옆구리 세로 띠 도킹 (자리 계산)
+from hwp_palette.ui import dock_strip                     # 그 띠의 화면
 from hwp_palette.hwp import engine_library
 from hwp_palette.hwp import exam_engine
 from hwp_palette.core import settings
@@ -1112,6 +1114,18 @@ def _toggle_top():
 
 _top_btn = _bar_btn("⇧", lambda: _toggle_top(), "항상 위")
 _top_btn.pack(side="left", padx=(4, 0))
+
+# ── 한글과 도킹 ────────────────────────────────────────
+# 이 줄에서 **유일하게 글자가 있는 버튼**이다 (사용자 결정 2026-07-29).
+# 기호만으로는 '도킹'이 안 읽힌다 — ⚙·?·⇧ 처럼 관습이 있는 기호가 아니다.
+# 누르면 새 문서/불러오기를 고르고, 그 문서 옆에 세로 띠로 붙는다 (_enter_dock).
+_dock_btn = RoundButton(misc_row, text="한글과 도킹",
+                        command=lambda: fn_dock_hwp(),
+                        bg=ACCENT_SOFT, fg=ACCENT, radius=theme.RADIUS["ctl"],
+                        font=_font(8), outline="", zone_bg=CARD)
+_dock_btn.fit(pad_x=9, pad_y=4)
+_dock_btn.pack(side="left", padx=(6, 0))
+root.after_idle(lambda: _add_tooltip(_dock_btn, "한글 옆에 얇은 띠로 붙습니다"))
 # 켜져 있으면 켜져 보여야 한다 — 상태를 말하지 않는 토글은 토글이 아니다
 _bar_active(_top_btn, bool(settings.get_config_value(_TOP_KEY, True)))
 
@@ -2038,6 +2052,165 @@ def _run_nth_block(n):
 for _i in range(1, 10):
     root.bind_all(f"<Control-Key-{_i}>", lambda e, n=_i: _run_nth_block(n))
 
+# ══════════════════════════════════════════════════════
+# 한글과 도킹 — 우리 창이 한글 옆구리의 세로 띠가 된다 (2026-07-29)
+#
+# 겉모습만 한 창이고 창 둘은 끝까지 남남이다 (SetParent 를 쓰지 않는 이유는
+# docs/EMBED_검토.md). 자리 계산은 side_dock, 띠 화면은 dock_strip 이 하고
+# 여기서는 **모드 전환**만 맡는다 — 평소 화면을 접었다 펴는 일.
+# ══════════════════════════════════════════════════════
+_dock = {"eng": None, "strip": None, "job": None, "packs": None,
+         "geo": None, "hidden": False}
+_DOCK_TICK_MS = 40
+
+
+def fn_dock_hwp():
+    """도킹 버튼 — 붙어 있으면 떼고, 아니면 시작 문서를 물은 뒤 붙는다."""
+    if _dock["eng"] is not None:
+        _exit_dock()
+        return
+    what = messagebox.ask_choice(
+        root, "한글과 도킹", "어떤 문서 옆에 붙을까요?",
+        [("새 문서로 시작", "new", "primary"),
+         ("파일 불러오기", "open", "normal")])
+    if not what:
+        return
+    if not ensure_hwp():
+        return
+    try:
+        if what == "open":
+            path = filedialog.askopenfilename(
+                title="한글 문서 열기", parent=root,
+                filetypes=[("한글 문서", "*.hwp *.hwpx"), ("모든 파일", "*.*")])
+            if not path:
+                return
+            hwp_engine.open_document(path)
+        else:
+            hwp_engine.new_document()
+        hwp_engine.ensure_visible()
+    except Exception as e:
+        report_error("한글 문서를 여는 데 실패했습니다", e)
+        return
+    hwnd = hwp_engine.connected_hwnd()
+    if not hwnd:
+        notify("error", "한글 창을 찾지 못해 도킹하지 못했습니다")
+        return
+    _enter_dock(hwnd)
+
+
+def _enter_dock(hwnd):
+    strip_w = dock_strip.strip_width(SCALE)
+    # 평소 화면을 통째로 접는다 — 되돌릴 때 순서·여백까지 그대로 쓰려고
+    # pack 설정을 함께 적어 둔다 (자식이 열 개 남짓이라 이 편이 단순하다).
+    _dock["packs"] = [(w, w.pack_info()) for w in root.pack_slaves()]
+    _dock["geo"] = (root.winfo_x(), root.winfo_y())
+    for w, _info in _dock["packs"]:
+        w.pack_forget()
+
+    # 제목줄을 뗀다. 붙였다 떼는 것은 매핑을 흔들므로 숨겼다 다시 띄운다 —
+    # 그냥 켜면 창이 화면에서 잠깐 사라졌다 엉뚱한 자리에 나타난다.
+    root.withdraw()
+    root.resizable(True, True)      # 높이를 한글에 맞춰야 한다 (고정이면 못 늘린다)
+    root.overrideredirect(True)
+    root.geometry(f"{strip_w}x400")
+    root.deiconify()
+    root.attributes("-topmost", True)
+
+    _dock["strip"] = dock_strip.DockStrip(
+        root, scale=SCALE, font_fn=_font, run_block=run_palette_block,
+        label_fn=_block_label, block_color_fn=theme.block_color,
+        tabs_fn=palette.load_tabs, tab_index_fn=lambda: _pal_state["tab"],
+        on_pick_tab=_dock_pick_tab, on_undock=_exit_dock,
+        on_minimize=lambda: _dock["eng"] and _dock["eng"].minimize(),
+        on_maximize=lambda: _dock["eng"] and _dock["eng"].maximize())
+    _dock["strip"].pack(fill="both", expand=True)
+    root.update_idletasks()
+
+    eng = side_dock.SideDock(side_dock.top_hwnd(root.winfo_id()), hwnd,
+                             strip_w)
+    if not eng.start():
+        _dock["strip"].destroy()
+        _dock["strip"] = None
+        _restore_normal_layout()
+        notify("error", "한글 창 자리를 잡지 못했습니다 — 도킹을 취소합니다")
+        return
+    _dock["eng"] = eng
+    _dock["hidden"] = False
+    _dock_btn.retint(bg=ACCENT, fg=CARD)
+    _dock["job"] = root.after(_DOCK_TICK_MS, _dock_tick)
+    # 알림 문구는 짧게 — 이 줄의 글자가 길면 **평소 창 폭이 그만큼 넓어진다**
+    # (실측 2026-07-29: 긴 문구 하나에 372px → 567px). 떼는 법은 띠의 ◱ 가 말한다.
+    notify("ok", "한글 옆에 붙었습니다")
+
+
+def _dock_pick_tab(i):
+    """띠에서 팔레트를 넘기면 평소 화면도 같은 팔레트를 보게 맞춘다."""
+    _pal_state["tab"] = i
+    try:
+        _render_current_tab()
+    except Exception as e:
+        applog.exc("도킹 중 팔레트 전환 반영 실패", e)
+
+
+def _dock_tick():
+    """한글을 따라다닌다 — 40ms 마다. 상태가 바뀌면 띠를 숨기거나 뗀다."""
+    eng = _dock["eng"]
+    if eng is None:
+        return
+    state = eng.tick()
+    if state == "gone":
+        notify("warn", "한글 창이 닫혀 도킹을 풉니다")
+        _exit_dock()
+        return
+    if state == "min" and not _dock["hidden"]:
+        root.withdraw()             # 한글이 내려갔으면 띠도 같이 내려간다
+        _dock["hidden"] = True
+    elif state == "ok" and _dock["hidden"]:
+        root.deiconify()
+        root.attributes("-topmost", True)
+        _dock["hidden"] = False
+    _dock["job"] = root.after(_DOCK_TICK_MS, _dock_tick)
+
+
+def _exit_dock():
+    """띠를 접고 평소 창으로 돌아온다. 한글은 도킹 전 자리로 되돌린다."""
+    if _dock["job"] is not None:
+        try:
+            root.after_cancel(_dock["job"])
+        except Exception:
+            pass
+        _dock["job"] = None
+    eng, _dock["eng"] = _dock["eng"], None
+    if eng is not None:
+        eng.stop()
+    if _dock["strip"] is not None:
+        _dock["strip"].destroy()
+        _dock["strip"] = None
+    _restore_normal_layout()
+    _dock_btn.retint(bg=ACCENT_SOFT, fg=ACCENT)
+
+
+def _restore_normal_layout():
+    """접어 뒀던 평소 화면을 그대로 되돌린다 (창틀·크기·차례까지)."""
+    if _dock["hidden"]:
+        root.deiconify()
+        _dock["hidden"] = False
+    root.overrideredirect(False)
+    root.resizable(False, False)
+    for w, info in (_dock["packs"] or []):
+        w.pack(**info)
+    _dock["packs"] = None
+    root.attributes("-topmost",
+                    bool(settings.get_config_value(_TOP_KEY, True)))
+    try:
+        _fit_window()
+    except Exception as e:
+        applog.exc("도킹 해제 뒤 창 크기 복원 실패", e)
+    if _dock["geo"]:
+        root.geometry(f"+{_dock['geo'][0]}+{_dock['geo'][1]}")
+        _dock["geo"] = None
+
+
 # ── 창 위치 기억 (UI 제안 15) ───────────────────────────
 root.update_idletasks()
 _saved_pos = settings.get_window_pos()
@@ -2053,7 +2226,12 @@ def _remember_pos(quit_after=True):
 
     화면 모드·색 모드 전환(_restart)에서도 부른다. 그때는 창을 닫으면 안 되므로
     quit_after=False — 위치만 남기고 프로세스는 그대로 갈아탄다.
+
+    도킹 중이면 **먼저 뗀다** (2026-07-29): 띠일 때의 좌표를 저장하면 다음
+    실행에서 창이 한글 옆구리 자리에 뜨고, 한글도 밀린 채로 남는다.
     """
+    if _dock["eng"] is not None:
+        _exit_dock()
     try:
         settings.set_window_pos(root.winfo_x(), root.winfo_y())
     except Exception as e:

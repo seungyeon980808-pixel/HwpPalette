@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HwpPalette 디자인 시안 — 2026-07</title>
+<style>
+  :root{
+    --page-bg:#eceef1; --page-fg:#0d1117; --page-muted:#57606a; --page-line:#d0d7de;
+    --accent:#0071e3;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:28px 20px 60px;
+    background:var(--page-bg); color:var(--page-fg);
+    font-family:"Pretendard","맑은 고딕","Malgun Gothic",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  header{max-width:1400px;margin:0 auto 26px}
+  h1{font-size:20px;margin:0 0 6px;letter-spacing:-.2px}
+  header p{margin:0;color:var(--page-muted);font-size:13px;line-height:1.7}
+  header code{background:#fff;border:1px solid var(--page-line);border-radius:4px;padding:1px 5px;font-size:12px}
+
+  .rack{
+    max-width:1400px;margin:0 auto;
+    display:flex;flex-wrap:wrap;gap:26px;align-items:flex-start;
+  }
+  .slot{width:340px;flex:0 0 auto}
+  .slot > h2{
+    font-size:14px;margin:0 0 2px;letter-spacing:-.2px;
+    display:flex;align-items:baseline;gap:7px;
+  }
+  .slot > h2 b{
+    font-size:11px;font-weight:600;color:#fff;background:#24292f;
+    border-radius:4px;padding:2px 6px;letter-spacing:.4px;
+  }
+  .slot > .why{font-size:12px;color:var(--page-muted);line-height:1.65;margin:0 0 12px;min-height:56px}
+  .slot > .why em{font-style:normal;color:#8a5300;background:#fff4e0;border-radius:3px;padding:0 3px}
+
+  /* ── 창 껍데기 (윈도우 11 흉내) ───────────────── */
+  .win{
+    border:1px solid #c9ced6; border-radius:8px; overflow:hidden;
+    box-shadow:0 6px 22px rgba(16,22,26,.13);
+    font-size:13px;
+  }
+  .titlebar{
+    display:flex;align-items:center;gap:8px;
+    height:32px;padding:0 4px 0 10px;
+    background:#f3f3f3;border-bottom:1px solid #e3e3e3;
+    font-size:12px;color:#1a1a1a;
+  }
+  .titlebar .ico{width:14px;height:14px;border-radius:3px;background:var(--accent);flex:0 0 auto}
+  .titlebar .sp{flex:1}
+  .titlebar .wb{width:34px;text-align:center;color:#3c3c3c;font-size:12px;line-height:32px}
+  .win.dark .titlebar{background:#2b2b2b;border-bottom-color:#3a3a3a;color:#eee}
+  .win.dark .titlebar .wb{color:#ddd}
+
+  /* ── 툴바 ───────────────────────────────────── */
+  .toolbar{display:flex;align-items:center;gap:2px;padding:7px 8px}
+  .toolbar .t{
+    width:26px;height:26px;border-radius:6px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:13px;color:#3c4149;
+  }
+  .toolbar .t.on{background:#e8f2fd;color:var(--accent)}
+  .toolbar .sp{flex:1}
+  .dot{width:9px;height:9px;border-radius:50%;background:#1aa64b;margin-right:6px}
+
+  /* ── 구역 이름표 ─────────────────────────────── */
+  .zlabel{font-size:11px;color:#6e6e73;padding:5px 12px 0}
+  .zhead{display:flex;align-items:center;gap:7px;padding:5px 12px 0}
+  .zhead .zl{font-size:11px;color:#6e6e73}
+  .pick{
+    font-size:11px;border:1px solid #d2d2d7;border-radius:5px;
+    padding:1px 6px;background:#fff;color:#1d1d1f;
+  }
+
+  /* ── 블럭 격자 ───────────────────────────────── */
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:4px 10px 10px}
+  .blk{
+    border-radius:6px;padding:8px 8px;min-height:42px;
+    font-size:12px;line-height:1.35;color:#1d1d1f;
+    display:flex;align-items:flex-start;
+    overflow:hidden;
+  }
+  .blk.two{min-height:52px}
+  .blk .nm{display:block}
+
+  footer.copy{
+    text-align:center;font-size:11px;color:#a8a8ad;padding:6px 0 10px;
+  }
+
+  /* ══ A. 현재 ═══════════════════════════════════ */
+  .A{background:#f5f5f7}
+  .A .grid{background:transparent}
+  .A .z2{background:#fafafa;padding-bottom:2px}
+  .A .blk{border:0}
+  .A .b-conv{background:#0071e3;color:#fff}
+  .A .b-tpl{background:#eef4fb}
+  .A .b-fn{background:#f1efe9}
+  .A .b-form{background:#eef7ef}
+  .A .b-bi{background:#f3eefb}
+  .A .b-char{background:#fff}
+
+  /* ══ B. 정돈 (카드 + 색 절제) ══════════════════ */
+  .B{background:#f6f7f9}
+  .B .zlabel,.B .zhead .zl{
+    font-size:10px;letter-spacing:.9px;color:#8b939e;font-weight:600;
+  }
+  .B .z2{background:#f6f7f9;border-top:1px solid #e6e9ee;margin-top:6px}
+  .B .blk{
+    background:#fff;border:1px solid #e2e6ec;color:#1d1d1f;
+    border-radius:7px;
+  }
+  .B .b-conv{background:#0071e3;border-color:#0071e3;color:#fff;font-weight:600}
+  .B .toolbar .t.on{background:#eaf1fa}
+
+  /* ══ C. 색 띠 (왼쪽 4px 태그) ═════════════════ */
+  .C{background:#f5f6f8}
+  .C .zlabel,.C .zhead .zl{font-size:11px;color:#6e6e73}
+  .C .z2{background:#fbfbfc;border-top:1px solid #eaecef}
+  .C .blk{
+    background:#fff;border:1px solid #e4e7eb;border-left-width:4px;
+    border-radius:6px;
+  }
+  .C .b-conv{background:#0071e3;border-color:#0071e3;color:#fff;font-weight:600}
+  .C .b-tpl{border-left-color:#0071e3}
+  .C .b-fn{border-left-color:#b08b52}
+  .C .b-form{border-left-color:#1f9254}
+  .C .b-bi{border-left-color:#7c5cd6}
+  .C .b-char{border-left-color:#c8ccd2}
+
+  /* ══ D. 밀도 (좁고 촘촘한 도구창) ═════════════ */
+  .D{background:#f5f5f7}
+  .D .toolbar{padding:5px 6px}
+  .D .zlabel,.D .zhead{padding:4px 9px 0}
+  .D .zlabel,.D .zhead .zl{font-size:10px;color:#7c828b}
+  .D .grid{grid-template-columns:repeat(3,1fr);gap:4px;padding:3px 8px 8px}
+  .D .blk{
+    min-height:0;padding:6px 7px;font-size:11.5px;border-radius:5px;
+    background:#fff;border:1px solid #e3e6ea;
+    white-space:nowrap;text-overflow:ellipsis;display:block;
+    overflow:hidden;
+  }
+  .D .blk.two{min-height:0}
+  .D .b-conv{background:#0071e3;border-color:#0071e3;color:#fff;font-weight:600}
+  .D .z2{background:#fafafb;border-top:1px solid #ebedf0}
+  .D footer.copy{padding:4px 0 7px;font-size:10px}
+
+  /* ══ E. 어둡게 ═══════════════════════════════ */
+  .E{background:#1c1c1e;color:#f2f2f7}
+  .E .zlabel,.E .zhead .zl{font-size:11px;color:#98989d}
+  .E .toolbar .t{color:#b8b8be}
+  .E .toolbar .t.on{background:#16324f;color:#0a84ff}
+  .E .pick{background:#2c2c2e;border-color:#48484a;color:#f2f2f7}
+  .E .z2{background:#242426;border-top:1px solid #333336}
+  .E .blk{background:#2c2c2e;border:1px solid #3a3a3d;color:#f2f2f7;border-radius:7px}
+  .E .b-conv{background:#0a84ff;border-color:#0a84ff;color:#fff;font-weight:600}
+  .E .b-tpl{background:#1e2b3f;border-color:#28394f}
+  .E .b-fn{background:#33301f;border-color:#403c28}
+  .E .b-form{background:#18321f;border-color:#22412a}
+  .E .b-bi{background:#2b2740;border-color:#37324f}
+  .E footer.copy{color:#5c5c60}
+
+  .note{
+    max-width:1400px;margin:34px auto 0;padding:16px 18px;
+    background:#fff;border:1px solid var(--page-line);border-radius:8px;
+    font-size:13px;line-height:1.8;color:#24292f;
+  }
+  .note h3{margin:0 0 8px;font-size:14px}
+  .note ul{margin:0;padding-left:18px}
+  .note li{margin:3px 0}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>HwpPalette 디자인 시안 — 5안 비교</h1>
+  <p>
+    같은 화면(공통 팔레트 + 개인 팔레트)을 다섯 가지 방향으로 그렸습니다.
+    <strong>전부 Tk로 실제 구현 가능한 것만</strong> 썼습니다 — 그라데이션·그림자·블러 없음.
+    창 껍데기(제목줄)는 윈도우가 그리는 부분이라 어느 안에서도 바뀌지 않습니다.<br>
+    바꾸는 곳은 대부분 <code>hwp_palette/design/theme.py</code> 한 파일입니다.
+  </p>
+</header>
+
+<div class="rack">
+
+  <!-- ══════════ A ══════════ -->
+  <section class="slot">
+    <h2><b>A</b> 지금 이대로</h2>
+    <p class="why">기준선입니다. 블럭 종류마다 파스텔 배경이 깔려 있어 화면에서 <em>색이 제일 먼저 보입니다</em>.</p>
+    <div class="win A">
+      <div class="titlebar"><span class="ico"></span><span>HwpPalette v0.1.1</span><span class="sp"></span><span class="wb">─</span><span class="wb">□</span><span class="wb">✕</span></div>
+      <div class="toolbar"><span class="t">⚙</span><span class="t">?</span><span class="t">↺</span><span class="t">⌕</span><span class="t">⇧</span><span class="sp"></span><span class="dot"></span></div>
+      <div class="zlabel">공통 팔레트</div>
+      <div class="grid">
+        <div class="blk two b-conv"><span class="nm">마크다운<br>변환</span></div>
+        <div class="blk two b-fn"><span class="nm">글씨체</span></div>
+        <div class="blk two b-bi"><span class="nm">사진</span></div>
+        <div class="blk two b-bi"><span class="nm">특수기호</span></div>
+        <div class="blk two b-form"><span class="nm">양식<br>채우기</span></div>
+        <div class="blk two b-tpl"><span class="nm">기본<br>서식</span></div>
+        <div class="blk two b-bi"><span class="nm">통합 찾…</span></div>
+        <div class="blk two b-tpl"><span class="nm">기본 서…</span></div>
+      </div>
+      <div class="z2">
+        <div class="zhead"><span class="zl">개인 팔레트</span><span class="pick">수능 ▾</span></div>
+        <div class="grid">
+          <div class="blk b-tpl"><span class="nm">소1사진</span></div>
+          <div class="blk b-tpl"><span class="nm">소2사진</span></div>
+          <div class="blk b-form"><span class="nm">수능양식</span></div>
+          <div class="blk b-tpl"><span class="nm">대1사진</span></div>
+          <div class="blk b-tpl"><span class="nm">합답형1…</span></div>
+        </div>
+      </div>
+      <footer class="copy">Copyright © 2026. Developed by 박승연 | SOMC</footer>
+    </div>
+  </section>
+
+  <!-- ══════════ B ══════════ -->
+  <section class="slot">
+    <h2><b>B</b> 정돈 — 흰 카드, 색은 하나만</h2>
+    <p class="why">블럭을 전부 <strong>흰 카드 + 얇은 테두리</strong>로 통일하고, 색은 <em>변환 하나</em>만 남깁니다. 화면이 조용해지고 글자가 먼저 읽힙니다. 대신 종류 구분이 색으로는 안 됩니다.</p>
+    <div class="win B">
+      <div class="titlebar"><span class="ico"></span><span>HwpPalette v0.1.1</span><span class="sp"></span><span class="wb">─</span><span class="wb">□</span><span class="wb">✕</span></div>
+      <div class="toolbar"><span class="t">⚙</span><span class="t">?</span><span class="t">↺</span><span class="t">⌕</span><span class="t">⇧</span><span class="sp"></span><span class="dot"></span></div>
+      <div class="zlabel">공통 팔레트</div>
+      <div class="grid">
+        <div class="blk two b-conv"><span class="nm">마크다운<br>변환</span></div>
+        <div class="blk two"><span class="nm">글씨체</span></div>
+        <div class="blk two"><span class="nm">사진</span></div>
+        <div class="blk two"><span class="nm">특수기호</span></div>
+        <div class="blk two"><span class="nm">양식<br>채우기</span></div>
+        <div class="blk two"><span class="nm">기본<br>서식</span></div>
+        <div class="blk two"><span class="nm">통합 찾…</span></div>
+        <div class="blk two"><span class="nm">기본 서…</span></div>
+      </div>
+      <div class="z2">
+        <div class="zhead"><span class="zl">개인 팔레트</span><span class="pick">수능 ▾</span></div>
+        <div class="grid">
+          <div class="blk"><span class="nm">소1사진</span></div>
+          <div class="blk"><span class="nm">소2사진</span></div>
+          <div class="blk"><span class="nm">수능양식</span></div>
+          <div class="blk"><span class="nm">대1사진</span></div>
+          <div class="blk"><span class="nm">합답형1…</span></div>
+        </div>
+      </div>
+      <footer class="copy">Copyright © 2026. Developed by 박승연 | SOMC</footer>
+    </div>
+  </section>
+
+  <!-- ══════════ C ══════════ -->
+  <section class="slot">
+    <h2><b>C</b> 색 띠 — 흰 카드 + 왼쪽 4px</h2>
+    <p class="why">B의 조용함을 가져오되 종류는 <strong>왼쪽 얇은 색 띠</strong>로만 말합니다. 배경이 아니라 <em>가장자리</em>라서 시끄럽지 않으면서 눈으로 묶어 볼 수 있습니다.</p>
+    <div class="win C">
+      <div class="titlebar"><span class="ico"></span><span>HwpPalette v0.1.1</span><span class="sp"></span><span class="wb">─</span><span class="wb">□</span><span class="wb">✕</span></div>
+      <div class="toolbar"><span class="t">⚙</span><span class="t">?</span><span class="t">↺</span><span class="t">⌕</span><span class="t">⇧</span><span class="sp"></span><span class="dot"></span></div>
+      <div class="zlabel">공통 팔레트</div>
+      <div class="grid">
+        <div class="blk two b-conv"><span class="nm">마크다운<br>변환</span></div>
+        <div class="blk two b-fn"><span class="nm">글씨체</span></div>
+        <div class="blk two b-bi"><span class="nm">사진</span></div>
+        <div class="blk two b-bi"><span class="nm">특수기호</span></div>
+        <div class="blk two b-form"><span class="nm">양식<br>채우기</span></div>
+        <div class="blk two b-tpl"><span class="nm">기본<br>서식</span></div>
+        <div class="blk two b-bi"><span class="nm">통합 찾…</span></div>
+        <div class="blk two b-tpl"><span class="nm">기본 서…</span></div>
+      </div>
+      <div class="z2">
+        <div class="zhead"><span class="zl">개인 팔레트</span><span class="pick">수능 ▾</span></div>
+        <div class="grid">
+          <div class="blk b-tpl"><span class="nm">소1사진</span></div>
+          <div class="blk b-tpl"><span class="nm">소2사진</span></div>
+          <div class="blk b-form"><span class="nm">수능양식</span></div>
+          <div class="blk b-tpl"><span class="nm">대1사진</span></div>
+          <div class="blk b-tpl"><span class="nm">합답형1…</span></div>
+        </div>
+      </div>
+      <footer class="copy">Copyright © 2026. Developed by 박승연 | SOMC</footer>
+    </div>
+  </section>
+
+  <!-- ══════════ D ══════════ -->
+  <section class="slot">
+    <h2><b>D</b> 밀도 — 작고 촘촘한 도구창</h2>
+    <p class="why">블럭 높이를 줄이고 한 줄에 세 칸. 창이 <strong>세로로 짧아져</strong> 한글 옆에 늘 띄워 두기 좋습니다. 대신 긴 이름은 <em>더 자주 잘립니다</em>.</p>
+    <div class="win D">
+      <div class="titlebar"><span class="ico"></span><span>HwpPalette v0.1.1</span><span class="sp"></span><span class="wb">─</span><span class="wb">□</span><span class="wb">✕</span></div>
+      <div class="toolbar"><span class="t">⚙</span><span class="t">?</span><span class="t">↺</span><span class="t">⌕</span><span class="t">⇧</span><span class="sp"></span><span class="dot"></span></div>
+      <div class="zlabel">공통 팔레트</div>
+      <div class="grid">
+        <div class="blk b-conv">마크다운 변환</div>
+        <div class="blk">글씨체</div>
+        <div class="blk">사진</div>
+        <div class="blk">특수기호</div>
+        <div class="blk">양식 채우기</div>
+        <div class="blk">기본 서식</div>
+        <div class="blk">통합 찾기</div>
+        <div class="blk">기본 서식2</div>
+      </div>
+      <div class="z2">
+        <div class="zhead"><span class="zl">개인 팔레트</span><span class="pick">수능 ▾</span></div>
+        <div class="grid">
+          <div class="blk">소1사진</div>
+          <div class="blk">소2사진</div>
+          <div class="blk">수능양식</div>
+          <div class="blk">대1사진</div>
+          <div class="blk">합답형1…</div>
+        </div>
+      </div>
+      <footer class="copy">Copyright © 2026. Developed by 박승연 | SOMC</footer>
+    </div>
+  </section>
+
+  <!-- ══════════ E ══════════ -->
+  <section class="slot">
+    <h2><b>E</b> 어둡게 (이미 있음)</h2>
+    <p class="why">설정에 <strong>이미 들어 있는</strong> 어두운 모드입니다. 시안이라기보다 <em>비교용</em> — 위 B·C·D는 밝게/어둡게 두 벌로 다 만들 수 있습니다.</p>
+    <div class="win dark E">
+      <div class="titlebar"><span class="ico"></span><span>HwpPalette v0.1.1</span><span class="sp"></span><span class="wb">─</span><span class="wb">□</span><span class="wb">✕</span></div>
+      <div class="toolbar"><span class="t">⚙</span><span class="t">?</span><span class="t">↺</span><span class="t">⌕</span><span class="t">⇧</span><span class="sp"></span><span class="dot"></span></div>
+      <div class="zlabel">공통 팔레트</div>
+      <div class="grid">
+        <div class="blk two b-conv"><span class="nm">마크다운<br>변환</span></div>
+        <div class="blk two b-fn"><span class="nm">글씨체</span></div>
+        <div class="blk two b-bi"><span class="nm">사진</span></div>
+        <div class="blk two b-bi"><span class="nm">특수기호</span></div>
+        <div class="blk two b-form"><span class="nm">양식<br>채우기</span></div>
+        <div class="blk two b-tpl"><span class="nm">기본<br>서식</span></div>
+        <div class="blk two b-bi"><span class="nm">통합 찾…</span></div>
+        <div class="blk two b-tpl"><span class="nm">기본 서…</span></div>
+      </div>
+      <div class="z2">
+        <div class="zhead"><span class="zl">개인 팔레트</span><span class="pick">수능 ▾</span></div>
+        <div class="grid">
+          <div class="blk b-tpl"><span class="nm">소1사진</span></div>
+          <div class="blk b-tpl"><span class="nm">소2사진</span></div>
+          <div class="blk b-form"><span class="nm">수능양식</span></div>
+          <div class="blk b-tpl"><span class="nm">대1사진</span></div>
+          <div class="blk b-tpl"><span class="nm">합답형1…</span></div>
+        </div>
+      </div>
+      <footer class="copy">Copyright © 2026. Developed by 박승연 | SOMC</footer>
+    </div>
+  </section>
+
+</div>
+
+<div class="note">
+  <h3>고를 때 봐 주실 것</h3>
+  <ul>
+    <li><strong>색을 얼마나 쓸까</strong> — A(배경 전체) → C(가장자리만) → B(변환 하나만). 이게 인상 차이의 대부분입니다.</li>
+    <li><strong>창이 얼마나 클까</strong> — D는 세로가 눈에 띄게 짧습니다. 한글 옆에 상주시키는 쓰임이면 D, 이름을 두 줄로 길게 보고 싶으면 A·B·C.</li>
+    <li><strong>섞어도 됩니다</strong> — 예: “C의 색 띠 + D의 밀도”처럼 골라 주셔도 됩니다.</li>
+    <li>고른 뒤 그 안만 <strong>크게 그린 2차 시안</strong>(설정 창·대화상자 포함)을 만들고, 거기서 확정되면 코드에 반영합니다.</li>
+  </ul>
+</div>
+
+</body>
+</html>

@@ -24,10 +24,10 @@ _LAYERS = {
     "model":  ["palette", "library", "chip", "parser", "form_fill",
                "builtin_actions", "builtin_chars", "func_catalog"],
     "hwp":    ["hwp_engine", "engine_library", "exam_engine", "preview",
-               "hwp_dock", "form_markdown"],
+               "hwp_dock", "side_dock", "form_markdown"],
     "ui":     ["palette_ui", "store_ui", "library_ui", "form_fill_ui",
                "form_table_ui", "help_ui", "help_content", "onboarding",
-               "tutorial", "tutorials"],
+               "tutorial", "tutorials", "dock_strip"],
 }
 _WHERE = {m: layer for layer, mods in _LAYERS.items() for m in mods}
 
