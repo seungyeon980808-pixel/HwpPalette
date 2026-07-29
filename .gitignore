@@ -58,3 +58,6 @@ nul
 # 스파이크 실행 로그
 spikes/*.log
 spikes/_*
+spikes/*.bmp
+spikes/*.png
+spikes/*.pids

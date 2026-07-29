@@ -81,6 +81,55 @@ class WrapRules(unittest.TestCase):
                          "스냅에 완화를 섞으면 '미끄러지듯'이라는 이름의 지연이 돌아온다")
 
 
+class CropRules(unittest.TestCase):
+    r"""제목줄 감추기 — 스타일이 아니라 **잘라내기**로 (실측 2026-07-30).
+
+    WS_CAPTION 을 떼는 방식으로 먼저 만들었는데 화면을 그림으로 떠 보니 제목줄이
+    그대로 있었다 (spikes/dock_fix_spike.py). 한글의 제목줄은 OS 창틀이 아니라
+    한글이 자기 그림 영역에 직접 그리는 것이라, 창 영역(SetWindowRgn)으로
+    잘라내야 사라진다.
+    """
+
+    def test_스타일이_아니라_영역으로_자른다(self):
+        code = _read("hwp_dock")
+        self.assertIn("SetWindowRgn", code)
+        self.assertNotIn("~win32con.WS_CAPTION", code)
+
+    def test_영역은_창보다_크게_잡는다(self):
+        r"""DPI 미인식 프로세스라 SetWindowRgn 과 SetWindowPos 의 배율이 다르다.
+
+        창 크기를 그대로 넣으면 오른쪽·아래가 잘려 회색 여백이 남았다(실측).
+        넉넉히 잡으면 배율 계산이 필요 없다 — 잘라낼 것은 위 한 줄뿐이다.
+        """
+        code = _read("hwp_dock")
+        self.assertIn("1 << 15", code)
+
+    def test_뗄_때_잘라내기를_되돌린다(self):
+        """잘린 채 되돌리면 밖에 나간 한글 창이 반쪽으로 남는다."""
+        code = _read("hwp_dock")
+        self.assertIn("def clear_crop", code)
+        body = code.split("def restore")[1].split("\n    def ")[0]
+        self.assertIn("clear_crop", body)
+
+    def test_한글이_영역을_지우면_다시_씌운다(self):
+        """최대화·배율 변경 때 한글이 자기 영역을 다시 씌운다 — 안전망이 있다."""
+        self.assertIn("def _crop_ok", _read("hwp_dock"))
+
+
+class ZOrderRules(unittest.TestCase):
+
+    def test_우리_창이_앞에_올_때_한글을_올린다(self):
+        r"""사용자 지적 2026-07-30: "원래 멀쩡했던 양식수정쪽 도킹이 엉망이다".
+
+        z 를 매 틱 밀어 올리던 것을 그만둔 뒤(클릭 가로채기 때문), 우리 창을 한 번
+        누르면 우리 창이 한글 위로 올라와 판이 회색으로 덮였다. 활성화될 때
+        한 번만 다시 올려 준다 — 자리다툼 없이 순서가 유지된다.
+        """
+        code = _read("hwp_dock")
+        self.assertIn('bind("<FocusIn>"', code)
+        self.assertIn("raise_above", code)
+
+
 class BarRules(unittest.TestCase):
 
     def test_이름을_자르지_않는다(self):
@@ -108,16 +157,37 @@ class BarRules(unittest.TestCase):
         self.assertIn("_common.set_chips", body)
         self.assertIn("_personal.set_chips", body)
 
-    def test_도구줄에는_닫기_단추가_없다(self):
-        r"""✕ 금지 (사용자 결정 2026-07-29).
+    def test_창을_다루는_단추는_도구줄에_없다(self):
+        r"""떼기·방식은 물감이 아니라 **창을 다루는 것** (사용자 지적 2026-07-30).
 
-        도구줄의 ✕ 는 '한글을 닫는다'로 읽힌다. 원고를 닫는 일을 도구가
-        대신해서는 안 된다 — 떼기(◱)만 둔다.
+        "도킹 관련 버튼들은 개인 팔레트 쪽 위계가 아니라 설정·도움말 쪽 위계에
+        있어야 합니다." → app.py 의 misc_row 가 들고 있다.
+        ✕(한글 닫기)는 여전히 어디에도 두지 않는다 (사용자 결정 2026-07-29):
+        원고를 닫는 일을 도구가 대신해서는 안 된다.
         """
-        drawn = [ln for ln in _read("dock_bar").splitlines()
-                 if not ln.strip().startswith("#")]
-        self.assertNotIn("✕", "\n".join(drawn))
-        self.assertIn("◱", "\n".join(drawn))
+        joined = "\n".join(ln for ln in _read("dock_bar").splitlines()
+                           if not ln.strip().startswith("#"))
+        self.assertNotIn("✕", joined)
+        self.assertNotIn("◱", joined)          # 떼기는 위 도구줄로 갔다
+        app_code = _read("app")
+        self.assertIn("◱", app_code)
+        self.assertIn("def _show_dock_buttons", app_code)
+
+    def test_기본_두께는_세_줄(self):
+        """사용자 결정 2026-07-30: "팔레트 기본 두께는 3줄짜리가 되어야 합니다"."""
+        line = [ln for ln in _read("dock_bar").splitlines()
+                if ln.startswith("MIN_ROWS")][0]
+        self.assertEqual(int(line.split("=")[1].split("#")[0].strip()), 3)
+
+    def test_고르개는_펼친다_순환하지_않는다(self):
+        r"""사용자 지적 2026-07-30: "드롭다운이 안 되고 클릭할 때마다 바뀐다".
+
+        ▾ 를 달아 놓고 순환시키는 것은 그 표시와 어긋난다 — 팝오버로 펼친다.
+        """
+        code = _read("dock_bar")
+        self.assertNotIn("def _next_tab", code)
+        self.assertIn("on_open_palettes", code)
+        self.assertIn("def _dock_pal_menu", _read("app"))
 
 
 class AppRules(unittest.TestCase):

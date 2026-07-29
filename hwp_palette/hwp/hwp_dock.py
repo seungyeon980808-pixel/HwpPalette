@@ -64,6 +64,8 @@ _WINEVENTPROC = ctypes.WINFUNCTYPE(
     ctypes.c_long, ctypes.c_long, wintypes.DWORD, wintypes.DWORD)
 _user32 = ctypes.windll.user32
 _kernel32 = ctypes.windll.kernel32
+# CreateRectRgn 은 pywin32 의 win32gui 에 없다 (실측 2026-07-30)
+_gdi32 = ctypes.windll.gdi32
 # **z순서를 건드리지 않는다** (실측 2026-07-30, spikes/dock_click_spike.py):
 # 여태 매 틱 HWND_TOPMOST 로 밀어 올렸는데, 우리 창도 '항상 위'라 둘이 같은
 # 띠에서 자리다툼을 했다. 그 결과 한글이 활성화되는 순간 우리 빈 판이 위로
@@ -94,6 +96,35 @@ def fit_on_screen(hwnd, w, h):
     except Exception as e:
         applog.exc("감싸기 창 자리 계산 실패 — 있던 자리에서 키운다", e)
         return None
+
+
+# 한글이 **직접 그리는** 제목줄의 높이 (96dpi 기준, 실측 2026-07-30).
+#
+# WS_CAPTION 을 떼 봤지만 그 줄은 사라지지 않았다 — 화면을 그림으로 떠서
+# 확인했다(spikes/dock_fix_spike.py). 한글의 제목줄은 OS 가 그리는 창틀이
+# 아니라 **한글이 자기 그림 영역 안에 그리는 것**이라(WPF 식 자체 창틀),
+# 스타일을 만져도 그대로 남는다. 그래서 창 자체를 **잘라낸다**(SetWindowRgn):
+# 위 CAPTION_H 만큼을 보이는 영역에서 빼고, 그만큼 창을 위로 올려 둔다.
+# 잘린 부분은 그려지지도, 눌리지도 않는다.
+CAPTION_H = 40
+
+
+def caption_height(hwnd):
+    """그 창의 DPI 에 맞춘 제목줄 높이 (4K 배율에서도 맞게)."""
+    try:
+        dpi = _user32.GetDpiForWindow(hwnd) or 96
+    except Exception:
+        dpi = 96
+    return int(round(CAPTION_H * dpi / 96.0))
+
+
+def clear_crop(hwnd):
+    """잘라내기를 없앤다 — 창을 원래대로 통째로 보이게."""
+    try:
+        if win32gui.IsWindow(hwnd):
+            win32gui.SetWindowRgn(hwnd, 0, True)
+    except Exception as e:
+        applog.exc("한글 창 잘라내기 해제 실패 — 창이 잘린 채 남을 수 있음", e)
 
 
 def preposition(hwnd, host_widget):
@@ -131,14 +162,19 @@ class Dock:
     렌더러가 꺼진 채 창만 떠서 **통째로 검게** 나온다.
     """
 
-    def __init__(self, toplevel, host_widget, hwnd):
+    def __init__(self, toplevel, host_widget, hwnd, crop_top=0):
         self.top = toplevel          # 남겨 둔다 — 호출부가 창 수명 판단에 씀
         self.host = host_widget      # 이 위젯 자리에 붙인다 (_zoom_canvas)
         self.hwnd = hwnd
+        # crop_top: 한글이 그리는 제목줄을 잘라낼 높이 (0 이면 안 자른다).
+        # 양식 수정 도킹은 0 을 쓴다 — 거기서는 잠깐 쓰는 창이라 제목줄이
+        # 보이는 편이 오히려 '한글이 떠 있다'를 말해 준다.
+        self.crop = int(crop_top)
         self._placement = None       # 원복용 — 시작할 때의 창 배치
         self._host_hwnd = None
         self._root_hwnd = None       # 우리 최상위 창 — 이벤트 훅이 지켜보는 대상
         self._hook_tid = None        # 훅 스레드의 Win32 스레드 id (WM_QUIT 용)
+        self._focus_bind = None      # 우리 창 활성화 → 한글 다시 올리기
         self._stop_evt = threading.Event()
         self._thread = None
 
@@ -162,6 +198,15 @@ class Dock:
             self._thread = threading.Thread(target=self._follow_loop,
                                             daemon=True, name="hwp-dock")
             self._thread.start()
+            # 우리 창이 앞으로 나올 때마다 한글을 다시 올린다 (2026-07-30).
+            #
+            # z 를 매 틱 밀어 올리던 것을 그만둔 뒤(_MOVE_FLAGS 설명) 생긴 구멍이다:
+            # 우리 창을 한 번 누르면 우리 창이 한글 위로 올라와 **판이 회색으로
+            # 덮인다** — 양식 수정 도킹이 "엉망"이 된 정체다(사용자 지적).
+            # 활성화될 때 한 번만 올리므로 자리다툼(클릭 가로채기)은 안 생긴다.
+            self._focus_bind = self.top.bind("<FocusIn>",
+                                             lambda e: self.raise_above(),
+                                             add="+")
             # z 는 이제 추적 스레드가 안 건드리므로(_MOVE_FLAGS 설명), 시작할 때
             # **한 번만** 우리 창 위로 올려 둔다. 이게 없으면 방금 켠 한글이
             # 우리 판 뒤에 깔려 회색 판만 보인다.
@@ -198,11 +243,46 @@ class Dock:
                 return
             l, t, r, b = win32gui.GetWindowRect(self._host_hwnd)
             tw, th = max(r - l, 200), max(b - t, 200)
+            # 제목줄을 잘라내는 경우: 창을 그만큼 **위로** 올리고 키운다.
+            # 그러면 잘려 안 보이는 부분이 판 위쪽에 얹히고, 보이는 부분이
+            # 판을 정확히 채운다.
+            ty, thh = t - self.crop, th + self.crop
             cl, ct, cr, cb = win32gui.GetWindowRect(self.hwnd)
-            if (cl, ct, cr - cl, cb - ct) != (l, t, tw, th):
-                win32gui.SetWindowPos(self.hwnd, 0, l, t, tw, th, _MOVE_FLAGS)
+            if (cl, ct, cr - cl, cb - ct) != (l, ty, tw, thh):
+                win32gui.SetWindowPos(self.hwnd, 0, l, ty, tw, thh, _MOVE_FLAGS)
+                if self.crop:
+                    self._apply_crop(tw, thh)
+            elif self.crop and not self._crop_ok():
+                # 한글이 자기 영역을 다시 씌웠다 (최대화·배율 변경 등) —
+                # 200ms 안전망이 이때 제목줄을 다시 잘라 준다.
+                self._apply_crop(tw, thh)
         except Exception:
             pass                         # 창 파괴 경합 등 — 다음 이벤트에 다시
+
+    def _crop_ok(self):
+        """지금 창 영역이 우리가 씌운 그것인가 (위가 crop 만큼 잘려 있는가)."""
+        try:
+            box = wintypes.RECT()
+            if not _user32.GetWindowRgnBox(self.hwnd, ctypes.byref(box)):
+                return False                 # 영역이 없다 = 안 잘려 있다
+            return box.top >= self.crop - 1
+        except Exception:
+            return True                      # 못 재면 건드리지 않는다
+
+    def _apply_crop(self, w, h):
+        r"""보이는 영역을 '제목줄 아래'로 한정한다.
+
+        오른쪽·아래는 **창보다 훨씬 크게** 잡는다 (실측 2026-07-30): 창 크기를
+        그대로 넣었더니 오른쪽과 아래가 잘려 회색 여백이 남았다 — 이 프로세스는
+        DPI 미인식이라 SetWindowRgn 의 좌표와 SetWindowPos 의 좌표가 같은 배율이
+        아니다. 영역은 창 밖으로 넘겨도 창이 알아서 자기 경계까지만 그리므로,
+        넉넉히 잡으면 배율을 계산할 필요가 없다. 잘라낼 것은 **위 한 줄뿐**이다.
+        """
+        try:
+            rgn = _gdi32.CreateRectRgn(0, self.crop, 1 << 15, 1 << 15)
+            win32gui.SetWindowRgn(self.hwnd, rgn, True)   # 성공하면 OS 가 소유
+        except Exception as e:
+            applog.exc("한글 창 잘라내기 실패 — 제목줄이 보인 채로 계속", e)
 
     def _follow_loop(self):
         r"""이벤트 훅으로 따라간다. 훅이 안 잡히면 8ms 폴링으로 물러난다.
@@ -257,6 +337,12 @@ class Dock:
     # ── 멈춤과 원복 (둘로 나뉜 이유: 사이에 '숨기기'가 끼어야 한다) ──
     def stop_follow(self):
         """추적 스레드만 멈춘다. 창은 아직 판 자리에 있다."""
+        if self._focus_bind is not None:
+            try:
+                self.top.unbind("<FocusIn>", self._focus_bind)
+            except Exception:
+                pass                     # 창이 이미 파괴됐다 — 바인딩도 함께 갔다
+            self._focus_bind = None
         self._stop_evt.set()
         if self._hook_tid:               # 대기 중인 펌프를 즉시 깨운다
             try:
@@ -281,6 +367,8 @@ class Dock:
         try:
             if not win32gui.IsWindow(self.hwnd):
                 return
+            if self.crop:
+                clear_crop(self.hwnd)     # 잘린 채로 되돌리면 창이 반쪽이 된다
             visible = win32gui.IsWindowVisible(self.hwnd)
             was_maximized = placement[1] == win32con.SW_SHOWMAXIMIZED
             if visible and not was_maximized:

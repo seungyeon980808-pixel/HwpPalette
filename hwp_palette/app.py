@@ -1126,7 +1126,35 @@ _dock_btn = RoundButton(misc_row, text="한글과 도킹",
                         font=_font(8), outline="", zone_bg=CARD)
 _dock_btn.fit(pad_x=9, pad_y=4)
 _dock_btn.pack(side="left", padx=(6, 0))
-root.after_idle(lambda: _add_tooltip(_dock_btn, "한글 옆에 얇은 띠로 붙습니다"))
+root.after_idle(lambda: _add_tooltip(_dock_btn, "한글을 이 창 안에 감쌉니다"))
+
+# 감싸고 있는 동안만 나타나는 두 단추 — **여기(설정·도움말 줄)에 둔다**
+# (사용자 지적 2026-07-30): 떼기·방식 갈아타기는 물감이 아니라 **창을 다루는
+# 일**이라, 개인 팔레트 옆이 아니라 ⚙·? 와 같은 위계에 있어야 한다.
+_undock_btn = RoundButton(misc_row, text="◱  떼기",
+                          command=lambda: _exit_dock(),
+                          bg=CARD, fg=MUTED, radius=theme.RADIUS["ctl"],
+                          font=_font(8), outline=BORDER, zone_bg=CARD)
+_undock_btn.fit(pad_x=9, pad_y=4)
+_mode_btn = RoundButton(misc_row, text="⇄  방식",
+                        command=lambda: _dock_toggle_mode(),
+                        bg=CARD, fg=MUTED, radius=theme.RADIUS["ctl"],
+                        font=_font(8), outline=BORDER, zone_bg=CARD)
+_mode_btn.fit(pad_x=9, pad_y=4)
+
+
+def _show_dock_buttons(on):
+    """감싸는 동안만 떼기·방식 단추를 보인다 (평소엔 자리도 차지하지 않는다)."""
+    if on:
+        _mode_btn.set_text(f"⇄  {_MODE_LABEL[_dock['mode']]}", pad_x=9, pad_y=4)
+        _undock_btn.pack(side="left", padx=(6, 0))
+        _mode_btn.pack(side="left", padx=(4, 0))
+        _dock_btn.pack_forget()          # 감싼 동안은 '떼기'가 그 자리를 맡는다
+    else:
+        _undock_btn.pack_forget()
+        _mode_btn.pack_forget()
+        _dock_btn.pack(side="left", padx=(6, 0))
+    _dock_btn.retint(bg=ACCENT_SOFT, fg=ACCENT)
 # 켜져 있으면 켜져 보여야 한다 — 상태를 말하지 않는 토글은 토글이 아니다
 _bar_active(_top_btn, bool(settings.get_config_value(_TOP_KEY, True)))
 
@@ -2062,6 +2090,7 @@ for _i in range(1, 10):
 # ══════════════════════════════════════════════════════
 _dock = {"dock": None, "bar": None, "host": None, "job": None,
          "packs": None, "geo": None, "mode": None}
+_WRAP_PAD = 12             # 감싼 띠의 두께 — 이 여백이 곧 '감싸고 있다'는 표시
 _DOCK_ALIVE_MS = 500       # 한글이 살아 있는지만 보는 느린 확인 (자리 추적은 스레드가)
 # 감쌌을 때의 창 크기 — 화면을 다 먹지 않으면서 한글 한 쪽이 통째로 보이는 선.
 _DOCK_W, _DOCK_H = 1180, 900
@@ -2078,6 +2107,12 @@ def _dock_mode():
     갈아타기 단추는 남긴다 — 훅이 안 먹는 환경에서 빠져나갈 문이다.
     """
     v = settings.get_config_value("dock_mode", "dock")
+    if v == "embed" and not settings.get_config_value("dock_mode_picked", False):
+        # 2026-07-30 잠깐 임베드가 기본이던 판(bdbabdd)에서 저장된 값이다.
+        # 사용자가 직접 고른 적이 없으므로 도킹으로 되돌린다 — 사용자 지적
+        # "도킹이 아니라 임베드라고 뜬다".
+        settings.set_config_value("dock_mode", "dock")
+        return "dock"
     return v if v in ("embed", "dock") else "dock"
 
 
@@ -2086,13 +2121,25 @@ def fn_dock_hwp():
     if _dock["dock"] is not None:
         _exit_dock()
         return
-    what = messagebox.ask_choice(
-        root, "한글과 도킹", "어떤 문서를 감쌀까요?",
-        [("새 문서로 시작", "new", "primary"),
-         ("파일 불러오기", "open", "normal")])
-    if not what:
-        return
+    # 먼저 잇는다 — 지금 어떤 문서가 열려 있는지 알아야 물을 말이 정해진다.
     if not ensure_hwp():
+        return
+    try:
+        empty = engine_library.doc_is_empty()
+    except Exception as e:
+        applog.exc("도킹: 빈 문서 판정 실패 — 문서가 있다고 본다", e)
+        empty = False
+    # 이미 쓰던 문서가 있으면 **그것을 감싸는 것이 첫 번째 선택**이다
+    # (사용자 지적 2026-07-30: 새 문서를 만드니 옛 창이 밖에 남았다).
+    choices = []
+    if not empty:
+        choices.append(("지금 문서 그대로", "keep", "primary"))
+    choices.append(("새 문서로 시작", "new",
+                    "normal" if not empty else "primary"))
+    choices.append(("파일 불러오기", "open", "normal"))
+    what = messagebox.ask_choice(root, "한글과 도킹",
+                                 "어떤 문서를 감쌀까요?", choices)
+    if not what:
         return
     try:
         if what == "open":
@@ -2102,6 +2149,17 @@ def fn_dock_hwp():
             if not path:
                 return
             hwp_engine.open_document(path)
+        elif what == "keep":
+            pass                    # 지금 문서를 그대로 감싼다 — 아무것도 안 만든다
+        elif empty:
+            # 이미 빈 문서가 떠 있으면 **그것을 쓴다** (사용자 지적 2026-07-30:
+            # "한글 파일이 두 개 열리고 빈 문서 1 은 밖에 따로 있다").
+            #
+            # 정체: 한글이 안 떠 있으면 connect 가 새로 띄우는데 그때 '빈 문서 1'
+            # 이 생긴다. 거기에 FileNew 를 또 하면 '빈 문서 2' 가 **새 창으로**
+            # 열려, 우리는 2 를 감싸고 1 은 밖에 남았다. 빈 문서를 굳이 하나 더
+            # 만들 이유가 없다.
+            applog.info("도킹: 이미 빈 문서가 있어 새로 만들지 않는다")
         else:
             hwp_engine.new_document()
     except Exception as e:
@@ -2139,16 +2197,20 @@ def _enter_dock(hwnd):
         root, scale=SCALE, font_fn=_font, run_block=run_palette_block,
         label_fn=_block_label, block_color_fn=theme.block_color,
         tabs_fn=palette.load_tabs, tab_index_fn=lambda: _pal_state["tab"],
-        on_pick_tab=_dock_pick_tab, on_undock=_exit_dock,
-        mode_label=_MODE_LABEL[_dock["mode"]], on_toggle_mode=_dock_toggle_mode)
+        on_open_palettes=_dock_pal_menu)
     _dock["bar"].pack(fill="x")
     tk.Frame(root, bg=BORDER, height=1).pack(fill="x")
 
-    # 한글이 들어올 자리. 빈 판이지만 테두리를 둬야 '여기에 문서가 온다'가
-    # 읽힌다 — 도킹이 실패했을 때 빈 회색 판만 남지 않게도 한다.
-    _dock["host"] = tk.Frame(root, bg=SUBBG, highlightbackground=BORDER,
+    # 한글이 들어올 자리. **테두리를 두껍게** 두른다 (사용자 지적 2026-07-30:
+    # "좌우 테두리는 너무 얇아서 감싸고 있는지를 모르겠다") — 1px 선은 한글
+    # 자기 테두리와 구별되지 않았다. 바깥에 여백 있는 띠를 두고 그 안에 판을
+    # 넣으면, 그 띠가 곧 '우리가 감싸고 있다'는 표시가 된다.
+    frame = tk.Frame(root, bg=BG)
+    frame.pack(fill="both", expand=True)
+    _dock["host"] = tk.Frame(frame, bg=SUBBG, highlightbackground=BORDER,
                              highlightthickness=1)
-    _dock["host"].pack(fill="both", expand=True, padx=6, pady=(4, 6))
+    _dock["host"].pack(fill="both", expand=True,
+                       padx=_WRAP_PAD, pady=(0, _WRAP_PAD))
 
     root.resizable(True, True)          # 감싼 창은 사용자가 키울 수 있어야 한다
     # '항상 위'는 **감싸는 동안 끈다** (실측 2026-07-30, dock_click_spike):
@@ -2174,13 +2236,16 @@ def _enter_dock(hwnd):
         dock = hwp_embed.Embed(root, _dock["host"], hwnd)
     else:
         hwp_dock.preposition(hwnd, _dock["host"])   # 숨긴 채 미리 자리로
-        dock = hwp_dock.Dock(root, _dock["host"], hwnd)
+        # 한글이 그리는 제목줄('빈 문서 1 — 한글' + 창 단추)은 **잘라낸다** —
+        # 한 창에 제목줄이 둘일 이유가 없다 (사용자 지적 2026-07-30).
+        dock = hwp_dock.Dock(root, _dock["host"], hwnd,
+                             crop_top=hwp_dock.caption_height(hwnd))
     if not dock.start():
         _restore_normal_layout()
         notify("error", "한글 창을 감싸지 못했습니다 — 도킹을 취소합니다")
         return
     _dock["dock"] = dock
-    _dock_btn.retint(bg=ACCENT, fg=CARD)
+    _show_dock_buttons(True)
     _dock["job"] = root.after(_DOCK_ALIVE_MS, _dock_watch)
     notify("ok", f"한글을 감쌌습니다 ({_MODE_LABEL[_dock['mode']]})")
 
@@ -2194,18 +2259,41 @@ def _dock_toggle_mode():
     hwnd = hwp_engine.connected_hwnd()
     settings.set_config_value(
         "dock_mode", "dock" if _dock_mode() == "embed" else "embed")
+    settings.set_config_value("dock_mode_picked", True)   # 이제부터는 뜻이 있는 값
     _exit_dock()
     if hwnd:
         root.after(150, lambda: _enter_dock(hwnd))
 
 
+def _dock_pal_menu(anchor):
+    r"""도구줄의 팔레트 고르개 — **펼쳐서** 고른다 (2026-07-30).
+
+    여태는 누를 때마다 다음 팔레트로 넘어갔다. ▾ 를 달아 두고 순환시키는 것은
+    표시와 어긋나는 버그였다 (사용자 지적). 평소 화면의 고르개(_pal_menu)와
+    같은 팝오버를 쓴다 — 지금 것에 ✓ 가 붙는다.
+    """
+    tabs = _pal_tabs()
+    if not tabs:
+        notify("info", "만들어 둔 개인 팔레트가 없습니다")
+        return
+    anchor.retint(bg=ACCENT_SOFT, fg=ACCENT)
+    pop = Popover(root, anchor,
+                  on_close=lambda: anchor.retint(bg=CARD, fg=TEXT))
+    for i, t in enumerate(tabs):
+        pop.add_check(t["name"], lambda idx=i: _dock_pick_tab(idx),
+                      checked=(i == _pal_state["tab"]))
+    pop.show()
+
+
 def _dock_pick_tab(i):
-    """도구줄에서 팔레트를 넘기면 평소 화면도 같은 팔레트를 보게 맞춘다."""
+    """팔레트를 바꾸면 도구줄과 평소 화면을 함께 맞춘다."""
     _pal_state["tab"] = i
     try:
         _render_current_tab()
     except Exception as e:
         applog.exc("도킹 중 팔레트 전환 반영 실패", e)
+    if _dock["bar"] is not None:
+        _dock["bar"].render()
 
 
 def _dock_watch():
@@ -2235,7 +2323,7 @@ def _exit_dock():
     if dock is not None:
         dock.stop()
     _restore_normal_layout()
-    _dock_btn.retint(bg=ACCENT_SOFT, fg=ACCENT)
+    _show_dock_buttons(False)
 
 
 def _restore_normal_layout():

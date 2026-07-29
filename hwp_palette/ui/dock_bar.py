@@ -44,6 +44,10 @@ ACCENT, SUBBG = _C["accent"], _C["subbg"]
 CHIP_H_BASE = 26
 CHIP_GAP = 4
 ZONE_PAD = 8              # 구분선과 칩 사이 숨통
+# 기본 두께는 **세 줄** (사용자 결정 2026-07-30). 칩 수에 따라 도구줄 높이가
+# 들쭉날쭉하면 그 밑의 한글이 매번 위아래로 밀린다 — 세 줄을 미리 잡아 두면
+# 물감을 몇 개 놓든 자리가 안 흔들리고, 넘치면 그때만 늘어난다.
+MIN_ROWS = 3
 
 
 class _Zone(tk.Frame):
@@ -73,26 +77,26 @@ class _Zone(tk.Frame):
         self.after_idle(lambda: self.reflow(max(self.winfo_width(), 1)))
 
     def reflow(self, width):
+        row_h = self._chip_h + CHIP_GAP
+        floor = row_h * MIN_ROWS - CHIP_GAP        # 기본 세 줄
         if not self._chips:
-            self.configure(height=self._chip_h)
+            self.configure(height=floor)
             return
         x = y = 0
-        row_h = self._chip_h + CHIP_GAP
         for chip in self._chips:
             w = chip.winfo_reqwidth()
             if x and x + w > width:     # 이 줄에 안 들어간다 → 다음 줄
                 x, y = 0, y + row_h
             chip.place(x=x, y=y, height=self._chip_h)
             x += w + CHIP_GAP
-        self.configure(height=y + self._chip_h)
+        self.configure(height=max(y + self._chip_h, floor))
 
 
 class DockBar(tk.Frame):
     """감싼 창 맨 위의 물감 도구줄 — 왼쪽 공통, 오른쪽 개인."""
 
     def __init__(self, master, *, scale, font_fn, run_block, label_fn,
-                 block_color_fn, tabs_fn, tab_index_fn, on_pick_tab,
-                 on_undock, mode_label=None, on_toggle_mode=None):
+                 block_color_fn, tabs_fn, tab_index_fn, on_open_palettes):
         super().__init__(master, bg=CARD)
         self._font = font_fn
         self._run = run_block
@@ -100,7 +104,7 @@ class DockBar(tk.Frame):
         self._color = block_color_fn
         self._tabs = tabs_fn
         self._tab_index = tab_index_fn
-        self._pick_tab = on_pick_tab
+        self._open_palettes = on_open_palettes
         self._chip_h = int(round(CHIP_H_BASE * scale))
 
         # 한 줄짜리 격자: [공통 구역] │ [개인 구역] [단추들]
@@ -125,7 +129,11 @@ class DockBar(tk.Frame):
                    pady=(6, 7))
         # 팔레트 고르기 단추가 곧 이 구역의 이름표다 — 무엇을 고르는 단추인지
         # 옆에 있는 칩들이 바로 말해 준다.
-        self._pick = RoundButton(right, text="", command=self._next_tab,
+        # 누르면 **펼친다** (2026-07-30). 여태는 누를 때마다 다음 팔레트로
+        # 넘어갔는데, ▾ 를 달아 놓고 순환시키는 것은 그 표시와 어긋나는 버그였다
+        # (사용자 지적). 평소 화면의 고르개와 같은 팝오버를 쓴다.
+        self._pick = RoundButton(right, text="",
+                                 command=lambda: self._open_palettes(self._pick),
                                  bg=CARD, fg=TEXT, radius=theme.RADIUS["ctl"],
                                  font=font_fn(7), outline=BORDER,
                                  focus_color=ACCENT, zone_bg=CARD,
@@ -134,27 +142,9 @@ class DockBar(tk.Frame):
         self._personal = _Zone(right, self._chip_h)
         self._personal.pack(side="left", fill="both", expand=True)
 
-        # 단추들은 오른쪽 끝 — 물감이 아니라 창을 다루는 것이라 구역 밖이다.
-        ctrl = tk.Frame(self, bg=CARD)
-        ctrl.grid(row=0, column=3, sticky="ne", padx=(0, 8), pady=6)
-        # 떼기는 도킹을 푸는 단 하나의 문이다. 한글을 닫는 ✕ 는 두지 않는다
-        # (사용자 결정 2026-07-29): 원고를 닫는 일은 한글 몫이다.
-        undock = RoundButton(ctrl, text="◱  떼기", command=on_undock,
-                             bg=SUBBG, fg=MUTED, radius=theme.RADIUS["ctl"],
-                             font=font_fn(7), outline=BORDER,
-                             focus_color=ACCENT, zone_bg=CARD)
-        undock.fit(pad_x=9, pad_y=3)
-        undock.pack(side="right")
-        # 감싸는 방식 갈아타기 (2026-07-30) — 임베드와 도킹을 번갈아 써 보고
-        # 고르라고 둔 단추다. 누르면 뗐다가 반대 방식으로 다시 문다.
-        if on_toggle_mode is not None:
-            swap = RoundButton(ctrl, text=f"⇄  {mode_label or '방식'}",
-                               command=on_toggle_mode,
-                               bg=SUBBG, fg=MUTED, radius=theme.RADIUS["ctl"],
-                               font=font_fn(7), outline=BORDER,
-                               focus_color=ACCENT, zone_bg=CARD)
-            swap.fit(pad_x=9, pad_y=3)
-            swap.pack(side="right", padx=(0, 6))
+        # 떼기·방식 단추는 여기 없다 (사용자 지적 2026-07-30): 그것들은 물감이
+        # 아니라 **창을 다루는 도구**라, 설정(⚙)·도움말(?)과 같은 위계인 위쪽
+        # 도구줄에 있어야 한다. app.py 의 misc_row 가 들고 있다.
 
         self.render()
 
@@ -200,10 +190,3 @@ class DockBar(tk.Frame):
         if not others:
             return "팔레트 없음"
         return others[min(self._tab_index(), len(others) - 1)].get("name", "")
-
-    def _next_tab(self):
-        others = [t for t in self._tabs() if t.get("name") != palette.MAIN_TAB]
-        if len(others) <= 1:
-            return
-        self._pick_tab((self._tab_index() + 1) % len(others))
-        self.render()
