@@ -8,6 +8,10 @@ r"""한글 창 도킹 — 편집하는 동안 미리보기 판 자리에 딱 맞
 대신 **도킹**한다: 창 이동·크기 조절로 판 자리에 겹쳐 두고, 편집이 끝나면
 원래 배치로 되돌린다. 한글은 끝까지 독립된 창이라 서로를 해칠 수 없다.
 
+(2026-07-30 후속) 그 임베드를 결국 만들어 넣었다 — `hwp_embed.py`. 사용자가
+둘을 번갈아 써 보고 고르는 중이라 **이 파일은 그대로 산다**. 도구줄의
+`⇄` 단추가 두 방식을 갈아 끼운다.
+
 추적은 **별도 스레드**가 한다 (2026-07-28 재작성, 사용자 지적 "창을 놓아야
 따라온다"): 제목줄을 끄는 동안 윈도우는 모달 이동 루프에 들어가 Tk 의 after
 타이머가 멎는다 — <Configure> 디바운스 방식은 그래서 놓은 뒤에야 따라왔다.
@@ -38,7 +42,14 @@ EDIT_PANE_W = 1010
 _TICK_S = 0.03            # 추적 주기 — 33fps 면 눈에는 연속으로 보인다
 _EASE = 0.45              # 매 틱 남은 거리의 45% 씩 접근 (~150ms 에 정착)
 _SNAP_PX = 2              # 이 안쪽이면 정확히 맞춰 붙인다
-_MOVE_FLAGS = win32con.SWP_SHOWWINDOW | win32con.SWP_NOACTIVATE
+# **z순서를 건드리지 않는다** (실측 2026-07-30, spikes/dock_click_spike.py):
+# 여태 매 틱 HWND_TOPMOST 로 밀어 올렸는데, 우리 창도 '항상 위'라 둘이 같은
+# 띠에서 자리다툼을 했다. 그 결과 한글이 활성화되는 순간 우리 빈 판이 위로
+# 올라와 **마우스·키보드를 가로챘다** — "한글 안이 클릭이 안 되고 글이 안
+# 써진다"의 정체다. 이제 z 는 윈도우가 알아서 하게 두고(활성화된 창이 위),
+# 우리는 자리와 크기만 맞춘다.
+_MOVE_FLAGS = (win32con.SWP_SHOWWINDOW | win32con.SWP_NOACTIVATE
+               | win32con.SWP_NOZORDER)
 
 
 def fit_on_screen(hwnd, w, h):
@@ -123,11 +134,25 @@ class Dock:
             self._thread = threading.Thread(target=self._follow_loop,
                                             daemon=True, name="hwp-dock")
             self._thread.start()
+            # z 는 이제 추적 스레드가 안 건드리므로(_MOVE_FLAGS 설명), 시작할 때
+            # **한 번만** 우리 창 위로 올려 둔다. 이게 없으면 방금 켠 한글이
+            # 우리 판 뒤에 깔려 회색 판만 보인다.
+            self.raise_above()
             return True
         except Exception as e:
             applog.exc("한글 창 도킹 실패 — 도킹 없이 계속", e)
             self._placement = None
             return False
+
+    def raise_above(self):
+        """한글 창을 우리 창 바로 위로 한 번 올린다 (초점은 뺏지 않는다)."""
+        try:
+            win32gui.SetWindowPos(
+                self.hwnd, win32con.HWND_TOP, 0, 0, 0, 0,
+                win32con.SWP_NOMOVE | win32con.SWP_NOSIZE
+                | win32con.SWP_NOACTIVATE | win32con.SWP_SHOWWINDOW)
+        except Exception as e:
+            applog.exc("한글 창 올리기 실패 — 우리 판 뒤에 있을 수 있음", e)
 
     # ── 추적 (별도 스레드 — Win32 호출만, Tk·COM 금지) ──
     def _follow_loop(self):
@@ -144,12 +169,12 @@ class Dock:
                 dw, dh = tw - cw, th - ch
                 if all(abs(v) <= _SNAP_PX for v in (dl, dt, dw, dh)):
                     if (dl, dt, dw, dh) != (0, 0, 0, 0):
-                        win32gui.SetWindowPos(self.hwnd, win32con.HWND_TOPMOST,
+                        win32gui.SetWindowPos(self.hwnd, 0,
                                               l, t, tw, th, _MOVE_FLAGS)
                     time.sleep(0.05)     # 정착 — 천천히 살핀다
                     continue
                 win32gui.SetWindowPos(
-                    self.hwnd, win32con.HWND_TOPMOST,
+                    self.hwnd, 0,
                     cl + int(dl * _EASE), ct + int(dt * _EASE),
                     cw + int(dw * _EASE), ch + int(dh * _EASE), _MOVE_FLAGS)
             except Exception:
