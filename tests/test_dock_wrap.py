@@ -69,11 +69,27 @@ class BarRules(unittest.TestCase):
     def test_이름을_자르지_않는다(self):
         r"""칩 이름 자르기 금지 (사용자 지적 2026-07-29: "짤리는 느낌").
 
-        폭이 모자라면 **아랫줄로 넘긴다** — 그래서 _reflow 가 있다.
+        폭이 모자라면 **아랫줄로 넘긴다** — 그래서 reflow 가 있다.
+        (2026-07-30 좌우 분할로 _Zone.reflow 로 옮겼다 — 이름만 바뀌었다)
         """
         code = _read("dock_bar")
-        self.assertIn("def _reflow", code)
+        self.assertIn("def reflow", code)
         self.assertNotIn("…", _fn_body(code, "_chip"))
+
+    def test_공통과_개인이_좌우로_갈린다(self):
+        r"""사용자 지적 2026-07-30: "위계적으로 전혀 구분이 안 갑니다."
+
+        가운데를 경계로 **왼쪽 공통 / 오른쪽 개인**이고 사이에 구분선이 선다.
+        두 구역에 같은 무게(uniform)를 줘야 경계가 한가운데에 선다 — 무게를
+        빼면 칩이 많은 쪽이 경계를 밀어 다시 뒤죽박죽이 된다.
+        """
+        code = _read("dock_bar")
+        self.assertIn('uniform="zone"', code)
+        self.assertIn("공통", code)
+        body = _fn_body(code, "render")
+        # 공통(메인 탭)과 개인(고른 탭)을 **각각** 담는다 — 한 줄로 잇지 않는다
+        self.assertIn("_common.set_chips", body)
+        self.assertIn("_personal.set_chips", body)
 
     def test_도구줄에는_닫기_단추가_없다(self):
         r"""✕ 금지 (사용자 결정 2026-07-29).
