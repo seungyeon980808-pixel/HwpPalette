@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HwpPalette 메인 창 시안 — 글자 위계 · 블럭 모양 (2026-07-30)</title>
+<style>
+  *{box-sizing:border-box}
+  body{
+    margin:0;padding:26px 20px 90px;background:#e7e9ec;color:#0d1117;
+    font-family:"Pretendard","맑은 고딕","Malgun Gothic",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  header{max-width:1560px;margin:0 auto 8px}
+  h1{font-size:20px;margin:0 0 6px;letter-spacing:-.3px}
+  header p{margin:0 0 8px;color:#57606a;font-size:13px;line-height:1.75;max-width:940px}
+  header code{background:#fff;border:1px solid #d0d7de;border-radius:4px;padding:1px 5px;font-size:12px}
+  header strong{color:#0d1117}
+
+  .note{max-width:1560px;margin:0 auto 26px;background:#fff;border:1px solid #d0d7de;
+    border-left:3px solid #0969da;border-radius:6px;padding:13px 16px;font-size:12.5px;
+    line-height:1.75;color:#3d444d;max-width:940px}
+  .note b{color:#0d1117}
+
+  h3.sec{max-width:1560px;margin:36px auto 14px;font-size:15px;letter-spacing:-.2px;
+    padding-bottom:7px;border-bottom:1px solid #cdd3da}
+
+  .rack{max-width:1560px;margin:0 auto;display:flex;flex-wrap:wrap;gap:30px 28px;align-items:flex-start}
+  .slot{flex:0 0 auto;width:352px}
+  .slot > h2{font-size:14px;margin:0 0 4px;display:flex;align-items:center;gap:7px;letter-spacing:-.2px}
+  .slot > h2 b{font-size:11px;font-weight:700;color:#fff;background:#24292f;border-radius:4px;padding:2px 7px;letter-spacing:.5px}
+  .slot > h2 b.now{background:#57606a}
+  .cost{font-size:10px;font-weight:600;border-radius:3px;padding:1px 6px;margin-left:auto;letter-spacing:.3px}
+  .c1{background:#e8f7ee;color:#0a6b2e}
+  .c2{background:#fff4e0;color:#8a5300}
+  .c3{background:#fdecec;color:#9b1c1c}
+  .ask{font-size:11.5px;color:#0969da;margin:0 0 4px;font-weight:600}
+  .why{font-size:12px;color:#57606a;line-height:1.65;margin:0 0 10px;min-height:92px}
+  .why strong{color:#0d1117}
+  .why em{font-style:normal;color:#8a5300;background:#fff4e0;border-radius:3px;padding:0 3px}
+  .tk{font-size:11px;color:#6e7781;line-height:1.6;margin:10px 0 0;
+    border-top:1px dashed #d0d7de;padding-top:8px}
+  .tk b{color:#3d444d}
+
+  /* ── 창 껍데기 (실제 창을 옮긴 것) ─────────────── */
+  .win{border:1px solid #c9ced6;border-radius:8px;overflow:hidden;background:#f5f5f7;
+    box-shadow:0 8px 24px rgba(16,22,26,.14)}
+  .tb{display:flex;align-items:center;gap:8px;height:29px;padding:0 4px 0 9px;
+    background:#f3f3f3;border-bottom:1px solid #e3e3e3;font-size:11.5px;color:#1a1a1a}
+  .tb i{width:12px;height:12px;border-radius:3px;background:#0071e3;flex:0 0 auto;font-style:normal}
+  .tb .s{flex:1}
+  .tb u{width:30px;text-align:center;color:#5c5c5c;text-decoration:none;line-height:29px;font-size:11px}
+
+  /* 도구줄 */
+  .bar{display:flex;align-items:center;gap:13px;padding:8px 12px 7px;background:#fff;
+    border-bottom:1px solid #ececf0;font-size:14px;color:#57606a}
+  .bar .sp{flex:1}
+  .bar .dot{width:9px;height:9px;border-radius:50%;background:#28c840}
+  .bar .div{width:1px;height:14px;background:#e0e0e6}
+
+  .zl{font-size:9.5px;letter-spacing:.6px;font-weight:600;color:#9aa0a8;padding:11px 13px 6px}
+  .zh{display:flex;align-items:center;gap:8px;padding:11px 13px 6px}
+  .zh span{font-size:9.5px;letter-spacing:.6px;font-weight:600;color:#9aa0a8}
+  .pick{font-size:10.5px;border:1px solid #d2d2d7;border-radius:4px;padding:1px 8px;background:#fff;color:#1d1d1f}
+  .cp{text-align:center;font-size:9px;color:#b8bcc4;padding:9px 0 10px}
+  .rule{height:1px;background:#e4e4e9;margin:4px 0 0}
+
+  /* 블럭 격자 — 기본형 (아이콘 위 / 이름 아래) */
+  .g{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:0 12px 11px}
+  .b{background:#fff;border:1px solid #e2e6ec;border-radius:6px;text-align:center;
+    padding:8px 4px 9px;line-height:1.25;color:#1d1d1f}
+  .b .ic{display:block;color:#8e949c;margin-bottom:3px}
+  .b.on{background:#0071e3;border-color:#0071e3;color:#fff}
+  .b.on .ic{color:#cfe4fb}
+
+  /* ══ 가 — 지금 ══ */
+  .A .b{font-size:11.5px;font-weight:600}
+  .A .b .ic{font-size:12px}
+
+  /* ══ 나 — 위계 ══ */
+  .B .zl,.B .zh span{font-size:8.5px;color:#b0b6be;letter-spacing:1.1px}
+  .B .b{font-size:13px;font-weight:600;padding:9px 4px 10px}
+  .B .b .ic{font-size:11px;margin-bottom:4px;color:#a2a8b0}
+
+  /* ══ 다 — 아이콘 주도 ══ */
+  .C .b{font-size:10px;font-weight:500;color:#57606a;padding:9px 4px 9px}
+  .C .b .ic{font-size:21px;margin-bottom:5px;color:#4a5058;line-height:1}
+  .C .b.on{color:#fff}
+  .C .b.on .ic{color:#fff}
+
+  /* ══ 라 — 선 지우기 ══ */
+  .D{background:#eeeef1}
+  .D .b{background:#fff;border:1px solid transparent;font-size:12px;font-weight:600;
+    box-shadow:0 1px 2px rgba(16,22,26,.05)}
+  .D .b .ic{font-size:12px}
+  .D .g{gap:7px}
+
+  /* ══ 마 — 가로형 ══ */
+  .E .g{grid-template-columns:repeat(2,1fr);gap:5px}
+  .E .b{display:flex;align-items:center;gap:8px;text-align:left;padding:9px 10px;
+    font-size:12px;font-weight:600}
+  .E .b .ic{margin:0;font-size:14px;flex:0 0 auto}
+
+  /* ══ 바 — 밀도 ══ */
+  .F .g{grid-template-columns:repeat(5,1fr);gap:5px;padding:0 11px 10px}
+  .F .b{font-size:10px;font-weight:600;padding:6px 2px 7px;border-radius:5px}
+  .F .b .ic{font-size:11px;margin-bottom:2px}
+
+  /* ── 글자 크기 비교표 ───────────────────────── */
+  .fstab{max-width:940px;margin:0 auto;background:#fff;border:1px solid #d0d7de;
+    border-radius:6px;overflow:hidden;font-size:12.5px}
+  .fstab table{width:100%;border-collapse:collapse}
+  .fstab th,.fstab td{padding:9px 13px;text-align:left;border-bottom:1px solid #ececf0}
+  .fstab th{background:#f6f8fa;font-size:11px;color:#57606a;font-weight:600;letter-spacing:.3px}
+  .fstab tr:last-child td{border-bottom:0}
+  .fstab .bad{background:#fdecec;color:#9b1c1c;border-radius:3px;padding:1px 6px;font-size:11px;font-weight:600}
+  .fstab .good{background:#e8f7ee;color:#0a6b2e;border-radius:3px;padding:1px 6px;font-size:11px;font-weight:600}
+  .samp{font-weight:600;color:#0d1117}
+
+  /* ── 격자 셀 비교 ──────────────────────────── */
+  .cells{max-width:1560px;margin:0 auto;display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}
+  .cellbox{width:352px}
+  .cellbox h2{font-size:14px;margin:0 0 4px;display:flex;align-items:center;gap:7px}
+  .cellbox h2 b{font-size:11px;font-weight:700;color:#fff;background:#24292f;border-radius:4px;padding:2px 7px}
+  .grid{background:#fff;border:1px solid #d0d7de;border-radius:6px;padding:13px;margin-top:8px}
+  .grid .gr{display:grid;gap:2px;justify-content:start}
+  .grid .c{background:#eef2f7;border:1px solid #dde4ec;border-radius:2px}
+  .grid .c.f{background:#0071e3;border-color:#0071e3}
+  .meas{font-size:11px;color:#6e7781;margin-top:9px;line-height:1.65}
+  .meas b{color:#3d444d}
+
+  .ans{max-width:940px;margin:40px auto 0;background:#0d1117;color:#e6edf3;border-radius:8px;
+    padding:18px 20px;font-size:13px;line-height:1.85}
+  .ans h4{margin:0 0 9px;font-size:14px;color:#fff}
+  .ans code{background:#21262d;border-radius:4px;padding:2px 7px;color:#79c0ff;font-size:12.5px}
+  .ans .ex{color:#8b949e;font-size:12px;margin-top:10px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>메인 창 시안 — 글자 위계와 블럭 모양</h1>
+  <p>
+    지금 쓰고 계신 창을 그대로 옮긴 뒤, <strong>한 가지씩만 바꿔</strong> 여섯 개를 만들었습니다.
+    블럭 배치·아이콘·색은 전부 그대로입니다 — 이미 정하신 <strong>H안</strong>(흰 카드 + 이름 위 아이콘)을
+    건드리지 않았습니다.
+  </p>
+  <p>
+    <code>가</code> 가 지금 화면입니다. 나머지와 나란히 놓고 보세요.
+  </p>
+</header>
+
+<div class="note">
+  <b>왜 이걸 고르셔야 하나요?</b><br>
+  감사에서 나온 문제 하나가 <b>숫자만으로는 답이 안 나옵니다.</b>
+  지금 블럭 이름은 12pt, 구역 라벨("공통 팔레트")은 11pt로 <b>1pt 차이</b>입니다.
+  화면 글자의 절반이 사실상 같은 크기라, 눈이 "무엇이 중요한지"를 못 읽습니다.<br>
+  다만 <b>얼마나 벌릴지는 취향</b>입니다. 크게 벌리면 또렷하지만 투박해지고,
+  적게 벌리면 조용하지만 위계가 약합니다. 그래서 직접 보고 고르시는 게 맞습니다.
+</div>
+
+<h3 class="sec">1. 메인 창 — 여섯 가지</h3>
+
+<div class="rack">
+
+  <!-- ══════ 가 — 지금 ══════ -->
+  <section class="slot">
+    <h2><b class="now">가</b> 지금 <span class="cost c1">기준</span></h2>
+    <p class="ask">비교 기준입니다. 여기서 무엇이 아쉬운가?</p>
+    <p class="why">
+      지금 실행 중인 화면 그대로입니다. 블럭 이름과 구역 라벨의 크기 차가 거의 없어,
+      <em>"공통 팔레트"라는 안내 글씨가 블럭 이름만큼 눈에 들어옵니다.</em>
+      정작 눌러야 할 것은 블럭인데 말입니다.
+    </p>
+    <div class="win A">
+      <div class="tb"><i></i><span>HwpPalette v0.2.0</span><span class="s"></span><u>─</u><u>□</u><u>✕</u></div>
+      <div class="bar">⚙ ↶ ⌕ ▤ ⊡ <span class="div"></span> ⓘ <span class="sp"></span><span class="dot"></span></div>
+      <div class="zl">공통 팔레트</div>
+      <div class="g">
+        <div class="b on"><span class="ic">⇒</span>마크다운<br>변환</div>
+        <div class="b"><span class="ic">¶</span>글씨체</div>
+        <div class="b"><span class="ic">▨</span>사진</div>
+        <div class="b"><span class="ic">※</span>특수기호</div>
+        <div class="b"><span class="ic">▤</span>양식<br>채우기</div>
+        <div class="b"><span class="ic">¶</span>기본<br>서식</div>
+        <div class="b"><span class="ic">⌕</span>통합 찾…</div>
+        <div class="b"><span class="ic">¶</span>기본 서…</div>
+      </div>
+      <div class="rule"></div>
+      <div class="zh"><span>개인 팔레트</span><span class="pick">수능 ▾</span></div>
+      <div class="g">
+        <div class="b"><span class="ic">▦</span>소1사진</div>
+        <div class="b"><span class="ic">▦</span>소2사진</div>
+        <div class="b"><span class="ic">▤</span>수능양식</div>
+        <div class="b"><span class="ic">▦</span>대1사진</div>
+        <div class="b"><span class="ic">▦</span>합답형1…</div>
+      </div>
+      <div class="cp">Copyright © 2026. Developed by 박승연 | SOMC</div>
+    </div>
+    <p class="tk"><b>작업:</b> 없음 (지금 그대로)</p>
+  </section>
+
+  <!-- ══════ 나 — 위계 ══════ -->
+  <section class="slot">
+    <h2><b>나</b> 위계 <span class="cost c1">가벼움</span></h2>
+    <p class="ask">누를 것과 안내를 눈이 갈라 볼 수 있는가?</p>
+    <p class="why">
+      <strong>블럭 이름을 키우고 구역 라벨을 줄였습니다.</strong> 그것뿐입니다.
+      아이콘·배치·색은 손대지 않았습니다. 라벨이 뒤로 물러나면서
+      <em>블럭이 화면의 주인공이 됩니다.</em> 감사가 지적한 1pt 문제에 대한
+      가장 작은 답입니다.
+    </p>
+    <div class="win B">
+      <div class="tb"><i></i><span>HwpPalette v0.2.0</span><span class="s"></span><u>─</u><u>□</u><u>✕</u></div>
+      <div class="bar">⚙ ↶ ⌕ ▤ ⊡ <span class="div"></span> ⓘ <span class="sp"></span><span class="dot"></span></div>
+      <div class="zl">공통 팔레트</div>
+      <div class="g">
+        <div class="b on"><span class="ic">⇒</span>마크다운<br>변환</div>
+        <div class="b"><span class="ic">¶</span>글씨체</div>
+        <div class="b"><span class="ic">▨</span>사진</div>
+        <div class="b"><span class="ic">※</span>특수기호</div>
+        <div class="b"><span class="ic">▤</span>양식<br>채우기</div>
+        <div class="b"><span class="ic">¶</span>기본<br>서식</div>
+        <div class="b"><span class="ic">⌕</span>통합 찾…</div>
+        <div class="b"><span class="ic">¶</span>기본 서…</div>
+      </div>
+      <div class="rule"></div>
+      <div class="zh"><span>개인 팔레트</span><span class="pick">수능 ▾</span></div>
+      <div class="g">
+        <div class="b"><span class="ic">▦</span>소1사진</div>
+        <div class="b"><span class="ic">▦</span>소2사진</div>
+        <div class="b"><span class="ic">▤</span>수능양식</div>
+        <div class="b"><span class="ic">▦</span>대1사진</div>
+        <div class="b"><span class="ic">▦</span>합답형1…</div>
+      </div>
+      <div class="cp">Copyright © 2026. Developed by 박승연 | SOMC</div>
+    </div>
+    <p class="tk"><b>작업:</b> <code>theme.FS</code> 값 네 개 수정. 코드 구조는 그대로.
+      <b>창 크기 안 변함.</b></p>
+  </section>
+
+  <!-- ══════ 다 — 아이콘 주도 ══════ -->
+  <section class="slot">
+    <h2><b>다</b> 아이콘 주도 <span class="cost c1">가벼움</span></h2>
+    <p class="ask">글자 대신 그림으로 먼저 찾게 하면?</p>
+    <p class="why">
+      아이콘을 크게, 이름을 작게 뒤집었습니다. <strong>손에 익으면 이름을 안 읽고
+      모양으로 찾습니다</strong> — 하루 수백 번 누르는 도구에서 이건 실제 속도 차이입니다.
+      다만 <em>새 블럭을 만들었을 때 아이콘이 겹치면 구별이 어려워집니다</em>
+      (지금 ¶ 가 세 곳에 쓰입니다).
+    </p>
+    <div class="win C">
+      <div class="tb"><i></i><span>HwpPalette v0.2.0</span><span class="s"></span><u>─</u><u>□</u><u>✕</u></div>
+      <div class="bar">⚙ ↶ ⌕ ▤ ⊡ <span class="div"></span> ⓘ <span class="sp"></span><span class="dot"></span></div>
+      <div class="zl">공통 팔레트</div>
+      <div class="g">
+        <div class="b on"><span class="ic">⇒</span>마크다운 변환</div>
+        <div class="b"><span class="ic">¶</span>글씨체</div>
+        <div class="b"><span class="ic">▨</span>사진</div>
+        <div class="b"><span class="ic">※</span>특수기호</div>
+        <div class="b"><span class="ic">▤</span>양식 채우기</div>
+        <div class="b"><span class="ic">¶</span>기본 서식</div>
+        <div class="b"><span class="ic">⌕</span>통합 찾기</div>
+        <div class="b"><span class="ic">¶</span>기본 서식2</div>
+      </div>
+      <div class="rule"></div>
+      <div class="zh"><span>개인 팔레트</span><span class="pick">수능 ▾</span></div>
+      <div class="g">
+        <div class="b"><span class="ic">▦</span>소1사진</div>
+        <div class="b"><span class="ic">▦</span>소2사진</div>
+        <div class="b"><span class="ic">▤</span>수능양식</div>
+        <div class="b"><span class="ic">▦</span>대1사진</div>
+        <div class="b"><span class="ic">▦</span>합답형1</div>
+      </div>
+      <div class="cp">Copyright © 2026. Developed by 박승연 | SOMC</div>
+    </div>
+    <p class="tk"><b>작업:</b> 아이콘 글자 크기 + 이름 크기 교체.
+      <b>이름이 작아져 두 줄이 한 줄로 들어갑니다</b> — 창이 조금 낮아집니다.</p>
+  </section>
+
+  <!-- ══════ 라 — 선 지우기 ══════ -->
+  <section class="slot">
+    <h2><b>라</b> 선 지우기 <span class="cost c1">가벼움</span></h2>
+    <p class="ask">더 조용해질 수 있는가?</p>
+    <p class="why">
+      <strong>블럭 테두리를 지우고 바탕을 한 단계 어둡게</strong> 했습니다.
+      선이 사라져도 흰 카드가 바탕에서 떠 보이므로 경계는 그대로 읽힙니다.
+      기획서의 "화려해지는 것이 아니라 조용해지는 것"에 가장 충실한 안입니다.
+      다만 <em>어두운 모드에서는 이 방법이 안 통합니다</em> — 밝기 차가 좁아서요.
+    </p>
+    <div class="win D">
+      <div class="tb"><i></i><span>HwpPalette v0.2.0</span><span class="s"></span><u>─</u><u>□</u><u>✕</u></div>
+      <div class="bar">⚙ ↶ ⌕ ▤ ⊡ <span class="div"></span> ⓘ <span class="sp"></span><span class="dot"></span></div>
+      <div class="zl">공통 팔레트</div>
+      <div class="g">
+        <div class="b on"><span class="ic">⇒</span>마크다운<br>변환</div>
+        <div class="b"><span class="ic">¶</span>글씨체</div>
+        <div class="b"><span class="ic">▨</span>사진</div>
+        <div class="b"><span class="ic">※</span>특수기호</div>
+        <div class="b"><span class="ic">▤</span>양식<br>채우기</div>
+        <div class="b"><span class="ic">¶</span>기본<br>서식</div>
+        <div class="b"><span class="ic">⌕</span>통합 찾…</div>
+        <div class="b"><span class="ic">¶</span>기본 서…</div>
+      </div>
+      <div class="rule"></div>
+      <div class="zh"><span>개인 팔레트</span><span class="pick">수능 ▾</span></div>
+      <div class="g">
+        <div class="b"><span class="ic">▦</span>소1사진</div>
+        <div class="b"><span class="ic">▦</span>소2사진</div>
+        <div class="b"><span class="ic">▤</span>수능양식</div>
+        <div class="b"><span class="ic">▦</span>대1사진</div>
+        <div class="b"><span class="ic">▦</span>합답형1…</div>
+      </div>
+      <div class="cp">Copyright © 2026. Developed by 박승연 | SOMC</div>
+    </div>
+    <p class="tk"><b>작업:</b> <code>BLOCK_EDGE</code> 를 바탕색과 같게 + 창 바탕 한 단계 조정.
+      <b>어두운 모드는 지금 방식(선 유지)을 그대로 둬야 합니다.</b></p>
+  </section>
+
+  <!-- ══════ 마 — 가로형 ══════ -->
+  <section class="slot">
+    <h2><b>마</b> 가로형 <span class="cost c2">중간</span></h2>
+    <p class="ask">이름이 잘리는 문제를 없앨 수 있는가?</p>
+    <p class="why">
+      아이콘을 왼쪽으로 보내고 이름을 오른쪽에 한 줄로 폈습니다.
+      <strong>"통합 찾…", "합답형1…" 처럼 잘리던 이름이 온전히 보입니다.</strong>
+      대신 한 줄에 두 개만 들어가서 <em>같은 블럭 수라면 창이 길어집니다.</em>
+      블럭 이름을 길게 짓는 편이시면 이쪽이 낫습니다.
+    </p>
+    <div class="win E">
+      <div class="tb"><i></i><span>HwpPalette v0.2.0</span><span class="s"></span><u>─</u><u>□</u><u>✕</u></div>
+      <div class="bar">⚙ ↶ ⌕ ▤ ⊡ <span class="div"></span> ⓘ <span class="sp"></span><span class="dot"></span></div>
+      <div class="zl">공통 팔레트</div>
+      <div class="g">
+        <div class="b on"><span class="ic">⇒</span>마크다운 변환</div>
+        <div class="b"><span class="ic">¶</span>글씨체</div>
+        <div class="b"><span class="ic">▨</span>사진</div>
+        <div class="b"><span class="ic">※</span>특수기호</div>
+        <div class="b"><span class="ic">▤</span>양식 채우기</div>
+        <div class="b"><span class="ic">¶</span>기본 서식</div>
+        <div class="b"><span class="ic">⌕</span>통합 찾기</div>
+        <div class="b"><span class="ic">¶</span>기본 서식2</div>
+      </div>
+      <div class="rule"></div>
+      <div class="zh"><span>개인 팔레트</span><span class="pick">수능 ▾</span></div>
+      <div class="g">
+        <div class="b"><span class="ic">▦</span>소1사진</div>
+        <div class="b"><span class="ic">▦</span>소2사진</div>
+        <div class="b"><span class="ic">▤</span>수능양식</div>
+        <div class="b"><span class="ic">▦</span>대1사진</div>
+        <div class="b"><span class="ic">▦</span>합답형1</div>
+      </div>
+      <div class="cp">Copyright © 2026. Developed by 박승연 | SOMC</div>
+    </div>
+    <p class="tk"><b>작업:</b> 블럭 내부 배치를 세로에서 가로로. <b>격자 칸 수 계산이
+      바뀝니다</b> — 블럭 크기 조절(가로 2칸 등) 코드도 같이 봐야 합니다.</p>
+  </section>
+
+  <!-- ══════ 바 — 밀도 ══════ -->
+  <section class="slot">
+    <h2><b>바</b> 밀도 <span class="cost c2">중간</span></h2>
+    <p class="ask">블럭이 스무 개로 늘어나도 버티는가?</p>
+    <p class="why">
+      블럭을 작게 줄이고 한 줄에 다섯 개를 넣었습니다.
+      <strong>지금은 블럭이 열세 개지만, 앞으로 계속 늘어납니다.</strong>
+      그때 창이 세로로 길어져 화면을 덮는 것을 미리 막는 안입니다.
+      다만 <em>글자가 작아져 눈이 피로하고, 히트 타깃도 작아집니다</em> —
+      감사에서 지적한 24px 하한에 가까워집니다.
+    </p>
+    <div class="win F">
+      <div class="tb"><i></i><span>HwpPalette v0.2.0</span><span class="s"></span><u>─</u><u>□</u><u>✕</u></div>
+      <div class="bar">⚙ ↶ ⌕ ▤ ⊡ <span class="div"></span> ⓘ <span class="sp"></span><span class="dot"></span></div>
+      <div class="zl">공통 팔레트</div>
+      <div class="g">
+        <div class="b on"><span class="ic">⇒</span>마크다운<br>변환</div>
+        <div class="b"><span class="ic">¶</span>글씨체</div>
+        <div class="b"><span class="ic">▨</span>사진</div>
+        <div class="b"><span class="ic">※</span>특수기호</div>
+        <div class="b"><span class="ic">▤</span>양식<br>채우기</div>
+        <div class="b"><span class="ic">¶</span>기본<br>서식</div>
+        <div class="b"><span class="ic">⌕</span>통합<br>찾기</div>
+        <div class="b"><span class="ic">¶</span>기본<br>서식2</div>
+      </div>
+      <div class="rule"></div>
+      <div class="zh"><span>개인 팔레트</span><span class="pick">수능 ▾</span></div>
+      <div class="g">
+        <div class="b"><span class="ic">▦</span>소1사진</div>
+        <div class="b"><span class="ic">▦</span>소2사진</div>
+        <div class="b"><span class="ic">▤</span>수능양식</div>
+        <div class="b"><span class="ic">▦</span>대1사진</div>
+        <div class="b"><span class="ic">▦</span>합답형1</div>
+      </div>
+      <div class="cp">Copyright © 2026. Developed by 박승연 | SOMC</div>
+    </div>
+    <p class="tk"><b>작업:</b> 격자 열 수와 블럭 크기 기본값 변경.
+      <b>감사 기준과 충돌합니다</b> — 고르시면 히트 타깃을 별도로 챙겨야 합니다.</p>
+  </section>
+
+</div>
+
+<!-- ══════════════════════════════════════════ -->
+<h3 class="sec">2. 참고 — 지금 글자 크기가 왜 문제인가</h3>
+
+<div class="fstab">
+  <table>
+    <tr>
+      <th style="width:110px">역할</th>
+      <th style="width:70px">논리값</th>
+      <th style="width:80px">실제 크기</th>
+      <th style="width:90px">앞과의 차</th>
+      <th>이 크기로 보이는 글자</th>
+    </tr>
+    <tr>
+      <td>창 제목</td><td>12</td><td>16pt</td><td>—</td>
+      <td><span class="samp" style="font-size:20px">팔레트 설정</span></td>
+    </tr>
+    <tr>
+      <td>절 제목</td><td>10</td><td>13pt</td><td>3pt</td>
+      <td><span class="samp" style="font-size:17px">공통 팔레트</span></td>
+    </tr>
+    <tr>
+      <td>본문</td><td>9</td><td>12pt</td><td><span class="bad">1pt</span></td>
+      <td><span class="samp" style="font-size:16px">마크다운 변환</span></td>
+    </tr>
+    <tr>
+      <td>보조</td><td>8</td><td>11pt</td><td><span class="bad">1pt</span></td>
+      <td><span class="samp" style="font-size:14.7px">글씨체 함초롬바탕</span></td>
+    </tr>
+    <tr>
+      <td>캡션</td><td>7</td><td>10pt</td><td><span class="bad">1pt</span></td>
+      <td><span class="samp" style="font-size:13.3px">Copyright © 2026</span></td>
+    </tr>
+  </table>
+</div>
+
+<div class="note" style="margin-top:16px">
+  <b>본문(12pt)과 보조(11pt)가 1pt 차이인데, 이 둘이 코드에서 각각 22번씩 쓰입니다.</b><br>
+  즉 화면 글자의 절반가량이 서로 구별되지 않는 크기입니다. 위 표에서 3~5행 글씨를
+  눈으로 훑어보시면 — 크기가 다르다는 걸 알아채기 어려우실 겁니다.
+  <b>시안 나</b>는 이 간격을 벌린 것이고, 나머지는 그 위에 얹은 변화입니다.
+</div>
+
+<!-- ══════════════════════════════════════════ -->
+<h3 class="sec">3. 따로 정할 것 — 설정 창의 배치 격자</h3>
+
+<div class="note" style="margin-bottom:18px">
+  이건 메인 창이 아니라 <b>설정 창에서 블럭을 배치하는 격자</b>입니다.
+  열을 많이 잡으면 칸이 <b>16px</b>까지 작아지는데, 접근성 기준(WCAG)의 최소 클릭 크기는
+  <b>24px</b>입니다. 손이 떨리거나 마우스가 미끄러지면 옆 칸을 누르게 됩니다.
+</div>
+
+<div class="cells">
+  <div class="cellbox">
+    <h2><b>1</b> 지금 그대로</h2>
+    <div class="grid">
+      <div class="gr" style="grid-template-columns:repeat(24,16px);grid-auto-rows:16px">
+        <script>document.write('<div class="c"></div>'.repeat(24*4))</script>
+      </div>
+      <p class="meas">칸 <b>16px</b> · 24열 · 격자 폭 <b>420px</b><br>
+        많이 담기지만 <b>기준보다 8px 작습니다.</b></p>
+    </div>
+  </div>
+
+  <div class="cellbox">
+    <h2><b>2</b> 24px로 올리기</h2>
+    <div class="grid">
+      <div class="gr" style="grid-template-columns:repeat(16,24px);grid-auto-rows:24px">
+        <script>document.write('<div class="c"></div>'.repeat(16*4))</script>
+      </div>
+      <p class="meas">칸 <b>24px</b> · 16열 · 격자 폭 <b>420px</b><br>
+        기준 통과. 대신 <b>한 줄에 담기는 칸이 24 → 16개</b>로 줄어듭니다.</p>
+    </div>
+  </div>
+
+  <div class="cellbox">
+    <h2><b>3</b> 24px + 창 넓히기</h2>
+    <div class="grid">
+      <div class="gr" style="grid-template-columns:repeat(24,24px);grid-auto-rows:24px">
+        <script>document.write('<div class="c"></div>'.repeat(24*4))</script>
+      </div>
+      <p class="meas">칸 <b>24px</b> · 24열 · 격자 폭 <b>622px</b><br>
+        열 수도 크기도 지키지만 <b>설정 창이 200px 넓어집니다.</b></p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════ -->
+<div class="ans">
+  <h4>고르셨으면 이렇게 알려주세요</h4>
+  <code>가</code>~<code>바</code> 중 하나, 그리고 격자는 <code>1</code>·<code>2</code>·<code>3</code> 중 하나.
+  <div class="ex">
+    예 — <b>"나로 하고, 격자는 2"</b> / <b>"다인데 이름은 좀 더 크게"</b> /
+    <b>"나랑 라를 섞어줘"</b><br>
+    섞어도 됩니다. 하나만 고르실 필요 없습니다. 마음에 드는 게 없으면 그렇게 말씀해주셔도 됩니다.
+  </div>
+</div>
+
+</body>
+</html>
