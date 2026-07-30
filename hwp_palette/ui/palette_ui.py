@@ -1685,18 +1685,22 @@ class SettingsWindow(tk.Toplevel):
         # 설정 창에서는 기호가 보이는데 정작 팔레트에는 없다.
         icon = (theme.block_icon(blk)
                 if self._cur_tab_name() == palette.MAIN_TAB else None)
-        # 2026-07-30: 아이콘·이름 크기를 메인 창과 **완전히 맞춘다** (사용자
-        # 지적 — "두개가 동일하게 보여야하는거고 메인 위젯 포멧을 그대로
-        # 팔레트 설정에서 따라하도록"). app._BLOCK_ICON_FS/_2LINE 및
-        # size = 8 if two_lines else 9 와 같은 값이다. 순환 임포트를 피해
-        # 값만 복제한다 — 나중에 app.py 쪽 값이 바뀌면 여기도 같이 바꿔야 한다.
+        # 2026-07-30 2차 수정: 아이콘·이름 **비율**을 메인 창과 맞춘다.
+        # 처음엔 pt 값(16/9)을 메인 창과 그대로 맞췄는데, 이 칸(44px)은
+        # 메인 창 칸(58px)보다 작아서 그 크기 그대로는 아이콘만으로 세로가
+        # 다 차 이름이 짓눌렸다(사용자 지적: "배치 자체가 안맞는데").
+        # _tile_scale() 로 칸 비율만큼 줄이면 절대 크기는 달라도 **아이콘 위
+        # 이름 한 줄**이라는 배치 자체는 메인 창과 같은 모양이 된다.
+        _, scale = self._tile_scale()
+        icon_size = max(7, round((13 if two_lines else 16) * scale))
+        label_size = max(6, round((8 if two_lines else 9) * scale))
         parts = []
         if icon:
             icon_fg = (theme.colors()["muted"]
                        if theme.text_on(bg) != "#ffffff" else "#ffffff")
             parts.append(tk.Label(
                 tile, text=icon, bg=bg, fg=icon_fg,
-                font=(FONT, theme.fs(13 if two_lines else 16))))
+                font=(FONT, theme.fs(icon_size))))
             parts[-1].pack(fill="x", pady=(3, 0))
         # 글자색은 배경 밝기에 맞춰 정한다 — 어두운 색을 골라도 읽히게 (제안 18)
         # 아이콘이 있으면 가운데, 없으면 예전처럼 왼쪽에 붙인다
@@ -1705,7 +1709,7 @@ class SettingsWindow(tk.Toplevel):
                        fg=theme.text_on(bg),
                        anchor="center" if icon else "w",
                        justify="center" if icon else "left",
-                       font=(FONT, theme.fs(8 if two_lines else 9)))
+                       font=(FONT, theme.fs(label_size)))
         lab.pack(expand=True, fill="both",
                  padx=(0 if icon else TILE_TEXT_PAD, 0))
         parts.append(lab)
@@ -1885,24 +1889,42 @@ class SettingsWindow(tk.Toplevel):
         self._render_blocks()
         self._notify()
 
-    def _tile_text(self, blk, span=1):
-        r"""칸 수에 맞춰 자른다 — 메인 창(app._fit_label)과 **완전히 같은 규칙**.
+    # 메인 창 블럭이 기준으로 삼는 칸 크기 (app._BLOCK_CELL_MAX_PX 와 같은 값).
+    # 이 창(팔레트 설정)의 미리보기 칸은 GRID_WIDTH_PX(420) 를 열 수로 나눠
+    # 정하므로, 열이 9개만 돼도 44px 를 못 넘는다 — 창 폭은 이미 사용자가
+    # "안 2(창 폭 유지)"로 정했으므로(2026-07-30) 여기서 넓히지 않는다.
+    # 대신 **메인 창 대비 비율**로 아이콘·글자 크기를 줄인다 — 절대 크기는
+    # 다르지만 아이콘:이름 비율, 자리 배치는 메인 창과 같은 모양이 된다.
+    _MAIN_CELL_REF = 58
 
-        2026-07-30: 메인 창은 표시 폭(동아시아 너비) 기준으로 자르는데
-        (공백·숫자는 한글의 절반 폭) 여기는 글자 **수**로만 재고 있었다.
-        그래서 '마크다운 변환'처럼 공백이 낀 이름이 메인 창에서는 안 잘리는데
-        이 미리보기에서는 잘렸다 — 두 화면이 다른 물건처럼 보이는 원인이었다
-        (사용자 지적). app._fit_label 을 그대로 옮겨 쓴다(순환 임포트를 피해
-        복제하되, 갈라지지 않도록 폰트 크기도 app._BLOCK_ICON_FS 와 맞춘다
-        — _make_tile 참고).
+    def _tile_scale(self):
+        """이 칸이 메인 창 칸(58px)의 몇 배 크기인가."""
+        cell = self._cell_px(self._cur_cols())
+        return cell, cell / self._MAIN_CELL_REF
+
+    def _tile_text(self, blk, span=1):
+        r"""칸 수에 맞춰 자른다 — 메인 창(app._fit_label)과 **같은 규칙**을
+        이 칸의 실제 크기에 맞춰 비율로 적용한다.
+
+        2026-07-30 1차 수정: 메인 창은 표시 폭(동아시아 너비) 기준으로 자르는데
+        (공백·숫자는 한글의 절반 폭) 여기는 글자 **수**로만 재고 있었다 — 그건
+        고쳤다. 그런데 글자 **크기**를 메인 창과 그대로 맞췄더니(16/9pt) 이
+        칸(44px)에는 아이콘만으로 세로가 거의 다 차서 이름이 짓눌렸다
+        (사용자 지적: "배치 자체가 안맞는데"). 칸이 메인 창(58px)보다 작은
+        만큼 글자도 **같은 비율로** 줄여야 아이콘 위 이름 배치가 메인 창과
+        같은 모양으로 보인다 — _tile_scale·_make_tile 참고.
         """
         import unicodedata
 
         def w(ch):
             return 1.0 if unicodedata.east_asian_width(ch) in ("W", "F") else 0.5
 
-        cell = self._cell_px(self._cur_cols())
-        char_px = theme.fs(FS["body"]) * 4 / 3     # 메인 창과 같은 기준(body=9)
+        cell, scale = self._tile_scale()
+        # 자르는 기준은 항상 **한 줄 이름 크기**(메인 창의 body=9와 같은 몫)로
+        # 잰다 — 실제로 두 줄이 되면 그보다 작은 글자로 그리므로(_make_tile)
+        # 여유가 생긴다. 메인 창의 _fit_label 도 같은 방식이다.
+        body_size = max(6, round(9 * scale))
+        char_px = theme.fs(body_size) * 4 / 3
         width = cell * span + CELL_GAP * (span - 1) - TILE_TEXT_PAD // 2
         limit = max(2.0, width / max(1, char_px))
 
