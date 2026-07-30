@@ -275,15 +275,15 @@ def block_edge():
 # ⌕ 는 이미 위쪽 도구줄에서 쓰고 있어 이 PC 에서 그려지는 것이 확인된 글자다.
 BLOCK_ICON = {
     "convert":      "⇒",    # 마크다운 → 한글로 넘어간다
-    # "가나" — 작은 두 음절이 나란히 붙어 있는 모양으로 **서식/글꼴**을
-    # 말한다. 서양 UI 의 "Aa"(폰트 견본) 관례를 한글로 옮긴 것 — 사용자
-    # 지적(2026-07-30): 문단 기호(¶)는 '서식'을 직관적으로 안 말해 준다.
-    # 한글 두 글자라 KS X 1001 은 당연히 통과하고, 어느 한글 글꼴에도 있다.
-    "reset_format": "가나",
-    # "▲" — 사진/풍경을 뜻하는 가장 단순한 산 모양. 빗금 친 네모(▨)는
-    # '그림이 아직 없는 자리'를 뜻하는 스케치 관례였지만, 실제 그림이 든
-    # 사진 블럭에는 안 어울린다는 지적(2026-07-30)에 따라 바꿨다.
-    # ▲/△/▼/▽ 는 화살표·정렬 표시로 이미 흔히 쓰여 어느 한글 글꼴에도 있다.
+    # "가a" — 한글 한 자 + 라틴 소문자 한 자. 한글 워드프로세서·글자 모양
+    # 대화상자가 흔히 쓰는 "폰트 견본" 표기(한/영 글꼴이 같이 걸린다는 뜻)를
+    # 그대로 가져왔다. 처음엔 "가나"(두 음절)를 썼는데 **완전한 한글 두
+    # 글자**라 한 글자 아이콘(⇒ ¶ ▨)의 거의 두 배 면적을 먹어 아이콘이
+    # 아니라 작은 제목처럼 보였다(사용자 지적 2026-07-30, "너무 크잖아").
+    # "a" 는 폭이 좁아 이 문제가 없다 (사용자 확정 2026-07-30).
+    "reset_format": "가a",
+    # "photo" 는 텍스트가 아니라 **그림**이다 — BLOCK_ICON_ASSET 참고.
+    # 여기 값은 이미지를 못 불러올 때만 쓰는 대비책이다.
     "photo":        "▲",
     "special":      "※",    # 특수기호 그 자체
     "form_fill":    "▤",    # 줄 그은 종이 = 양식
@@ -297,9 +297,38 @@ BLOCK_ICON = {
 TYPE_ICON = {
     "template": "▦",
     "form":     "▤",
-    "function": "가나",      # BLOCK_ICON["reset_format"] 과 같은 이유·같은 글자
+    "function": "가a",      # BLOCK_ICON["reset_format"] 과 같은 이유·같은 글자
     "builtin":  "◆",        # 카탈로그에 없는 새 도구가 생겼을 때의 기본값
 }
+
+# ── 글자로 못 그리는 아이콘 (2026-07-30) ────────────────
+# assets/make_block_icons.py 가 이미 손으로 그려 assets/icons/ 에 구워 둔
+# 진짜 벡터 그림이 있는 자리는 글자 대신 **그 PNG**를 쓴다. 사진은
+# 2026-07-29 에 이미 확정된 그림(액자+산+해)이었는데, 그동안 프로그램은
+# 이걸 안 쓰고 글자(▨)로 대신하고 있었다 — 그 연결을 여기서 잇는다.
+#
+# 값은 assets/icons/<값>-<크기>.png 파일 이름이다. 무채색(다른 아이콘과
+# 같은 회색 톤) 버전을 쓰기로 했으므로 "_mono" 접미사가 붙은 별도 파일을
+# 가리킨다 — 원본(물감 분류색) 파일과 나란히 있다 (make_block_icons.py 의
+# MONO 목록 참고).
+BLOCK_ICON_ASSET = {
+    "photo": "photo_mono",
+}
+
+
+def block_icon_key(block):
+    """이 블럭의 아이콘을 고를 **키**. 그림(BLOCK_ICON_ASSET)과 글자(BLOCK_ICON)가
+    같은 키를 공유하므로, 어느 쪽으로 그릴지는 호출부가 BLOCK_ICON_ASSET 로 정한다.
+    """
+    if block.get("type") == "builtin":
+        key = block.get("key")
+        return key if key in BLOCK_ICON else None
+    return block.get("type") if block.get("type") in TYPE_ICON else "builtin"
+
+
+def block_icon_asset(block):
+    """이 블럭 아이콘이 실제 그림 파일이면 그 파일 이름(크기 앞자리), 아니면 None."""
+    return BLOCK_ICON_ASSET.get(block_icon_key(block))
 
 
 def block_icon(block):

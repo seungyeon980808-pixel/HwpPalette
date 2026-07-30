@@ -33,7 +33,7 @@ class RoundButton(tk.Canvas):
                  fg="#1d1d1f", radius=8, font=None, outline="",
                  focus_color="#0071e3", zone_bg=None, justify="center",
                  trailing=None, pad_in=10, align="center", image=None,
-                 icon=None, icon_font=None, icon_fg=None):
+                 icon=None, icon_font=None, icon_fg=None, icon_image=None):
         # zone_bg = 모서리 '바깥'에 비칠 색. 안 주면 부모 배경을 따른다.
         super().__init__(parent, highlightthickness=0, bd=0,
                          bg=zone_bg or parent.cget("bg"),
@@ -81,6 +81,11 @@ class RoundButton(tk.Canvas):
         # 가운데이고 이름은 왼쪽에 붙으면 둘이 한 덩어리로 안 읽히고 계단처럼
         # 어긋나 보인다.
         self._icon = icon
+        # icon_image = 이름 위 한 줄에 **그림**을 얹는다(사진 등, 2026-07-30) —
+        # icon(글자 기호) 과 같은 자리를 쓰되 폰트 대신 실제 아이콘 PNG 다.
+        # 글자로는 그릴 수 없는 그림(액자+산+해 등)에 쓴다. icon 과 동시에
+        # 주지 않는다 — 자리가 하나뿐이다.
+        self._icon_image = icon_image
         self._icon_font = icon_font or font
         # 아이콘은 이름보다 **흐리게** 그린다. 같은 색이면 아이콘이 이름과 같은
         # 무게로 읽혀 둘이 서로 경쟁하고, 격자로 늘어놓으면 기호가 먼저 눈에
@@ -121,7 +126,7 @@ class RoundButton(tk.Canvas):
             if self._trailing:      # 오른쪽 기호가 글자를 침범하지 않게
                 w += f.measure(self._trailing) + pad_x
             h = f.metrics("linespace") * len(lines) + pad_y * 2
-            if self._icon:      # 아이콘 줄만큼 키를 더 준다
+            if self._icon or self._icon_image:  # 아이콘 줄만큼 키를 더 준다
                 icon_h, _ = self._text_metrics()
                 h += icon_h + ICON_GAP
             self.config(width=max(w, min_w), height=h)
@@ -138,7 +143,7 @@ class RoundButton(tk.Canvas):
         들고 있는다. set_text·retint 가 무효로 만든다.
         """
         key = (str(self._font), str(self._icon_font), self._icon,
-               (self._text or "").count("\n"))
+               self._icon_image, (self._text or "").count("\n"))
         if self._metrics and self._metrics[0] == key:
             return self._metrics[1]
         import tkinter.font as tkfont
@@ -147,7 +152,9 @@ class RoundButton(tk.Canvas):
             label_h = (lf.metrics("linespace")
                        * len((self._text or " ").split("\n")))
             icon_h = 0
-            if self._icon:
+            if self._icon_image is not None:
+                icon_h = self._icon_image.height()
+            elif self._icon:
                 icf = (tkfont.Font(font=self._icon_font)
                        if self._icon_font else tkfont.Font())
                 icon_h = icf.metrics("linespace")
@@ -164,7 +171,7 @@ class RoundButton(tk.Canvas):
         두 줄일 때 덩어리 위치가 달라져, 격자로 늘어놓았을 때 아이콘 줄이 들쭉
         날쭉해진다.
         """
-        if not self._icon:
+        if not self._icon and self._icon_image is None:
             return h // 2, 0
         icon_h, label_h = self._text_metrics()
         if not icon_h or not label_h:
@@ -200,7 +207,7 @@ class RoundButton(tk.Canvas):
 
         # 글자 자리 — trailing 이 있거나 align="left" 면 왼쪽 붙임.
         # 단 아이콘이 있으면 무조건 가운데다 (아이콘과 이름이 한 덩어리로 서야 한다).
-        if self._icon:
+        if self._icon or self._icon_image is not None:
             lx, lanchor = w // 2, "center"
         elif self._trailing or self._align == "left":
             lx, lanchor = self._pad_in, "w"
@@ -218,7 +225,13 @@ class RoundButton(tk.Canvas):
                 self.create_image(w // 2, h // 2 + dy, image=self._image,
                                   tags="img")
                 return
-            if self._icon:
+            if self._icon_image is not None:
+                # 사진처럼 글자로 못 그리는 아이콘 — 실제 PNG (2026-07-30).
+                # "icon" 태그를 그대로 쓰면 텍스트 아이콘과 겹쳐 서로 지우므로
+                # "iconimg" 로 따로 둔다.
+                self.create_image(w // 2, iy + dy, image=self._icon_image,
+                                  tags="iconimg")
+            elif self._icon:
                 self.create_text(w // 2, iy + dy, text=self._icon,
                                  anchor="center", font=self._icon_font,
                                  fill=self._icon_fg, tags="icon")
@@ -237,7 +250,10 @@ class RoundButton(tk.Canvas):
         if self._image is not None:
             self.coords("img", w // 2, h // 2 + dy)
             return
-        if self._icon and self.find_withtag("icon"):
+        if self._icon_image is not None and self.find_withtag("iconimg"):
+            self.coords("iconimg", w // 2, iy + dy)
+            self.itemconfig("iconimg", image=self._icon_image)
+        elif self._icon and self.find_withtag("icon"):
             self.coords("icon", w // 2, iy + dy)
             self.itemconfig("icon", text=self._icon, fill=self._icon_fg,
                             font=self._icon_font)

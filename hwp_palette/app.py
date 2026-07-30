@@ -1881,6 +1881,27 @@ def _add_tooltip(widget, text, force=False):
 _BLOCK_ICON_FS = 16
 _BLOCK_ICON_FS_2LINE = 13
 
+# 글자로 못 그리는 아이콘(사진 등) — assets/icons/ 의 진짜 PNG 를 쓴다
+# (2026-07-30). 도구줄의 _bar_icon 과 같은 캐시 방식이다.
+_BLOCK_ICON_SIZES = (16, 20, 24, 32, 48)
+_block_icon_images = {}
+
+
+def _block_icon_image(asset, target_px):
+    """asset 이름의 PNG 를 target_px 에 제일 가까운 구운 크기로 불러온다."""
+    size = min(_BLOCK_ICON_SIZES, key=lambda s: abs(s - target_px))
+    key = (asset, size)
+    if key in _block_icon_images:
+        return _block_icon_images[key]
+    path = paths.RESOURCE_DIR / "assets" / "icons" / f"{asset}-{size}.png"
+    try:
+        img = tk.PhotoImage(file=str(path))
+    except Exception as e:
+        applog.exc(f"블럭 아이콘 이미지 로드 실패 ({asset}) — 글자로 대신한다", e)
+        img = None
+    _block_icon_images[key] = img
+    return img
+
 
 def _block_icon_fg(bg):
     """블럭 배경 위의 아이콘 색 — 이름보다 한 단계 흐리게.
@@ -1909,6 +1930,7 @@ def _make_block_button(parent, blk, span=1, show_icon=True, cell_px=None):
     # 열 칸 스무 칸 반복되면 뜻을 전하는 대신 **무늬**가 된다. 공통 팔레트는
     # 도구마다 기호가 달라서 아이콘이 제 몫을 하지만 여기서는 아니다.
     icon = theme.block_icon(blk) if show_icon else None
+    icon_asset = theme.block_icon_asset(blk) if show_icon else None
     # 가운데 정렬 기준 (2026-07-30):
     #   아이콘이 있으면      → 가운데 (기호와 이름이 한 기둥에 선다)
     #   개인 팔레트(글자만)   → 가운데 (승인된 시안)
@@ -1935,6 +1957,14 @@ def _make_block_button(parent, blk, span=1, show_icon=True, cell_px=None):
     # 아이콘이 있으면 이름은 **가운데**로 간다 (RoundButton 이 알아서 그렇게
     # 그린다). 2026-07-28 의 왼쪽 정렬은 아이콘이 없던 때의 규칙이다 — 아이콘만
     # 가운데이고 이름은 왼쪽이면 두 줄이 계단처럼 어긋나 보인다.
+    icon_font = _font(_BLOCK_ICON_FS_2LINE if two_lines else _BLOCK_ICON_FS)
+    # 사진처럼 그림이 있는 자리는 **그 PNG**를 쓴다(theme.BLOCK_ICON_ASSET) —
+    # 글자(icon)와 그림(icon_image)은 RoundButton 에서 자리가 하나뿐이라
+    # 그림이 있으면 글자는 넘기지 않는다. 이미지 로드가 실패하면(_block_icon_image
+    # 가 None 을 돌려주면) 자동으로 글자로 물러난다.
+    icon_image = None
+    if icon_asset:
+        icon_image = _block_icon_image(icon_asset, icon_font[1] * 4 // 3)
     btn = RoundButton(parent, text=label,
                       command=lambda b=blk: run_palette_block(b),
                       bg=bg, fg=theme.text_on(bg), radius=theme.RADIUS["ctl"], font=_font(size),
@@ -1943,9 +1973,9 @@ def _make_block_button(parent, blk, span=1, show_icon=True, cell_px=None):
                       align="center" if _centered else "left",
                       justify="center" if _centered else "left",
                       pad_in=_BLOCK_TEXT_PAD,
-                      icon=icon,
-                      icon_font=_font(_BLOCK_ICON_FS_2LINE if two_lines
-                                      else _BLOCK_ICON_FS),
+                      icon=None if icon_image else icon,
+                      icon_image=icon_image,
+                      icon_font=icon_font,
                       icon_fg=_block_icon_fg(bg))
     # 도구 블럭은 이름표를 달아 둔다 — 튜토리얼이 '마크다운 변환' 버튼을
     # 짚으려면 그 위젯을 찾을 수 있어야 한다 (2026-07-26).

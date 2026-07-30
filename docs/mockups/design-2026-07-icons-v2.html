@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HwpPalette 아이콘 시안 — 사진·서식 (2026-07-30)</title>
+<style>
+  *{box-sizing:border-box}
+  body{
+    margin:0;padding:26px 20px 90px;background:#e7e9ec;color:#0d1117;
+    font-family:"Pretendard","맑은 고딕","Malgun Gothic",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  header{max-width:1200px;margin:0 auto 10px}
+  h1{font-size:20px;margin:0 0 6px;letter-spacing:-.3px}
+  header p{margin:0 0 8px;color:#57606a;font-size:13px;line-height:1.75;max-width:900px}
+  header code{background:#fff;border:1px solid #d0d7de;border-radius:4px;padding:1px 5px;font-size:12px}
+  .note{max-width:900px;margin:0 auto 28px;background:#fff;border:1px solid #d0d7de;
+    border-left:3px solid #9b1c1c;border-radius:6px;padding:13px 16px;font-size:12.5px;
+    line-height:1.75;color:#3d444d}
+  .note b{color:#0d1117}
+
+  h3.sec{max-width:1200px;margin:34px auto 14px;font-size:15px;letter-spacing:-.2px;
+    padding-bottom:7px;border-bottom:1px solid #cdd3da}
+
+  .row{max-width:1200px;margin:0 auto;display:flex;flex-wrap:wrap;gap:20px}
+  .cand{flex:0 0 auto;width:190px;background:#fff;border:1px solid #d0d7de;border-radius:8px;
+    padding:14px 12px;text-align:center}
+  .cand.pick{border-color:#0969da;box-shadow:0 0 0 2px rgba(9,105,218,.15)}
+  .cand h4{font-size:12.5px;margin:0 0 3px;color:#0d1117}
+  .cand .tag{display:inline-block;font-size:9.5px;font-weight:700;border-radius:3px;
+    padding:1px 6px;margin-bottom:9px;letter-spacing:.2px}
+  .tag.rec{background:#e8f7ee;color:#0a6b2e}
+  .tag.risk{background:#fdecec;color:#9b1c1c}
+  .tag.neutral{background:#eef1f4;color:#57606a}
+
+  /* 실제 블럭과 같은 크기 (본문 12px·아이콘 21px 등가) */
+  .tile{background:#fff;border:1px solid #e2e6ec;border-radius:6px;
+    padding:11px 6px 12px;margin:0 auto 9px;width:150px}
+  .tile.on{background:#0071e3;border-color:#0071e3}
+  .tile .ic{display:block;font-size:28px;line-height:1;margin-bottom:6px;color:#4a5058}
+  .tile.on .ic{color:#fff}
+  .tile .nm{font-size:16px;font-weight:500;color:#1d1d1f}
+  .tile.on .nm{color:#fff}
+  .cand .why{font-size:11px;color:#6e7781;line-height:1.6;text-align:left;margin-top:6px}
+  .cand .why b{color:#3d444d}
+
+  .cmp{max-width:1200px;margin:0 auto 10px;background:#fff;border:1px solid #d0d7de;
+    border-radius:8px;padding:16px 18px;font-size:12.5px;line-height:1.8;color:#3d444d}
+  .cmp b{color:#0d1117}
+  .cmp .big{font-size:32px;line-height:1;display:inline-block;margin:0 10px;vertical-align:middle;color:#4a5058}
+
+  .ans{max-width:900px;margin:38px auto 0;background:#0d1117;color:#e6edf3;border-radius:8px;
+    padding:18px 20px;font-size:13px;line-height:1.85}
+  .ans h4{margin:0 0 9px;font-size:14px;color:#fff}
+  .ans code{background:#21262d;border-radius:4px;padding:2px 7px;color:#79c0ff;font-size:12.5px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>아이콘 시안 — 사진 · 서식 (v2)</h1>
+  <p>
+    지난번 넣은 <code>가나</code>가 실제로는 <strong>21pt짜리 글자 두 개</strong>라
+    한 글자 아이콘(⇒ ¶ ▨)의 거의 두 배 면적을 먹었습니다 — "느낌 없이 크다"고
+    하신 이유입니다. 이번엔 <strong>실제 아이콘과 같은 크기(28px)</strong>로
+    맞춰 렌더링했으니, 블럭에 넣었을 때 어떻게 보일지 그대로 보실 수 있습니다.
+  </p>
+</header>
+
+<div class="note">
+  <b>글자로만 만드는 아이콘의 한계.</b> 이모지·아이콘 폰트는 안 쓰기로
+  하셨으니(2026-07-27 결정), 후보는 전부 <b>보통 문자 하나(또는 둘)</b>입니다.
+  사진처럼 구체적인 사물을 글자 하나로 완전히 표현하긴 어렵습니다 —
+  "그럴싸함"과 "확실히 그려지는가"(두부 위험) 사이에서 고르시는 겁니다.
+</div>
+
+<h3 class="sec">1. 서식 (기본 서식 · 글씨체 등 서식 조합)</h3>
+
+<div class="row">
+
+  <div class="cand">
+    <h4>가나 (지금)</h4>
+    <span class="tag risk">너무 큼</span>
+    <div class="tile">
+      <span class="ic" style="font-size:28px">가나</span>
+      <span class="nm">기본 서식</span>
+    </div>
+    <p class="why">두 글자가 <b>21pt로 나란히</b> — 아이콘이 아니라 작은
+      제목처럼 보입니다. 지적하신 문제 그대로.</p>
+  </div>
+
+  <div class="cand pick">
+    <h4>가 (한 글자)</h4>
+    <span class="tag rec">추천</span>
+    <div class="tile">
+      <span class="ic">가</span>
+      <span class="nm">기본 서식</span>
+    </div>
+    <p class="why">서양 UI 의 <b>"Aa"(폰트 견본)</b> 관례를 한 글자로 줄인
+      것 — 다른 아이콘과 <b>같은 면적</b>이라 튀지 않습니다.</p>
+  </div>
+
+  <div class="cand">
+    <h4>¶ (원래)</h4>
+    <span class="tag neutral">원래대로</span>
+    <div class="tile">
+      <span class="ic">¶</span>
+      <span class="nm">기본 서식</span>
+    </div>
+    <p class="why">문단 기호. 크기는 안전하지만 <b>"서식"이라는 뜻을
+      직관적으로 안 말해준다</b>는 게 애초 지적이었습니다.</p>
+  </div>
+
+  <div class="cand">
+    <h4>가나 (작게)</h4>
+    <span class="tag neutral">절충</span>
+    <div class="tile">
+      <span class="ic" style="font-size:19px">가나</span>
+      <span class="nm">기본 서식</span>
+    </div>
+    <p class="why">두 글자를 <b>살리되 폰트만 줄였습니다</b>(28→19px).
+      "폰트 견본" 느낌은 남지만 다른 아이콘보다 여전히 넓습니다.</p>
+  </div>
+
+</div>
+
+<div class="cmp">
+  <b>나란히 비교</b> —
+  <span class="big">⇒</span><span class="big">¶</span><span class="big">가</span><span class="big" style="font-size:20px">가나</span><span class="big" style="font-size:32px">가나</span>
+  <br>왼쪽부터: 변환(기준) · 문단(원래) · 가(추천, 기준과 같은 크기) ·
+  가나(작게, 19px 상당) · 가나(지금 크기, 그대로 두면 이렇게 큽니다)
+</div>
+
+<h3 class="sec">2. 사진</h3>
+
+<div class="row">
+
+  <div class="cand">
+    <h4>▨ (원래)</h4>
+    <span class="tag neutral">원래대로</span>
+    <div class="tile">
+      <span class="ic">▨</span>
+      <span class="nm">사진</span>
+    </div>
+    <p class="why">빗금 친 네모 — 웹에서 <b>"그림 아직 없음"</b> placeholder로
+      쓰이는 모양이라, 실제 사진이 든 블럭에는 안 어울린다는 게 지적이었습니다.</p>
+  </div>
+
+  <div class="cand">
+    <h4>▲ (지난번 시안)</h4>
+    <span class="tag neutral">단순함</span>
+    <div class="tile">
+      <span class="ic">▲</span>
+      <span class="nm">사진</span>
+    </div>
+    <p class="why">산 하나. 크기는 알맞지만 <b>혼자 있으면 방향 표시(재생·
+      정렬 화살표)처럼도 읽혀</b> "사진"이라는 뜻이 약합니다.</p>
+  </div>
+
+  <div class="cand pick">
+    <h4>▲° (산 + 해)</h4>
+    <span class="tag rec">추천</span>
+    <div class="tile">
+      <span class="ic">▲°</span>
+      <span class="nm">사진</span>
+    </div>
+    <p class="why">산(▲) 옆에 작은 해(°, 도 기호)를 붙여 <b>풍경 사진</b>
+      느낌을 냅니다. 두 글자지만 °가 작아서 전체 폭은 크게 안 늘어납니다.</p>
+  </div>
+
+  <div class="cand">
+    <h4>◐ (반달)</h4>
+    <span class="tag risk">비추천</span>
+    <div class="tile">
+      <span class="ic">◐</span>
+      <span class="nm">사진</span>
+    </div>
+    <p class="why">모양은 안정적이지만 <b>"사진"과 딱히 안 이어집니다</b> —
+      비교용으로만 넣었습니다.</p>
+  </div>
+
+</div>
+
+<div class="cmp">
+  <b>나란히 비교</b> —
+  <span class="big">▨</span><span class="big">▲</span><span class="big">▲°</span><span class="big">◐</span>
+  <br>왼쪽부터: 빗금 네모(원래) · 산(지난번) · 산+해(추천) · 반달(비추천, 참고용)
+</div>
+
+<div class="ans">
+  <h4>골라 주세요</h4>
+  서식: <code>가나(지금)</code> · <code>가</code> · <code>¶(원래)</code> · <code>가나(작게)</code><br>
+  사진: <code>▨(원래)</code> · <code>▲</code> · <code>▲°</code> · <code>◐</code><br>
+  <div style="color:#8b949e;font-size:12px;margin-top:10px">
+    마음에 드는 게 없으면 없다고 하셔도 됩니다 — 다른 글자를 더 뽑아보겠습니다.
+    이 파일을 직접 열어서(사진처럼 첨부된 파일) 실제 크기로 비교해 보세요.
+  </div>
+</div>
+
+</body>
+</html>

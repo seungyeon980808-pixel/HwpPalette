@@ -17,6 +17,7 @@ from hwp_palette.design import dialogs as messagebox   # 윈도우 기본 대화
 import pathlib
 
 from hwp_palette.core import applog
+from hwp_palette.core import paths                          # 블럭 아이콘 PNG 위치
 from hwp_palette.model import chip                       # 팔레트를 칩으로 내보내기
 from hwp_palette.model import palette
 from hwp_palette.model import library
@@ -339,6 +340,26 @@ ZOOM_W = 396          # 20% 더 넓게, 330 → 396 (사용자 결정 2026-07-27
 # 격자 블럭 안쪽 글자 여백 — main._BLOCK_TEXT_PAD 와 같은 값이어야 한다.
 # (이 판은 메인 창 블럭의 미리보기다)
 TILE_TEXT_PAD = 8
+
+# 글자로 못 그리는 아이콘(사진 등) — 메인 창(app._block_icon_image)과 같은
+# 파일을 읽는다. 순환 임포트라 캐시는 따로 두지만 파일은 하나다.
+_TILE_ICON_SIZES = (16, 20, 24, 32, 48)
+_tile_icon_images = {}
+
+
+def _tile_icon_image(asset, target_px):
+    size = min(_TILE_ICON_SIZES, key=lambda s: abs(s - target_px))
+    key = (asset, size)
+    if key in _tile_icon_images:
+        return _tile_icon_images[key]
+    path = paths.RESOURCE_DIR / "assets" / "icons" / f"{asset}-{size}.png"
+    try:
+        img = tk.PhotoImage(file=str(path))
+    except Exception as e:
+        applog.exc(f"미리보기 아이콘 이미지 로드 실패 ({asset})", e)
+        img = None
+    _tile_icon_images[key] = img
+    return img
 
 
 class SettingsWindow(tk.Toplevel):
@@ -1683,8 +1704,9 @@ class SettingsWindow(tk.Toplevel):
         # 개인 팔레트 탭에는 아이콘을 안 그린다 — 메인 창이 그렇기 때문이다
         # (2026-07-30). 여기서만 아이콘을 얹으면 **미리보기가 거짓말을 한다**:
         # 설정 창에서는 기호가 보이는데 정작 팔레트에는 없다.
-        icon = (theme.block_icon(blk)
-                if self._cur_tab_name() == palette.MAIN_TAB else None)
+        show_icon = self._cur_tab_name() == palette.MAIN_TAB
+        icon = theme.block_icon(blk) if show_icon else None
+        icon_asset = theme.block_icon_asset(blk) if show_icon else None
         # 2026-07-30 2차 수정: 아이콘·이름 **비율**을 메인 창과 맞춘다.
         # 처음엔 pt 값(16/9)을 메인 창과 그대로 맞췄는데, 이 칸(44px)은
         # 메인 창 칸(58px)보다 작아서 그 크기 그대로는 아이콘만으로 세로가
@@ -1696,11 +1718,19 @@ class SettingsWindow(tk.Toplevel):
         label_size = max(6, round((8 if two_lines else 9) * scale))
         parts = []
         if icon:
-            icon_fg = (theme.colors()["muted"]
-                       if theme.text_on(bg) != "#ffffff" else "#ffffff")
-            parts.append(tk.Label(
-                tile, text=icon, bg=bg, fg=icon_fg,
-                font=(FONT, theme.fs(icon_size))))
+            icon_img = None
+            if icon_asset:
+                icon_img = _tile_icon_image(icon_asset,
+                                            theme.fs(icon_size) * 4 // 3)
+            if icon_img:
+                # 사진처럼 그림이 있는 아이콘 — 메인 창과 같은 파일을 쓴다.
+                parts.append(tk.Label(tile, image=icon_img, bg=bg))
+            else:
+                icon_fg = (theme.colors()["muted"]
+                           if theme.text_on(bg) != "#ffffff" else "#ffffff")
+                parts.append(tk.Label(
+                    tile, text=icon, bg=bg, fg=icon_fg,
+                    font=(FONT, theme.fs(icon_size))))
             parts[-1].pack(fill="x", pady=(3, 0))
         # 글자색은 배경 밝기에 맞춰 정한다 — 어두운 색을 골라도 읽히게 (제안 18)
         # 아이콘이 있으면 가운데, 없으면 예전처럼 왼쪽에 붙인다

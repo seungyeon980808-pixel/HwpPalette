@@ -70,6 +70,16 @@ GRAY    = (86, 96, 108)     # 툴바 — 창의 테두리이지 도구가 아니
 ACCENT  = (0, 113, 227)
 ACCENT_SOFT = ACCENT + (38,)        # 렌즈 안쪽·판 채움처럼 '면'에 쓰는 옅은 판
 
+# 무채색 — 블럭 카드 위에 얹는 그림용 (2026-07-30).
+# 물감 분류색(PURPLE 등)은 여기서 뽑을 때는 뜻이 있지만, 블럭 카드에 얹으면
+# 다른 아이콘(⇒ ¶ ※ 는 전부 회색)과 색이 달라 혼자 튄다. theme.LIGHT["muted"]
+# 와 같은 값 — 두 곳이 갈라지면 다음에 회색을 바꿀 때 한쪽만 바뀐다.
+MUTED = (110, 110, 115)
+
+# 블럭 카드에서 색 대신 이 회색으로 그리는 그림들. 여기 추가하면
+# main() 이 <key>_mono-<size>.png 를 같이 굽는다.
+MONO = ("photo",)
+
 # ── 획 (2026-07-29 다시 잡음) ───────────────────────────
 # 0.10 은 굵었다 (사용자 지적: "선은 더 얇고"). 요즘 아이콘 한 벌들은
 # 24px 상자에 2px — 0.083 이다. 여기는 그보다 한 단계 더 얇게 간다.
@@ -498,10 +508,14 @@ def main():
         _emit(fn, color, key, (OUT, PREVIEW))
     for name, (_g, _label, color, fn) in CANDIDATES.items():
         _emit(fn, color, name, cand)
+    for key in MONO:
+        _g, _label, _color, fn = ICONS[key]
+        _emit(fn, MUTED, f"{key}_mono", (OUT, PREVIEW))
     if _font_at(20) is None:
         print("⚠ 맑은 고딕을 못 찾았습니다 — 변환 아이콘의 글자가 빠집니다")
-    print(f"기능 {len(ICONS)}개 · 후보 {len(CANDIDATES)}개 × {len(SIZES)}크기 "
-          f"= {(len(ICONS) + len(CANDIDATES)) * len(SIZES)}장")
+    print(f"기능 {len(ICONS)}개 · 후보 {len(CANDIDATES)}개 · 무채색 {len(MONO)}개"
+          f" × {len(SIZES)}크기 "
+          f"= {(len(ICONS) + len(CANDIDATES) + len(MONO)) * len(SIZES)}장")
     print(f"  {OUT}")
     print(f"  {PREVIEW}  (미리보기용 사본)")
 
