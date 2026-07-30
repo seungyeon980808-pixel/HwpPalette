@@ -36,42 +36,70 @@ _ns = _extract("_block_label_max", "_fit_label")
 fit_label = _ns["_fit_label"]
 label_max = _ns["_block_label_max"]
 
+# 실제 화면 값 (2026-07-30): 칸 58px, 이름 body = 12pt → 한글 한 자 16px.
+# 이 조합에서 한 칸은 2자, 두 칸은 6자가 들어간다.
+CELL = 58
+CHAR = 16
+
+
+def fit(text, span):
+    return fit_label(text, span, CELL, CHAR)
+
+
+class LabelMaxTest(unittest.TestCase):
+    r"""자수 상한은 **칸 폭에서 계산한다**.
+
+    예전에는 `span * 2` 로 못박혀 있었다. 그 값은 26px 칸 시절 것이라, 칸이
+    58px 로 커진 뒤에도 그대로 남아 '마크다운 변환'(6자)이 두 칸을 쓰고도
+    네 자에서 잘렸다 (사용자 지적 2026-07-30). 그 회귀를 여기서 막는다.
+    """
+
+    def test_칸이_커지면_자수도_늘어난다(self):
+        self.assertGreater(label_max(2, 58, 16), label_max(2, 26, 16))
+
+    def test_글자가_커지면_자수는_줄어든다(self):
+        self.assertLess(label_max(2, 58, 20), label_max(2, 58, 16))
+
+    def test_두_칸이면_한_칸의_두_배보다_넉넉하다(self):
+        # 칸 사이 틈까지 글자가 쓰므로 단순히 두 배가 아니다
+        self.assertGreater(label_max(2, CELL, CHAR), label_max(1, CELL, CHAR) * 2)
+
+    def test_아무리_좁아도_두_자는_보인다(self):
+        self.assertEqual(label_max(1, 10, 99), 2)
+        self.assertEqual(label_max(0, CELL, CHAR), 2)
+
 
 class FitLabelTest(unittest.TestCase):
 
     def test_짧으면_그대로(self):
-        self.assertEqual(fit_label("사진", span=1), "사진")
+        self.assertEqual(fit("사진", span=1), "사진")
 
     def test_길면_자르고_말줄임(self):
-        # 1칸 = 2자
-        self.assertEqual(fit_label("양식채우기", span=1), "양식…")
+        self.assertEqual(fit("양식채우기", span=1), "양식…")
 
     def test_칸이_넓으면_더_많이_들어간다(self):
-        self.assertEqual(fit_label("양식채우기", span=3), "양식채우기")
+        self.assertEqual(fit("양식채우기", span=3), "양식채우기")
+
+    def test_두_칸이면_여섯_자가_들어간다(self):
+        # 이게 이번에 고친 것 — 예전에는 네 자에서 잘려 '마크다운…' 이었다
+        self.assertEqual(fit("마크다운 변환", span=2), "마크다운 변환")
+        self.assertEqual(fit("통합 찾기", span=2), "통합 찾기")
 
     def test_줄바꿈은_살린다(self):
         # 이게 핵심 — 좁은 칸에 두 줄로 넣을 수 있어야 한다
-        self.assertEqual(fit_label("양식\n채우기", span=2), "양식\n채우기")
+        self.assertEqual(fit("양식\n채우기", span=2), "양식\n채우기")
 
     def test_줄마다_따로_자른다(self):
-        # 전체를 한 덩어리로 자르면 둘째 줄이 통째로 사라진다 (span 2 = 줄당 4자)
-        self.assertEqual(fit_label("가나다라마\n바사아자차", span=2),
-                         "가나다라…\n바사아자…")
+        # 전체를 한 덩어리로 자르면 둘째 줄이 통째로 사라진다
+        self.assertEqual(fit("가나다라마바사\n아자차카타파하", span=2),
+                         "가나다라마…\n아자차카타…")
 
     def test_한_줄만_길어도_다른_줄은_안_건드린다(self):
-        self.assertEqual(fit_label("가\n나다라마바", span=2), "가\n나다라마…")
-
-    def test_줄당_한도라서_두_줄이면_두_배가_들어간다(self):
-        # 칸을 넓히지 않고도 긴 이름을 넣는 방법 — 이게 이 기능의 존재 이유다
-        self.assertEqual(fit_label("양식\n채우기", span=2), "양식\n채우기")
+        self.assertEqual(fit("가\n나다라마바사아자", span=2), "가\n나다라마바…")
 
     def test_빈_값도_안전하다(self):
-        self.assertEqual(fit_label("", span=2), "")
-        self.assertEqual(fit_label(None, span=2), "")
-
-    def test_한_칸도_최소_두_자는_보인다(self):
-        self.assertEqual(label_max(1), 2)
-        self.assertEqual(label_max(0), 2)      # 이상값이 와도 0자가 되진 않는다
+        self.assertEqual(fit("", span=2), "")
+        self.assertEqual(fit(None, span=2), "")
 
 
 if __name__ == "__main__":

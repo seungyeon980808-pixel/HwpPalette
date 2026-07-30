@@ -61,7 +61,13 @@ AUTO_NAME_MAX = 16       # 이름을 안 지었을 때 기능 이름들을 이�
 # 격자 한 칸 — 정사각형이고, **칸 수에 맞춰 크기가 변한다**(_cell_px).
 # 칸을 늘리면 칸이 작아져 격자 전체 폭은 그대로 유지된다 → 오른쪽에 빈 공간이 안 생김.
 GRID_WIDTH_PX = 420      # 격자가 쓸 가로 폭
-CELL_MAX_PX = 34
+# 34 → 44 (사용자 지적 2026-07-30: "팔레트 설정도 버튼 크기를 조정해야겠습니다")
+#
+# 34px 칸에는 아이콘(15pt ≈ 20px) + 이름(11pt ≈ 15px) = 35px 이 안 들어가서
+# **이름 아랫부분이 잘려 점선처럼 보였다.** 딱 1px 모자랐다.
+# 9열이면 폭으로 44px 까지 잡을 수 있는데(420 ÷ 9) 이 상한이 34 로 막고 있었다.
+# 상한만 풀면 창은 그대로 두고 칸만 커진다 — GRID_WIDTH_PX 가 총 폭을 지킨다.
+CELL_MAX_PX = 44
 # 최소 24px — 접근성 기준(WCAG 2.5.8)이 정한 클릭 대상 하한이다
 # (사용자 결정 2026-07-30). 예전 16px 은 8px 모자랐고, 배치 격자는 끌어서
 # 옮기는 곳이라 작으면 옆 칸을 집는다.
@@ -1887,7 +1893,13 @@ class SettingsWindow(tk.Toplevel):
         줄바꿈은 살려서 줄마다 따로 자른다 — '양식\n채우기' 처럼 좁은 칸에
         두 줄로 넣을 수 있게 (2026-07-25).
         """
-        limit = max(2, span * 2)
+        # 자수는 **칸 폭에서 계산한다** — 메인 창과 같은 규칙(main._block_label_max).
+        # 예전의 `span * 2` 는 26px 칸 시절 값이라, 칸이 커진 뒤에도 네 자에서
+        # 잘려 실제 팔레트보다 짧게 보였다 (2026-07-30).
+        cell = self._cell_px(self._cur_cols())
+        char = theme.fs(8) * 4 / 3          # 타일 이름 크기의 한글 한 자 폭
+        width = cell * span + CELL_GAP * (span - 1) - TILE_TEXT_PAD
+        limit = max(2, int(width // max(1, char)))
         lines = (self._block_label(blk) or "").split("\n")
         return "\n".join(ln if len(ln) <= limit else ln[:limit] + "…"
                          for ln in lines)

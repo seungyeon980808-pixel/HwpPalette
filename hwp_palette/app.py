@@ -1578,8 +1578,8 @@ def _render_block_grid(parent, tab, show_icon=True):
         cell.pack_propagate(False)
         cell.grid(row=r, column=c, columnspan=span, rowspan=rows,
                   padx=_BLOCK_GAP_PX // 2, pady=_BLOCK_GAP_PX // 2)
-        _make_block_button(cell, blk, span, show_icon).pack(fill="both",
-                                                            expand=True)
+        _make_block_button(cell, blk, span, show_icon,
+                           cell_px=cell_px).pack(fill="both", expand=True)
 
 
 def render_palette():
@@ -1677,30 +1677,75 @@ def _adaptive_cell_px(cols):
                (screen - _BLOCK_GAP_PX * cols) // cols)
 
 
-def _block_label_max(span):
+def _block_label_max(span, cell_px, char_px, gap=2, pad=4):
     """칸 수에 맞는 **한 줄당** 글자 수 상한.
 
     칸을 정사각형으로 고정했으므로 긴 이름은 넣을 자리가 없다. 넘치면 잘라서
     보여주고 전체 이름은 툴팁으로 뜬다(_add_tooltip).
 
-    26px 칸에 9pt 한글이 대략 1.7자 들어가므로 칸당 2자로 잡는다.
-    이름이 길면 **줄바꿈**을 넣는 게 칸 수를 늘리는 것보다 낫다 — 칸을 늘리면
-    창이 그만큼 옆으로 길어진다(2026-07-25).
+    **왜 계산으로 바꿨나 (2026-07-30):** 예전에는 `span * 2`, 곧 칸당 두 자로
+    못박혀 있었다. 그 값은 주석에 적힌 대로 **26px 칸** 기준이었는데, 그 뒤
+    글자를 25% 키우면서 칸이 42px→58px 로 두 번 커지는 동안 이 숫자만 그대로
+    남았다. 그래서 두 칸(118px)을 쓰는 '마크다운 변환'이 여섯 자가 들어가는데도
+    네 자에서 잘려 '마크다운…' 으로 보였다 (사용자 지적).
+
+    한글은 정사각 글자라 한 자 폭이 글자 크기와 거의 같다 — 그래서 칸 폭에서
+    좌우 여백을 뺀 값을 글자 폭으로 나누면 실제로 들어가는 자수가 나온다.
+    돌려주는 값은 **한글 몇 자 분량인가**이고, 소수도 나온다 (공백·숫자는
+    한글의 절반 폭이라 '6.9자'가 뜻을 가진다 — _fit_label 참조).
+
+    숫자를 인자로 받는 이유는 이 함수가 **창 없이 테스트되기 때문**이다
+    (tests/test_block_label.py 가 정의만 떼어 실행한다).
     """
-    return max(2, span * 2)
+    width = cell_px * span + gap * (span - 1) - pad * 2
+    return max(2.0, width / max(1, char_px))
 
 
-def _fit_label(text, span):
+def _label_w(text):
+    """이름의 **표시 폭** — 한글·한자는 1, 영문·숫자·공백은 0.5로 센다.
+
+    글자 수로 세면 '마크다운 변환'(공백 포함 7자)과 '마크다운변환'(6자)이
+    다르게 취급돼, 실제로는 같은 자리를 쓰는데 하나만 잘린다.
+    """
+    import unicodedata
+    return sum(1.0 if unicodedata.east_asian_width(c) in ("W", "F") else 0.5
+               for c in text)
+
+
+def _fit_label(text, span, cell_px, char_px):
     r"""블럭에 넣을 글자 — **줄바꿈을 살려서** 줄마다 따로 자른다.
 
     예전에는 이름 전체를 한 덩어리로 잘라, 긴 이름을 쓰려면 칸을 옆으로 늘리는
     수밖에 없었고 그만큼 창이 좌우로 길어졌다. 이름에 줄바꿈을 넣으면
     '양식\n채우기' 처럼 **좁은 칸에 두 줄**로 들어간다.
     """
-    limit = _block_label_max(span)
-    lines = (text or "").split("\n")
-    return "\n".join(ln if len(ln) <= limit else ln[:limit] + "…"
-                     for ln in lines)
+    import unicodedata
+
+    def w(ch):
+        return 1.0 if unicodedata.east_asian_width(ch) in ("W", "F") else 0.5
+
+    limit = _block_label_max(span, cell_px, char_px)
+    out = []
+    for line in (text or "").split("\n"):
+        if sum(w(c) for c in line) <= limit:
+            out.append(line)
+            continue
+        acc, kept = 0.0, []
+        for ch in line:
+            if acc + w(ch) > limit - 1.0:       # 말줄임표(…)도 한 자를 쓴다
+                break
+            acc += w(ch)
+            kept.append(ch)
+        out.append("".join(kept) + "…")
+    return "\n".join(out)
+
+
+def _char_px(size):
+    """그 글자 크기에서 한글 한 자의 대략적인 폭(px).
+
+    pt → px 는 96dpi 기준 4/3 배. 한글은 정사각 글자라 폭이 크기와 거의 같다.
+    """
+    return theme.fs(size) * 4 / 3
 
 
 def _block_label(blk):
@@ -1846,7 +1891,7 @@ def _block_icon_fg(bg):
     return MUTED if theme.text_on(bg) != "#ffffff" else "#ffffff"
 
 
-def _make_block_button(parent, blk, span=1, show_icon=True):
+def _make_block_button(parent, blk, span=1, show_icon=True, cell_px=None):
     # 아이콘을 **이름 위 한 줄**에 얹는다 (H안, 사용자 결정 2026-07-29).
     #
     # 2026-07-19 에 뺐던 그 아이콘이 아니다: 그때는 이름 옆에 붙어 글자 자리를
@@ -1854,7 +1899,10 @@ def _make_block_button(parent, blk, span=1, show_icon=True):
     # 색이 하던 '무슨 종류인가'를 아이콘이 넘겨받는다.
     # 사용자가 블럭 색을 직접 고른 경우(blk["color"])는 그 색이 그대로 우선한다.
     full = _block_label(blk)
-    label = _fit_label(full, span)
+    # 자를 자수는 **그 칸의 실제 폭**으로 정한다. cell_px 를 안 받은 옛 호출이
+    # 있으면 기본 칸 크기로 셈한다 (그래도 예전의 '칸당 2자'보다는 정확하다).
+    cell = cell_px or int(_BLOCK_CELL_MAX_PX * SCALE)
+    label = _fit_label(full, span, cell, _char_px(theme.FS["body"]))
     bg = theme.block_color(blk)     # 사용자 지정 > 도구 강조(변환) > 종류별 기본
     # 개인 팔레트는 **글자만** 쓴다 (사용자 결정 2026-07-30).
     # 개인 블럭은 사용자가 만든 것이라 종류가 몇 가지 안 되고, 같은 기호가
