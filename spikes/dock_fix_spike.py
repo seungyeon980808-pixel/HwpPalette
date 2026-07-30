@@ -194,7 +194,14 @@ def _check(pid):
     log(f"⑥ 문서창 {len(wins)}개: {[t for _h, t in wins]}  "
         f"(1개여야 한다 — 두 개면 빈 문서가 또 생긴 것)")
     hwnd = hwp_engine.connected_hwnd()
-    log(f"① 제목줄 잘라낸 높이: {crop_top(hwnd)}px  (40 안팎이어야 한다)")
+    log(f"① 잘라낸 높이: {crop_top(hwnd)}px  (0 이어야 한다 — 자르지 않는다)")
+    import win32gui as _wg
+    host = app._dock["host"]
+    hl, ht, hr, hb = _wg.GetWindowRect(host.winfo_id())
+    cl, ct, cr, cb = _wg.GetWindowRect(hwnd)
+    log(f"⑦ 판 ({hl},{ht}) {hr-hl}x{hb-ht} / 한글 ({cl},{ct}) {cr-cl}x{cb-ct} "
+        f"→ 어긋남 ({cl-hl},{ct-ht},{(cr-cl)-(hr-hl)},{(cb-ct)-(hb-ht)}) "
+        f"(0,0,0,0 이어야 판을 정확히 채운다)")
     log(f"② 모드: {app._dock['mode']}  (dock 이어야 한다)")
     bar = app._dock["bar"]
     log(f"⑤ 도구줄 높이 {bar.winfo_height()}px "

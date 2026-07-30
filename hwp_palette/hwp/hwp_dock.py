@@ -98,47 +98,48 @@ def fit_on_screen(hwnd, w, h):
         return None
 
 
-# 한글이 **직접 그리는** 제목줄의 높이 (96dpi 기준, 실측 2026-07-30).
+# 제목줄 잘라내기는 **철회했다** (사용자 결정 2026-07-30).
 #
-# WS_CAPTION 을 떼 봤지만 그 줄은 사라지지 않았다 — 화면을 그림으로 떠서
-# 확인했다(spikes/dock_fix_spike.py). 한글의 제목줄은 OS 가 그리는 창틀이
-# 아니라 **한글이 자기 그림 영역 안에 그리는 것**이라(WPF 식 자체 창틀),
-# 스타일을 만져도 그대로 남는다. 그래서 창 자체를 **잘라낸다**(SetWindowRgn):
-# 위 CAPTION_H 만큼을 보이는 영역에서 빼고, 그만큼 창을 위로 올려 둔다.
-# 잘린 부분은 그려지지도, 눌리지도 않는다.
-CAPTION_H = 40
-
-
-def caption_height(hwnd):
-    """그 창의 DPI 에 맞춘 제목줄 높이 (4K 배율에서도 맞게)."""
+# 한글이 자기 그림 영역에 직접 그리는 제목줄을 창 영역(SetWindowRgn)으로
+# 오려 내 봤는데, 잘라낼 높이가 배율·버전마다 어긋나 **리본(파일·편집·서식
+# 도구줄)까지 함께 날아갔다.** 사용자 결정: "그냥 윗부분은 슬라이스 안 하는
+# 걸로 하겠습니다. 필요한 부분까지 날아가니까 불편합니다."
+#
+# 아래 두 함수는 **치우는 쪽으로만** 남긴다: 그 시절에 잘린 채 남은 창을
+# 다시 붙일 때 원래대로 되돌려 주는 일을 한다.
+def crop_top_of(hwnd):
+    """그 창이 지금 위로 얼마나 잘려 있는가 (논리 픽셀, 0 이면 안 잘림)."""
     try:
-        dpi = _user32.GetDpiForWindow(hwnd) or 96
+        box = wintypes.RECT()
+        if not _user32.GetWindowRgnBox(hwnd, ctypes.byref(box)):
+            return 0
+        return max(0, box.top)
     except Exception:
-        dpi = 96
-    return int(round(CAPTION_H * dpi / 96.0))
-
-
-_RGN_DIFF = 4                 # CombineRgn 모드 — A 에서 B 를 뺀다
-
-
-def dpi_scale(hwnd):
-    r"""그 창이 놓인 화면의 배율 (1.0 / 1.25 / 1.5 …).
-
-    우리 프로세스는 DPI 미인식이라 우리 창에 물어보면 늘 96 이 나온다. 그래서
-    **DPI 를 아는 창**(한글)에게 묻는다 — 창 영역(SetWindowRgn)의 좌표는
-    가상화되지 않은 실제 픽셀이므로, 이 배율로 곱해 줘야 자리가 맞는다.
-    """
-    try:
-        return (_user32.GetDpiForWindow(hwnd) or 96) / 96.0
-    except Exception:
-        return 1.0
+        return 0
 
 
 def clear_crop(hwnd):
-    """잘라내기를 없앤다 — 창을 원래대로 통째로 보이게."""
+    r"""잘라내기를 없앤다 — 창을 원래대로 통째로 보이게. 두 번 시도한다.
+
+    왜 두 번인가 (실측 2026-07-30): `SetWindowRgn(NULL)` 은 성공(1)을 돌려주면서
+    남의 프로세스 창에서는 먹지 않는 경우가 있었다. 그때는 **창 전체를 덮는
+    영역**을 씌우면 실질적으로 안 잘린 것과 같아진다.
+
+    이게 중요한 이유: 잘라내기가 남으면 한글은 제목줄 없는 창으로 **우리가 죽은
+    뒤에도** 남는다. 임베드를 버린 이유와 같은 종류의 사고라, 여기서 반드시
+    되돌려야 한다.
+    """
     try:
-        if win32gui.IsWindow(hwnd):
-            win32gui.SetWindowRgn(hwnd, 0, True)
+        if not win32gui.IsWindow(hwnd):
+            return
+        win32gui.SetWindowRgn(hwnd, 0, True)
+        if crop_top_of(hwnd) <= 0:
+            return
+        l, t, r, b = win32gui.GetWindowRect(hwnd)
+        k = dpi_scale(hwnd)
+        full = _gdi32.CreateRectRgn(0, 0, int((r - l) * k) + 2,
+                                    int((b - t) * k) + 2)
+        win32gui.SetWindowRgn(hwnd, full, True)
     except Exception as e:
         applog.exc("한글 창 잘라내기 해제 실패 — 창이 잘린 채 남을 수 있음", e)
 
@@ -178,14 +179,10 @@ class Dock:
     렌더러가 꺼진 채 창만 떠서 **통째로 검게** 나온다.
     """
 
-    def __init__(self, toplevel, host_widget, hwnd, crop_top=0):
+    def __init__(self, toplevel, host_widget, hwnd):
         self.top = toplevel          # 남겨 둔다 — 호출부가 창 수명 판단에 씀
         self.host = host_widget      # 이 위젯 자리에 붙인다 (_zoom_canvas)
         self.hwnd = hwnd
-        # crop_top: 한글이 그리는 제목줄을 잘라낼 높이 (0 이면 안 자른다).
-        # 양식 수정 도킹은 0 을 쓴다 — 거기서는 잠깐 쓰는 창이라 제목줄이
-        # 보이는 편이 오히려 '한글이 떠 있다'를 말해 준다.
-        self.crop = int(crop_top)
         self._placement = None       # 원복용 — 시작할 때의 창 배치
         self._rect0 = None           # 원복용 — 시작할 때의 실제 사각형
         self._host_hwnd = None
@@ -201,6 +198,10 @@ class Dock:
         try:
             if not win32gui.IsWindow(self.hwnd):
                 return False
+            # 지난번 도킹이 비정상 종료로 남긴 잘라내기가 있으면 먼저 걷어낸다 —
+            # 안 그러면 그 위에 또 잘라 리본까지 사라진다 (실측 2026-07-30).
+            if crop_top_of(self.hwnd):
+                clear_crop(self.hwnd)
             self._placement = win32gui.GetWindowPlacement(self.hwnd)
             # 배치만 저장하면 모니터를 건너간 뒤 원복이 밀린다 (실측 2026-07-30:
             # 뗀 뒤 한글이 163px 옆으로 갔다) — 실제 사각형도 함께 떠 둔다.
@@ -323,47 +324,12 @@ class Dock:
                 return
             l, t, r, b = win32gui.GetWindowRect(self._host_hwnd)
             tw, th = max(r - l, 200), max(b - t, 200)
-            # 제목줄을 잘라내는 경우: 창을 그만큼 **위로** 올리고 키운다.
-            # 그러면 잘려 안 보이는 부분이 판 위쪽에 얹히고, 보이는 부분이
-            # 판을 정확히 채운다.
-            ty, thh = t - self.crop, th + self.crop
             cl, ct, cr, cb = win32gui.GetWindowRect(self.hwnd)
-            if (cl, ct, cr - cl, cb - ct) != (l, ty, tw, thh):
-                win32gui.SetWindowPos(self.hwnd, 0, l, ty, tw, thh, _MOVE_FLAGS)
-                if self.crop:
-                    self._apply_crop(tw, thh)
+            if (cl, ct, cr - cl, cb - ct) != (l, t, tw, th):
+                win32gui.SetWindowPos(self.hwnd, 0, l, t, tw, th, _MOVE_FLAGS)
             self._punch_hole()               # 창 크기가 바뀌면 구멍도 따라간다
-            if self.crop and not self._crop_ok():
-                # 한글이 자기 영역을 다시 씌웠다 (최대화·배율 변경 등) —
-                # 200ms 안전망이 이때 제목줄을 다시 잘라 준다.
-                self._apply_crop(tw, thh)
         except Exception:
             pass                         # 창 파괴 경합 등 — 다음 이벤트에 다시
-
-    def _crop_ok(self):
-        """지금 창 영역이 우리가 씌운 그것인가 (위가 crop 만큼 잘려 있는가)."""
-        try:
-            box = wintypes.RECT()
-            if not _user32.GetWindowRgnBox(self.hwnd, ctypes.byref(box)):
-                return False                 # 영역이 없다 = 안 잘려 있다
-            return box.top >= self.crop - 1
-        except Exception:
-            return True                      # 못 재면 건드리지 않는다
-
-    def _apply_crop(self, w, h):
-        r"""보이는 영역을 '제목줄 아래'로 한정한다.
-
-        오른쪽·아래는 **창보다 훨씬 크게** 잡는다 (실측 2026-07-30): 창 크기를
-        그대로 넣었더니 오른쪽과 아래가 잘려 회색 여백이 남았다 — 이 프로세스는
-        DPI 미인식이라 SetWindowRgn 의 좌표와 SetWindowPos 의 좌표가 같은 배율이
-        아니다. 영역은 창 밖으로 넘겨도 창이 알아서 자기 경계까지만 그리므로,
-        넉넉히 잡으면 배율을 계산할 필요가 없다. 잘라낼 것은 **위 한 줄뿐**이다.
-        """
-        try:
-            rgn = _gdi32.CreateRectRgn(0, self.crop, 1 << 15, 1 << 15)
-            win32gui.SetWindowRgn(self.hwnd, rgn, True)   # 성공하면 OS 가 소유
-        except Exception as e:
-            applog.exc("한글 창 잘라내기 실패 — 제목줄이 보인 채로 계속", e)
 
     def _follow_loop(self):
         r"""이벤트 훅으로 따라간다. 훅이 안 잡히면 8ms 폴링으로 물러난다.
@@ -443,14 +409,16 @@ class Dock:
         "저장하면 깜빡거린다") — 순간이동은 '창이 튀었다'로 보인다.
         숨겨진 창이면 그냥 배치만 써 둔다 (아무것도 안 보인다).
         """
+        # 지난 판이 남긴 잘라내기가 있으면 여기서도 걷어낸다 (무조건, 맨 먼저):
+        # placement 가 없다고 먼저 돌아가 버리면 제목줄 없는 한글이 남는다.
+        if crop_top_of(self.hwnd):
+            clear_crop(self.hwnd)
         placement, self._placement = self._placement, None
         if placement is None:
             return
         try:
             if not win32gui.IsWindow(self.hwnd):
                 return
-            if self.crop:
-                clear_crop(self.hwnd)     # 잘린 채로 되돌리면 창이 반쪽이 된다
             visible = win32gui.IsWindowVisible(self.hwnd)
             was_maximized = placement[1] == win32con.SW_SHOWMAXIMIZED
             if visible and not was_maximized:

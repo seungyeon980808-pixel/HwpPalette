@@ -2236,10 +2236,10 @@ def _enter_dock(hwnd):
         dock = hwp_embed.Embed(root, _dock["host"], hwnd)
     else:
         hwp_dock.preposition(hwnd, _dock["host"])   # 숨긴 채 미리 자리로
-        # 한글이 그리는 제목줄('빈 문서 1 — 한글' + 창 단추)은 **잘라낸다** —
-        # 한 창에 제목줄이 둘일 이유가 없다 (사용자 지적 2026-07-30).
-        dock = hwp_dock.Dock(root, _dock["host"], hwnd,
-                             crop_top=hwp_dock.caption_height(hwnd))
+        # 한글 제목줄은 그대로 둔다 (사용자 결정 2026-07-30): 잘라내 봤더니
+        # 리본까지 날아가 편집을 못 했다. 화면이 잘 보이고 부드럽게 따라오는
+        # 것이 먼저다.
+        dock = hwp_dock.Dock(root, _dock["host"], hwnd)
     if not dock.start():
         _restore_normal_layout()
         notify("error", "한글 창을 감싸지 못했습니다 — 도킹을 취소합니다")

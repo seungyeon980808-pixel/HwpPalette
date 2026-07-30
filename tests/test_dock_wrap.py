@@ -82,50 +82,48 @@ class WrapRules(unittest.TestCase):
 
 
 class CropRules(unittest.TestCase):
-    r"""제목줄 감추기 — 스타일이 아니라 **잘라내기**로 (실측 2026-07-30).
+    r"""제목줄 잘라내기는 **철회했다** (사용자 결정 2026-07-30).
 
-    WS_CAPTION 을 떼는 방식으로 먼저 만들었는데 화면을 그림으로 떠 보니 제목줄이
-    그대로 있었다 (spikes/dock_fix_spike.py). 한글의 제목줄은 OS 창틀이 아니라
-    한글이 자기 그림 영역에 직접 그리는 것이라, 창 영역(SetWindowRgn)으로
-    잘라내야 사라진다.
+    한글이 자기 그림 영역에 직접 그리는 제목줄을 창 영역으로 오려 내 봤더니,
+    잘라낼 높이가 배율·버전마다 어긋나 리본(파일·편집·서식 도구줄)까지 함께
+    날아갔다 — 편집을 못 하게 된다.
+
+        "그냥 윗부분은 슬라이스 안 하는 걸로 하겠습니다.
+         필요한 부분까지 날아가니까 불편합니다.
+         내 입장은 화면이 잘 보이고 이게 부드럽게 따라오기만 하면 됩니다."
+
+    치우는 쪽 코드만 남긴다: 그 시절에 잘린 채 남은 창을 되돌려 준다.
     """
 
-    def test_스타일이_아니라_영역으로_자른다(self):
+    def test_한글_창을_자르지_않는다(self):
         code = _read("hwp_dock")
-        self.assertIn("SetWindowRgn", code)
-        self.assertNotIn("~win32con.WS_CAPTION", code)
+        self.assertNotIn("def _apply_crop", code)
+        self.assertNotIn("CAPTION_H", code)
+        # 우리 창에 구멍을 내는 SetWindowRgn 은 남는다 — 자르는 대상이 다르다
+        self.assertNotIn("crop_top=", _read("app"))
 
-    def test_영역은_창보다_크게_잡는다(self):
-        r"""DPI 미인식 프로세스라 SetWindowRgn 과 SetWindowPos 의 배율이 다르다.
+    def test_남은_잘라내기는_걷어낸다(self):
+        r"""전 판이 잘라 놓은 창이 있으면 붙일 때·뗄 때 원래대로 되돌린다.
 
-        창 크기를 그대로 넣으면 오른쪽·아래가 잘려 회색 여백이 남았다(실측).
-        넉넉히 잡으면 배율 계산이 필요 없다 — 잘라낼 것은 위 한 줄뿐이다.
+        잘라내기가 남으면 한글은 제목줄 없는 창으로 **우리가 죽은 뒤에도**
+        남는다 — 임베드를 버린 이유와 같은 종류의 사고다.
         """
         code = _read("hwp_dock")
-        self.assertIn("1 << 15", code)
-
-    def test_뗄_때_잘라내기를_되돌린다(self):
-        """잘린 채 되돌리면 밖에 나간 한글 창이 반쪽으로 남는다."""
-        code = _read("hwp_dock")
         self.assertIn("def clear_crop", code)
-        body = code.split("def restore")[1].split("\n    def ")[0]
-        self.assertIn("clear_crop", body)
-
-    def test_한글이_영역을_지우면_다시_씌운다(self):
-        """최대화·배율 변경 때 한글이 자기 영역을 다시 씌운다 — 안전망이 있다."""
-        self.assertIn("def _crop_ok", _read("hwp_dock"))
+        self.assertIn("def crop_top_of", code)
+        start = code.split("def start(")[1].split("\n    def ")[0]
+        self.assertIn("clear_crop", start)
+        restore = code.split("def restore(")[1].split("\n    def ")[0]
+        self.assertIn("clear_crop", restore)
 
 
 class HoleRules(unittest.TestCase):
     r"""판 자리는 우리 창에서 **오려 낸다** (실측 2026-07-30, dock_real_spike).
 
-    사용자 지적: "여전히 도킹이 안 되는 문제점이 있습니다" — 화면에는
-    '감쌌습니다'라고 뜨는데 판이 하얗게 비어 있었다. 정체는 z순서였다:
-    우리 창이 활성 창이면 윈도우가 그것을 맨 위에 두려 해서, 한글을 올려도
-    (HWND_TOP 이든 상대 순서든) 다시 밀렸다 — 실측 z 23 대 35.
-
-    그래서 순서를 다투는 것을 그만두고 **그 자리에 창을 없앤다**. 그림도 안
-    그리고 마우스도 안 받으므로, 위에 있어도 가릴 것이 없다.
+    "여전히 도킹이 안 되는 문제점이 있습니다" — 화면에는 '감쌌습니다'라고 뜨는데
+    판이 하얗게 비어 있었다. 정체는 z순서였다: 우리 창이 활성 창이면 윈도우가
+    그것을 맨 위에 두려 해서, 한글을 올려도 다시 밀렸다(실측 z 23 대 35).
+    그래서 순서를 다투는 것을 그만두고 **그 자리에 창을 없앤다**.
     """
 
     def test_판_자리를_오려_낸다(self):
@@ -136,16 +134,11 @@ class HoleRules(unittest.TestCase):
 
     def test_뗄_때_구멍을_메운다(self):
         """안 메우면 평소 창 가운데가 뚫린 채 남는다."""
-        code = _read("hwp_dock")
-        body = code.split("def stop(")[1].split("\n    def ")[0]
+        body = _read("hwp_dock").split("def stop(")[1].split("\n    def ")[0]
         self.assertIn("clear_hole", body)
 
     def test_한글_올리기는_활성화될_때만(self):
-        r"""매 틱 올리면 다른 프로그램으로 갔을 때 한글이 그 위로 튀어 오른다.
-
-        추적 루프(_follow_loop·_poll_fallback)에서는 순서를 건드리지 않는다 —
-        올리는 것은 우리 창이 활성화되는 순간뿐이다.
-        """
+        r"""매 틱 올리면 다른 프로그램으로 갔을 때 한글이 그 위로 튀어 오른다."""
         code = _read("hwp_dock")
         for fn in ("_follow_loop", "_poll_fallback"):
             body = code.split(f"def {fn}")[1].split("\n    def ")[0]
