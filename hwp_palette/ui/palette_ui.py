@@ -86,7 +86,12 @@ CELL_GAP = 2
 # 따라와 열 수가 줄어든다(이미 "창 폭 유지"로 확정한 결정과 부딪힌다).
 # 그래서 칸을 담는 **바깥 틀의 높이에만** 이 값을 얹는다 — 열 수·격자 폭은
 # 그대로고, 줄 하나하나가 살짝 더 높아져 글자가 테두리에 안 닿는다.
-CELL_ROW_EXTRA_PX = 10
+#
+# 10 → 16 (2026-07-31): 10 으로는 화면 배율 175% 에서 글자 줄높이 반올림이
+# 아래 여백을 먹어 "여전히 살짝 짤립니다"(사용자 지적). 논리 계산으로는
+# 3px 여유가 있었지만, 배율 환경의 실제 렌더에서 바닥에 닿았다 — 여유를
+# 반올림 오차보다 크게 잡는다.
+CELL_ROW_EXTRA_PX = 16
 HEADER_ROWS = 1          # 격자 맨 위 열 머리글 한 줄 (좌표 계산 시 빼야 한다)
 HEADER_COLS = 1          # 격자 맨 왼쪽 줄 머리글 한 칸 (칸 번호와 짝을 맞춘다)
 # 머리글 크기를 px 상수로 두지 않는다 (2026-07-25 버그 수정). 예전 HEADER_PX=12 는
@@ -581,6 +586,34 @@ class SettingsWindow(tk.Toplevel):
         self.share_btn.config(width=theme.fs(24), height=theme.fs(21))
         self.share_btn.pack(side="right")
         _tip(self.share_btn, "이 팔레트 내보내기 · 받은 파일 불러오기")
+
+        # 격자 크기(칸·줄) 조절 — 머리줄 한 곳에 모은다 (2026-07-31).
+        # 예전에는 ＋/－ 네 개가 격자의 오른쪽·아래 모서리에 흩어져 있었는데
+        # "너무 복잡합니다"(사용자 지적) — 조절할 것은 숫자 둘뿐이므로
+        # 팔레트 고르개 옆에 '칸 − 8 ＋ · 줄 − 2 ＋' 로 붙인다. 지금 값이
+        # 숫자로 보이니 몇 칸짜리 팔레트인지 열어 보지 않아도 안다.
+        size_box = tk.Frame(prow, bg=CARD)
+        size_box.pack(side="right", padx=(0, SP["m"]))
+
+        def _size_pair(label, minus, plus, tip_minus, tip_plus):
+            tk.Label(size_box, text=label, font=(FONT, theme.fs(FS["caption"])),
+                     bg=CARD, fg=MUTED).pack(side="left", padx=(SP["s"], 2))
+            b1 = _mini_btn(size_box, "－", minus)
+            b1.pack(side="left")
+            val = tk.Label(size_box, text="", width=2,
+                           font=(FONT, theme.fs(FS["sub"]), "bold"),
+                           bg=CARD, fg=TEXT)
+            val.pack(side="left")
+            b2 = _mini_btn(size_box, "＋", plus)
+            b2.pack(side="left")
+            _tip(b1, tip_minus)
+            _tip(b2, tip_plus)
+            return val
+
+        self._col_val = _size_pair("칸", self._remove_col, self._add_col,
+                                   "칸(가로) 줄이기", "칸(가로) 늘리기")
+        self._row_val = _size_pair("줄", self._remove_row, self._add_row,
+                                   "줄(세로) 줄이기", "줄(세로) 늘리기")
 
         tk.Frame(main, bg=BORDER, height=1).pack(fill="x")
 
@@ -1451,29 +1484,15 @@ class SettingsWindow(tk.Toplevel):
                      fg=MUTED).grid(row=rr + HEADER_ROWS, column=0,
                                     padx=(0, 2))
 
-        # ③ 끝쪽 ＋／－ — **번호가 끝나는 자리**에 작게 늘 둔다 (2026-07-25).
-        #
-        # 숨겼다 보여주는 방식은 '거기 버튼이 있다'는 걸 아무도 모른다는 게
-        # 문제였다. 번호 줄(위·왼쪽)의 연장선에 놓으면 무엇을 늘리는지가
-        # 자리로 드러나므로, 작고 흐리게 둬도 알아볼 수 있다.
-        # 칸 조절은 격자 오른쪽에 **＋ 위, － 아래**로 세로로 쌓는다.
-        # 가로로 늘어놓으면 칸 하나만큼 폭을 더 먹는다 (2026-07-25).
-        colbar = tk.Frame(grid, bg=CARD)        # 칸 번호가 끝나는 오른쪽
-        colbar.grid(row=0, column=cols + HEADER_COLS,
-                    rowspan=2, sticky="n", padx=(4, 0))
-        for txt, cmd, tip in (("＋", self._add_col, "칸(가로) 늘리기"),
-                              ("－", self._remove_col, "칸(가로) 줄이기")):
-            b = _mini_btn(colbar, txt, cmd)
-            b.pack()
-            _tip(b, tip)
-
-        rowbar = tk.Frame(grid, bg=CARD)        # 줄 번호가 끝나는 아래쪽
-        rowbar.grid(row=total_rows + HEADER_ROWS, column=0, pady=(3, 0))
-        for txt, cmd, tip in (("＋", self._add_row, "줄(세로) 늘리기"),
-                              ("－", self._remove_row, "줄(세로) 줄이기")):
-            b = _mini_btn(rowbar, txt, cmd)
-            b.pack(side="left")
-            _tip(b, tip)
+        # ③ 칸·줄 ＋/－ 는 격자 모서리에서 **머리줄로 옮겼다** (2026-07-31).
+        # 네 버튼이 격자의 오른쪽·아래에 흩어져 있는 것이 복잡하다는 지적 —
+        # 지금은 위 머리줄의 '칸 − n ＋ · 줄 − n ＋' 하나가 그 일을 한다.
+        # 여기서는 표시 숫자만 맞춘다.
+        try:
+            self._col_val.config(text=str(cols))
+            self._row_val.config(text=str(total_rows))
+        except Exception:
+            pass
 
         # 드래그 좌표 계산용 (winfo_containing 없이 수학으로 — 부드러운 이유)
         self._grid_widget = grid
@@ -1771,7 +1790,8 @@ class SettingsWindow(tk.Toplevel):
             import tkinter.font as tkfont
             cell = self._cell_px(self._cur_cols())
             avail = cell * span + CELL_GAP * (span - 1) - 8
-            lf = tkfont.Font(family=FONT, size=theme.fs(label_size))
+            lf = tkfont.Font(family=FONT, size=theme.fs(label_size),
+                             weight="bold")     # 이름은 굵게 그린다 — 같은 굵기로 재야 맞는다
             while (label_size > 6
                    and max(lf.measure(ln) for ln in text.split("\n")) > avail):
                 label_size -= 1
@@ -1805,13 +1825,14 @@ class SettingsWindow(tk.Toplevel):
         lab = tk.Label(tile, text=text, bg=bg,
                        fg=theme.text_on(bg),
                        anchor="center", justify="center",
-                       font=(FONT, theme.fs(label_size)))
+                       # 굵게 — 메인 창 블럭·물감 창고 카드와 같은 무게 (2026-07-31)
+                       font=(FONT, theme.fs(label_size), "bold"))
         # 위아래 여백 3px: 칸 테두리(RoundTile 이 캔버스에 그리는 폴리곤 선)를
         # 라벨 위젯이 덮어 **아랫변만 안 그려진 것처럼** 보이던 원인
         # (사용자 지적 2026-07-31: "테두리의 모양이 이상합니다"). 라벨이
         # 가장자리까지 차지하지 않게 물러나면 테두리가 온전히 보인다.
         lab.pack(expand=True, fill="both", padx=4,
-                 pady=((0 if icon else 3), 3))
+                 pady=((0 if icon else 4), 4))
         parts.append(lab)
         # 선택 표시(파랑 물들이기)가 되돌아갈 원래 색 — _paint_sel_tile 참고.
         tile._base_bg = bg
@@ -1925,27 +1946,25 @@ class SettingsWindow(tk.Toplevel):
     def _tile_menu(self, e, idx):
         """타일 우클릭 메뉴 — 옛 상단 바(편집·크기·삭제)를 여기로 옮겼다."""
         self._set_selection(idx)
-        m = tk.Menu(self, tearoff=0)
-        # 도구 블럭은 '편집' 항목 자체를 안 보인다 — 편집할 내용물이 없다
-        # (_edit_block 의 builtin 갈래 참고, 2026-07-31)
+        # 2026-07-31: 윈도우 기본 회색 tk.Menu → 프로그램과 같은 얼굴(Popover).
+        # 회색 메뉴는 디자인 문법과 달랐다는 지적. 가로/세로 ±1 네 항목도
+        # 뺐다 — 크기는 오른쪽 아래 파란 손잡이를 끌면 한 번에 되는 일이라,
+        # 메뉴 아홉 줄이 다섯 줄로 준다. 메뉴는 그 블럭 바로 아래에 펼쳐진다.
         blocks = palette.load_tabs()[self.sel_tab]["blocks"]
         btype = blocks[idx].get("type") if 0 <= idx < len(blocks) else None
+        anchor = self._tiles.get(idx) or self.tab_pick
+        pop = Popover(self, anchor)
         if btype != "builtin":
-            m.add_command(label="편집  (더블클릭)",
-                          command=lambda: self._edit_block(idx))
-        m.add_command(label="이름 바꾸기 (줄바꿈 가능)",
-                      command=lambda: self._rename_block(idx))
-        m.add_command(label="복제", command=lambda: self._duplicate(idx))
-        m.add_command(label="색 바꾸기", command=lambda: self._recolor(idx))
-        m.add_command(label="기본색으로", command=lambda: self._recolor(idx, reset=True))
-        m.add_separator()
-        m.add_command(label="가로 +1", command=lambda: self._resize_selected(1, 0))
-        m.add_command(label="가로 -1", command=lambda: self._resize_selected(-1, 0))
-        m.add_command(label="세로 +1", command=lambda: self._resize_selected(0, 1))
-        m.add_command(label="세로 -1", command=lambda: self._resize_selected(0, -1))
-        m.add_separator()
-        m.add_command(label="삭제", command=self._del_selected)
-        m.tk_popup(e.x_root, e.y_root)
+            # 도구 블럭은 편집할 내용물이 없다 (_edit_block 의 builtin 갈래)
+            pop.add("편집  (더블클릭)", lambda: self._edit_block(idx))
+        pop.add("이름 바꾸기 (줄바꿈 가능)", lambda: self._rename_block(idx))
+        pop.add("복제", lambda: self._duplicate(idx))
+        pop.separator()
+        pop.add("색 바꾸기", lambda: self._recolor(idx))
+        pop.add("기본색으로", lambda: self._recolor(idx, reset=True))
+        pop.separator()
+        pop.add("삭제", self._del_selected)
+        pop.show()
 
     def _rename_block(self, idx):
         r"""블럭에 보일 이름을 정한다. **줄바꿈(Enter)이 그대로 들어간다.**

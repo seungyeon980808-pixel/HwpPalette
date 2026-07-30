@@ -1975,9 +1975,13 @@ def _make_block_button(parent, blk, span=1, show_icon=True, cell_px=None):
         # 화면과 동일해야합니다"). 설정 미리보기(palette_ui._tile_icon_image)
         # 도 같은 식으로 재야 두 화면의 아이콘이 같은 비율로 보인다.
         icon_image = _block_icon_image(icon_asset, icon_font[1])
+    # 이름은 **굵게** (사용자 결정 2026-07-31) — 물감 창고 카드가 정갈해
+    # 보인 것은 다른 서체가 아니라 같은 Pretendard 의 굵은 웨이트였다.
+    # 블럭도 같은 무게로 맞춰 두 화면이 한 손글씨가 된다.
     btn = RoundButton(parent, text=label,
                       command=lambda b=blk: run_palette_block(b),
-                      bg=bg, fg=theme.text_on(bg), radius=theme.RADIUS["ctl"], font=_font(size),
+                      bg=bg, fg=theme.text_on(bg), radius=theme.RADIUS["ctl"],
+                      font=_font(size, "bold"),
                       outline=theme.block_edge(), focus_color=ACCENT,
                       zone_bg=parent.cget("bg"),
                       align="center" if _centered else "left",

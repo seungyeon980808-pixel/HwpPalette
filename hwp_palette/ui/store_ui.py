@@ -251,6 +251,25 @@ class StorePanel(tk.Frame):
                            else "모두 팔레트에 놓여 있습니다")
         self._sync_share()
 
+        # 판 폭을 **내용으로 계산한다** (2026-07-31, 사용자 지적: "물감창고와
+        # 물감 미리보기가 잘려있다"). 고정 326px 은 카드 이름이 길어지면
+        # 두 열의 최소 폭이 그걸 넘어, 오른쪽 열이 미리보기와의 경계선에서
+        # 잘렸다. 가장 긴 이름(잘림 처리 후)을 실측해 두 열이 온전히 들어갈
+        # 폭으로 판을 늘린다 — 창은 _fit_window 가 따라 커진다.
+        try:
+            import tkinter.font as tkfont
+            f = tkfont.Font(family=FONT, size=theme.fs(FS["sub"]),
+                            weight="bold")
+            def shown(name):
+                return name if len(name) <= 12 else name[:12] + "…"
+            widest = max((f.measure(shown(it.get("name", "")))
+                          for _c, it in items), default=120)
+            # 카드 안쪽 여백(6*2) + 카드 사이(3*2*2) + 스크롤바(≈16) + 판 여백
+            need = 2 * (widest + 12 + 6) + 16 + 12
+            self.config(width=max(326, min(560, need)))
+        except Exception:
+            pass
+
         grid = tk.Frame(self.body, bg=CARD)
         grid.pack(fill="x")
         for c in range(COLS):
