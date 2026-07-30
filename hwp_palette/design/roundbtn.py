@@ -22,13 +22,18 @@ import tkinter as tk
 
 from hwp_palette.design import ui_fx
 
+# 아이콘 줄과 이름 줄 사이 틈(px). 0 이면 두 줄이 붙어 한 글자처럼 뭉치고,
+# 3 이상이면 좁은 칸(42px)에서 아래 이름이 잘린다.
+ICON_GAP = 1
+
 
 class RoundButton(tk.Canvas):
 
     def __init__(self, parent, text="", command=None, bg="#ffffff",
                  fg="#1d1d1f", radius=8, font=None, outline="",
                  focus_color="#0071e3", zone_bg=None, justify="center",
-                 trailing=None, pad_in=10, align="center", image=None):
+                 trailing=None, pad_in=10, align="center", image=None,
+                 icon=None, icon_font=None, icon_fg=None):
         # zone_bg = 모서리 '바깥'에 비칠 색. 안 주면 부모 배경을 따른다.
         super().__init__(parent, highlightthickness=0, bd=0,
                          bg=zone_bg or parent.cget("bg"),
@@ -58,10 +63,29 @@ class RoundButton(tk.Canvas):
         # 줄 맞춰 서 있어도 **글자는 줄이 안 맞는다.** 왼쪽에 붙이면 세로로
         # 글머리가 한 줄에 서고, 두 줄 이름도 첫 글자가 어긋나지 않는다.
         self._align = align
-        # image: 글자 대신 그림을 가운데 놓는다 (2026-07-30 — 툴바 아이콘).
-        # 참조를 여기 붙들어 둔다: Tk 는 PhotoImage 를 안 붙들면 가비지 컬렉션돼
-        # 그림이 빈칸으로 나온다.
+        # image 와 icon 은 **다른 것**이다 (2026-07-30 합칠 때 정리).
+        #   image = PNG 그림 하나를 칸 가운데 (툴바의 ⚙·↺·… — 글자가 없다)
+        #   icon  = 이름 **위**에 한 줄로 그리는 기호 글자 (블럭 카드)
+        # 한 버튼이 둘을 함께 쓰는 자리는 없다.
+        #
+        # image 참조를 여기 붙들어 둔다: Tk 는 PhotoImage 를 안 붙들면 가비지
+        # 컬렉션돼 그림이 빈칸으로 나온다.
         self._image = image
+        # icon = 이름 **위에** 한 줄로 그리는 기호 (H안, 2026-07-29).
+        #
+        # trailing 과 다른 자리다: trailing 은 같은 줄의 오른쪽 끝(▾ 같은 것),
+        # icon 은 윗줄 가운데다. 종류를 배경색 대신 아이콘으로 말하기로 하면서
+        # 생겼다 — 배경이 전부 흰 카드라 색으로는 더 이상 구별이 안 된다.
+        #
+        # 아이콘이 있으면 글자 자리는 **자동으로 가운데**가 된다: 아이콘만
+        # 가운데이고 이름은 왼쪽에 붙으면 둘이 한 덩어리로 안 읽히고 계단처럼
+        # 어긋나 보인다.
+        self._icon = icon
+        self._icon_font = icon_font or font
+        # 아이콘은 이름보다 **흐리게** 그린다. 같은 색이면 아이콘이 이름과 같은
+        # 무게로 읽혀 둘이 서로 경쟁하고, 격자로 늘어놓으면 기호가 먼저 눈에
+        # 들어와 정작 무엇을 누르는지 늦게 안다. 아이콘은 '거들 뿐'이다.
+        self._icon_fg = icon_fg or fg
         self._base = bg
         self._hover = ui_fx.darken(bg, ui_fx.HOVER_FACTOR)
         self._press = ui_fx.darken(bg, ui_fx.PRESS_FACTOR)
@@ -69,6 +93,7 @@ class RoundButton(tk.Canvas):
         self._job = None          # 진행 중인 보간 after id
         self._focused = False
         self._pressed = False
+        self._metrics = None      # 글꼴 높이 캐시 (_text_metrics)
 
         self.bind("<Configure>", lambda e: self._redraw())
         self.bind("<Enter>", lambda e: self._to(self._hover))
@@ -96,10 +121,58 @@ class RoundButton(tk.Canvas):
             if self._trailing:      # 오른쪽 기호가 글자를 침범하지 않게
                 w += f.measure(self._trailing) + pad_x
             h = f.metrics("linespace") * len(lines) + pad_y * 2
+            if self._icon:      # 아이콘 줄만큼 키를 더 준다
+                icon_h, _ = self._text_metrics()
+                h += icon_h + ICON_GAP
             self.config(width=max(w, min_w), height=h)
         except Exception:
             self.config(width=max(80, min_w), height=28)
         return self
+
+    # ── 아이콘 세로 배치 ────────────────────────────
+    def _text_metrics(self):
+        """(아이콘 줄 높이, 이름 줄 높이 합).
+
+        글꼴 잴 때마다 Font 객체를 새로 만들면 누를 때마다 그 값이 다시 계산된다
+        — 값이 바뀌는 일이 거의 없으므로(글꼴·줄 수가 그대로면 같다) 한 번 재서
+        들고 있는다. set_text·retint 가 무효로 만든다.
+        """
+        key = (str(self._font), str(self._icon_font), self._icon,
+               (self._text or "").count("\n"))
+        if self._metrics and self._metrics[0] == key:
+            return self._metrics[1]
+        import tkinter.font as tkfont
+        try:
+            lf = tkfont.Font(font=self._font) if self._font else tkfont.Font()
+            label_h = (lf.metrics("linespace")
+                       * len((self._text or " ").split("\n")))
+            icon_h = 0
+            if self._icon:
+                icf = (tkfont.Font(font=self._icon_font)
+                       if self._icon_font else tkfont.Font())
+                icon_h = icf.metrics("linespace")
+        except Exception:
+            return 0, 0
+        self._metrics = (key, (icon_h, label_h))
+        return icon_h, label_h
+
+    def _stack_y(self, h):
+        """(이름 줄 중심 y, 아이콘 중심 y).
+
+        아이콘과 이름을 **한 덩어리로 묶어** 그 덩어리를 칸 한가운데에 놓는다.
+        각각을 따로 가운데 맞추면(아이콘 1/3, 이름 2/3 식) 이름이 한 줄일 때와
+        두 줄일 때 덩어리 위치가 달라져, 격자로 늘어놓았을 때 아이콘 줄이 들쭉
+        날쭉해진다.
+        """
+        if not self._icon:
+            return h // 2, 0
+        icon_h, label_h = self._text_metrics()
+        if not icon_h or not label_h:
+            return h // 2, h // 2
+        total = icon_h + ICON_GAP + label_h
+        top = (h - total) / 2.0
+        return (int(top + icon_h + ICON_GAP + label_h / 2.0),
+                int(top + icon_h / 2.0))
 
     # ── 그리기 ──────────────────────────────────────
     @staticmethod
@@ -125,21 +198,31 @@ class RoundButton(tk.Canvas):
         edge = (self._focus_color if self._focused else self._outline)
         dy = 1 if self._pressed else 0      # 누르면 글자가 1px 가라앉는다
 
-        # 글자 자리 — trailing 이 있거나 align="left" 면 왼쪽 붙임
-        if self._trailing or self._align == "left":
+        # 글자 자리 — trailing 이 있거나 align="left" 면 왼쪽 붙임.
+        # 단 아이콘이 있으면 무조건 가운데다 (아이콘과 이름이 한 덩어리로 서야 한다).
+        if self._icon:
+            lx, lanchor = w // 2, "center"
+        elif self._trailing or self._align == "left":
             lx, lanchor = self._pad_in, "w"
         else:
             lx, lanchor = w // 2, "center"
+        ly, iy = self._stack_y(h)
 
         if not self.find_withtag("body"):
             self.create_polygon(pts, smooth=True, fill=self._fill,
                                 outline=edge or "",
                                 width=2 if self._focused else 1, tags="body")
             if self._image is not None:
+                # 그림 버튼은 글자가 없다 — 여기서 끝낸다 (태그도 따로 둔다:
+                # 아래 icon 은 기호 '글자'라 같은 이름을 쓰면 서로 지운다)
                 self.create_image(w // 2, h // 2 + dy, image=self._image,
-                                  tags="icon")
+                                  tags="img")
                 return
-            self.create_text(lx, h // 2 + dy, text=self._text, anchor=lanchor,
+            if self._icon:
+                self.create_text(w // 2, iy + dy, text=self._icon,
+                                 anchor="center", font=self._icon_font,
+                                 fill=self._icon_fg, tags="icon")
+            self.create_text(lx, ly + dy, text=self._text, anchor=lanchor,
                              font=self._font, fill=self._fg,
                              justify=self._justify, tags="label")
             if self._trailing:
@@ -152,9 +235,13 @@ class RoundButton(tk.Canvas):
         self.itemconfig("body", fill=self._fill, outline=edge or "",
                         width=2 if self._focused else 1)
         if self._image is not None:
-            self.coords("icon", w // 2, h // 2 + dy)
+            self.coords("img", w // 2, h // 2 + dy)
             return
-        self.coords("label", lx, h // 2 + dy)
+        if self._icon and self.find_withtag("icon"):
+            self.coords("icon", w // 2, iy + dy)
+            self.itemconfig("icon", text=self._icon, fill=self._icon_fg,
+                            font=self._icon_font)
+        self.coords("label", lx, ly + dy)
         self.itemconfig("label", text=self._text, fill=self._fg,
                         font=self._font, anchor=lanchor)
         if self._trailing:
@@ -242,10 +329,11 @@ class RoundButton(tk.Canvas):
         잘리고 짧아지면 오른쪽이 텅 빈다.
         """
         self._text = text
+        self._metrics = None      # 줄 수가 달라졌을 수 있다
         self.fit(pad_x=pad_x, pad_y=pad_y)
         self._redraw()
 
-    def retint(self, bg=None, fg=None):
+    def retint(self, bg=None, fg=None, icon_fg=None):
         if bg:
             self._base = bg
             self._hover = ui_fx.darken(bg, ui_fx.HOVER_FACTOR)
@@ -253,6 +341,8 @@ class RoundButton(tk.Canvas):
             self._fill = bg
         if fg:
             self._fg = fg
+        if icon_fg:
+            self._icon_fg = icon_fg
         self._redraw()
 
 
