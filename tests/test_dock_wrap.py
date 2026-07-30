@@ -116,6 +116,47 @@ class CropRules(unittest.TestCase):
         self.assertIn("def _crop_ok", _read("hwp_dock"))
 
 
+class HoleRules(unittest.TestCase):
+    r"""판 자리는 우리 창에서 **오려 낸다** (실측 2026-07-30, dock_real_spike).
+
+    사용자 지적: "여전히 도킹이 안 되는 문제점이 있습니다" — 화면에는
+    '감쌌습니다'라고 뜨는데 판이 하얗게 비어 있었다. 정체는 z순서였다:
+    우리 창이 활성 창이면 윈도우가 그것을 맨 위에 두려 해서, 한글을 올려도
+    (HWND_TOP 이든 상대 순서든) 다시 밀렸다 — 실측 z 23 대 35.
+
+    그래서 순서를 다투는 것을 그만두고 **그 자리에 창을 없앤다**. 그림도 안
+    그리고 마우스도 안 받으므로, 위에 있어도 가릴 것이 없다.
+    """
+
+    def test_판_자리를_오려_낸다(self):
+        code = _read("hwp_dock")
+        self.assertIn("def _punch_hole", code)
+        self.assertIn("def clear_hole", code)
+        self.assertIn("CombineRgn", code)
+
+    def test_뗄_때_구멍을_메운다(self):
+        """안 메우면 평소 창 가운데가 뚫린 채 남는다."""
+        code = _read("hwp_dock")
+        body = code.split("def stop(")[1].split("\n    def ")[0]
+        self.assertIn("clear_hole", body)
+
+    def test_한글_올리기는_활성화될_때만(self):
+        r"""매 틱 올리면 다른 프로그램으로 갔을 때 한글이 그 위로 튀어 오른다.
+
+        추적 루프(_follow_loop·_poll_fallback)에서는 순서를 건드리지 않는다 —
+        올리는 것은 우리 창이 활성화되는 순간뿐이다.
+        """
+        code = _read("hwp_dock")
+        for fn in ("_follow_loop", "_poll_fallback"):
+            body = code.split(f"def {fn}")[1].split("\n    def ")[0]
+            self.assertNotIn("raise_above", body, f"{fn} 이 순서를 건드린다")
+        self.assertIn('bind("<Activate>"', code)
+
+    def test_원복은_저장한_사각형으로(self):
+        """배치(SetWindowPlacement)만 쓰면 모니터를 건너간 뒤 좌표가 밀린다."""
+        self.assertIn("_rect0", _read("hwp_dock"))
+
+
 class ZOrderRules(unittest.TestCase):
 
     def test_우리_창이_앞에_올_때_한글을_올린다(self):

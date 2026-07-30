@@ -118,6 +118,22 @@ def caption_height(hwnd):
     return int(round(CAPTION_H * dpi / 96.0))
 
 
+_RGN_DIFF = 4                 # CombineRgn 모드 — A 에서 B 를 뺀다
+
+
+def dpi_scale(hwnd):
+    r"""그 창이 놓인 화면의 배율 (1.0 / 1.25 / 1.5 …).
+
+    우리 프로세스는 DPI 미인식이라 우리 창에 물어보면 늘 96 이 나온다. 그래서
+    **DPI 를 아는 창**(한글)에게 묻는다 — 창 영역(SetWindowRgn)의 좌표는
+    가상화되지 않은 실제 픽셀이므로, 이 배율로 곱해 줘야 자리가 맞는다.
+    """
+    try:
+        return (_user32.GetDpiForWindow(hwnd) or 96) / 96.0
+    except Exception:
+        return 1.0
+
+
 def clear_crop(hwnd):
     """잘라내기를 없앤다 — 창을 원래대로 통째로 보이게."""
     try:
@@ -171,10 +187,12 @@ class Dock:
         # 보이는 편이 오히려 '한글이 떠 있다'를 말해 준다.
         self.crop = int(crop_top)
         self._placement = None       # 원복용 — 시작할 때의 창 배치
+        self._rect0 = None           # 원복용 — 시작할 때의 실제 사각형
         self._host_hwnd = None
         self._root_hwnd = None       # 우리 최상위 창 — 이벤트 훅이 지켜보는 대상
         self._hook_tid = None        # 훅 스레드의 Win32 스레드 id (WM_QUIT 용)
         self._focus_bind = None      # 우리 창 활성화 → 한글 다시 올리기
+        self._hole = None            # 우리 창에 오려 낸 판 자리 (액자 구멍)
         self._stop_evt = threading.Event()
         self._thread = None
 
@@ -184,6 +202,9 @@ class Dock:
             if not win32gui.IsWindow(self.hwnd):
                 return False
             self._placement = win32gui.GetWindowPlacement(self.hwnd)
+            # 배치만 저장하면 모니터를 건너간 뒤 원복이 밀린다 (실측 2026-07-30:
+            # 뗀 뒤 한글이 163px 옆으로 갔다) — 실제 사각형도 함께 떠 둔다.
+            self._rect0 = win32gui.GetWindowRect(self.hwnd)
             # 최대화·최소화 상태면 SetWindowPos 가 안 먹는다 — 먼저 보통으로
             if (self._placement[1] == win32con.SW_SHOWMAXIMIZED
                     or win32gui.IsIconic(self.hwnd)):
@@ -194,19 +215,24 @@ class Dock:
             # 움직여도 자기 좌표는 그대로여서 LOCATIONCHANGE 가 안 온다.
             self._root_hwnd = win32gui.GetAncestor(self._host_hwnd,
                                                    win32con.GA_ROOT)
+            self._hole = None            # 마지막으로 뚫은 구멍 (판의 상대 자리)
+            self._punch_hole()
             self._stop_evt.clear()
             self._thread = threading.Thread(target=self._follow_loop,
                                             daemon=True, name="hwp-dock")
             self._thread.start()
             # 우리 창이 앞으로 나올 때마다 한글을 다시 올린다 (2026-07-30).
             #
-            # z 를 매 틱 밀어 올리던 것을 그만둔 뒤(_MOVE_FLAGS 설명) 생긴 구멍이다:
-            # 우리 창을 한 번 누르면 우리 창이 한글 위로 올라와 **판이 회색으로
-            # 덮인다** — 양식 수정 도킹이 "엉망"이 된 정체다(사용자 지적).
-            # 활성화될 때 한 번만 올리므로 자리다툼(클릭 가로채기)은 안 생긴다.
-            self._focus_bind = self.top.bind("<FocusIn>",
-                                             lambda e: self.raise_above(),
-                                             add="+")
+            # <Activate> 가 본줄이다 — 창이 활성화되는 순간에 온다. <FocusIn> 은
+            # 자식 위젯이 초점을 받을 때는 토플레벨에 오지 않으므로 그것만으로는
+            # 새는 경우가 있다. 둘 다 걸어 두고 raise_above 는 여러 번 불려도
+            # 무해하게 만들었다.
+            self._focus_bind = [
+                self.top.bind("<Activate>", lambda e: self.raise_above(),
+                              add="+"),
+                self.top.bind("<FocusIn>", lambda e: self.raise_above(),
+                              add="+"),
+            ]
             # z 는 이제 추적 스레드가 안 건드리므로(_MOVE_FLAGS 설명), 시작할 때
             # **한 번만** 우리 창 위로 올려 둔다. 이게 없으면 방금 켠 한글이
             # 우리 판 뒤에 깔려 회색 판만 보인다.
@@ -217,15 +243,69 @@ class Dock:
             self._placement = None
             return False
 
-    def raise_above(self):
-        """한글 창을 우리 창 바로 위로 한 번 올린다 (초점은 뺏지 않는다)."""
+    def _punch_hole(self):
+        r"""우리 창에서 **판 자리를 오려 낸다** — 액자처럼 (2026-07-30 재작성).
+
+        왜 이렇게까지 하나 (실측 spikes/dock_real_spike.py): 한글을 우리 창
+        위로 올리는 방식은 실제 화면에서 계속 밀렸다. 우리 창이 활성 창이면
+        윈도우가 그것을 맨 위에 두려 하기 때문에, 순서를 아무리 맞춰도
+        (HWND_TOP 이든 상대 순서든) 판이 우리 배경으로 덮였다 — 사용자에게는
+        "감쌌다면서 하얗게 비어 있다"로 보였다.
+
+        순서를 다투는 대신 **판을 없앤다**: 그 자리에 창이 아예 없으면 위에
+        있어도 가릴 것이 없다. 그림도 안 그리고 마우스도 안 받으므로, 구멍
+        아래의 한글이 그대로 보이고 클릭도 한글이 받는다. 도구줄은 구멍 밖에
+        있어 늘 보인다.
+        """
         try:
+            if not (self._root_hwnd and win32gui.IsWindow(self._host_hwnd)):
+                return
+            wl, wt, wr, wb = win32gui.GetWindowRect(self._root_hwnd)
+            hl, ht, hr, hb = win32gui.GetWindowRect(self._host_hwnd)
+            box = (hl - wl, ht - wt, hr - wl, hb - wt)
+            if box == self._hole:
+                return                      # 이미 그 자리에 뚫려 있다
+            k = dpi_scale(self.hwnd)        # 영역 좌표는 실제 픽셀이다
+            full = _gdi32.CreateRectRgn(0, 0, int((wr - wl) * k) + 2,
+                                        int((wb - wt) * k) + 2)
+            hole = _gdi32.CreateRectRgn(*[int(v * k) for v in box])
+            _gdi32.CombineRgn(full, full, hole, _RGN_DIFF)
+            _gdi32.DeleteObject(hole)
+            win32gui.SetWindowRgn(self._root_hwnd, full, True)
+            self._hole = box
+        except Exception as e:
+            applog.exc("판 자리 오려 내기 실패 — 한글이 판 뒤에 있을 수 있음", e)
+
+    def clear_hole(self):
+        """구멍을 메운다 (도킹을 뗄 때) — 안 메우면 창에 빈 구멍이 남는다."""
+        self._hole = None
+        try:
+            if self._root_hwnd and win32gui.IsWindow(self._root_hwnd):
+                win32gui.SetWindowRgn(self._root_hwnd, 0, True)
+        except Exception as e:
+            applog.exc("창 구멍 메우기 실패 — 창 가운데가 뚫린 채 남는다", e)
+
+    def raise_above(self):
+        r"""한글을 맨 위로 한 번 올린다 (초점은 뺏지 않는다).
+
+        **우리 창이 활성일 때만** 부른다 (시작할 때 · 우리 창이 앞에 올 때).
+        매 틱 올리면 선생님이 다른 프로그램으로 갔을 때도 한글이 그 위로
+        튀어 올라 남의 창을 가로챈다 — 예전에 "클릭이 안 된다"의 절반이 그것이었다.
+
+        판 자리는 이미 우리 창에서 오려 냈으므로(_punch_hole), 우리 창과 순서를
+        다툴 일은 없다. 여기서 올리는 이유는 **다른 프로그램**(브라우저 등)이
+        구멍 아래에 끼어 있을 때 그것을 넘어서기 위해서다 — 실측에서 크롬 창이
+        판 자리를 차지하고 있었다.
+        """
+        try:
+            if not win32gui.IsWindow(self.hwnd):
+                return
             win32gui.SetWindowPos(
                 self.hwnd, win32con.HWND_TOP, 0, 0, 0, 0,
                 win32con.SWP_NOMOVE | win32con.SWP_NOSIZE
                 | win32con.SWP_NOACTIVATE | win32con.SWP_SHOWWINDOW)
         except Exception as e:
-            applog.exc("한글 창 올리기 실패 — 우리 판 뒤에 있을 수 있음", e)
+            applog.exc("한글 창 올리기 실패 — 판 자리에 남의 창이 보일 수 있음", e)
 
     # ── 추적 (별도 스레드 — Win32 호출만, Tk·COM 금지) ──
     def _snap(self):
@@ -252,7 +332,8 @@ class Dock:
                 win32gui.SetWindowPos(self.hwnd, 0, l, ty, tw, thh, _MOVE_FLAGS)
                 if self.crop:
                     self._apply_crop(tw, thh)
-            elif self.crop and not self._crop_ok():
+            self._punch_hole()               # 창 크기가 바뀌면 구멍도 따라간다
+            if self.crop and not self._crop_ok():
                 # 한글이 자기 영역을 다시 씌웠다 (최대화·배율 변경 등) —
                 # 200ms 안전망이 이때 제목줄을 다시 잘라 준다.
                 self._apply_crop(tw, thh)
@@ -337,11 +418,12 @@ class Dock:
     # ── 멈춤과 원복 (둘로 나뉜 이유: 사이에 '숨기기'가 끼어야 한다) ──
     def stop_follow(self):
         """추적 스레드만 멈춘다. 창은 아직 판 자리에 있다."""
-        if self._focus_bind is not None:
-            try:
-                self.top.unbind("<FocusIn>", self._focus_bind)
-            except Exception:
-                pass                     # 창이 이미 파괴됐다 — 바인딩도 함께 갔다
+        if self._focus_bind:
+            for event, fid in zip(("<Activate>", "<FocusIn>"), self._focus_bind):
+                try:
+                    self.top.unbind(event, fid)
+                except Exception:
+                    pass                 # 창이 이미 파괴됐다 — 바인딩도 함께 갔다
             self._focus_bind = None
         self._stop_evt.set()
         if self._hook_tid:               # 대기 중인 펌프를 즉시 깨운다
@@ -372,7 +454,7 @@ class Dock:
             visible = win32gui.IsWindowVisible(self.hwnd)
             was_maximized = placement[1] == win32con.SW_SHOWMAXIMIZED
             if visible and not was_maximized:
-                tl, tt, tr, tb = placement[4]       # rcNormalPosition
+                tl, tt, tr, tb = self._rect0 or placement[4]
                 tw, th = tr - tl, tb - tt
                 for _ in range(8):                   # ~130ms 활강
                     cl, ct, cr, cb = win32gui.GetWindowRect(self.hwnd)
@@ -403,4 +485,5 @@ class Dock:
     def stop(self):
         """추적을 멈추고 되돌린다 — 한 번에 끝내는 기본 경로."""
         self.stop_follow()
+        self.clear_hole()
         self.restore()
