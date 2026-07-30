@@ -1679,23 +1679,24 @@ class SettingsWindow(tk.Toplevel):
         # 종류별 배경색이 없어진 뒤로는 이것이 유일한 종류 표시이기도 하다 —
         # 빼먹으면 이 창의 칸이 전부 똑같은 흰 네모가 된다.
         text = self._tile_text(blk, span)
+        two_lines = "\n" in text
         # 개인 팔레트 탭에는 아이콘을 안 그린다 — 메인 창이 그렇기 때문이다
         # (2026-07-30). 여기서만 아이콘을 얹으면 **미리보기가 거짓말을 한다**:
         # 설정 창에서는 기호가 보이는데 정작 팔레트에는 없다.
-        #
-        # 아이콘 크기는 메인 창(16/13)을 따라가지 않고 여기 값(11/9)을 지킨다.
-        # 이 칸은 24~34px 짜리 축소판이라, 메인 창 비율로 키우면 기호가 칸을
-        # 다 먹고 **이름이 잘린다**. 미리보기에서 더 중요한 것은 기호의 크기가
-        # 아니라 '어떤 블럭이 어디에 있는가' 다.
         icon = (theme.block_icon(blk)
                 if self._cur_tab_name() == palette.MAIN_TAB else None)
+        # 2026-07-30: 아이콘·이름 크기를 메인 창과 **완전히 맞춘다** (사용자
+        # 지적 — "두개가 동일하게 보여야하는거고 메인 위젯 포멧을 그대로
+        # 팔레트 설정에서 따라하도록"). app._BLOCK_ICON_FS/_2LINE 및
+        # size = 8 if two_lines else 9 와 같은 값이다. 순환 임포트를 피해
+        # 값만 복제한다 — 나중에 app.py 쪽 값이 바뀌면 여기도 같이 바꿔야 한다.
         parts = []
         if icon:
             icon_fg = (theme.colors()["muted"]
                        if theme.text_on(bg) != "#ffffff" else "#ffffff")
             parts.append(tk.Label(
                 tile, text=icon, bg=bg, fg=icon_fg,
-                font=(FONT, theme.fs(9 if "\n" in text else 11))))
+                font=(FONT, theme.fs(13 if two_lines else 16))))
             parts[-1].pack(fill="x", pady=(3, 0))
         # 글자색은 배경 밝기에 맞춰 정한다 — 어두운 색을 골라도 읽히게 (제안 18)
         # 아이콘이 있으면 가운데, 없으면 예전처럼 왼쪽에 붙인다
@@ -1704,9 +1705,7 @@ class SettingsWindow(tk.Toplevel):
                        fg=theme.text_on(bg),
                        anchor="center" if icon else "w",
                        justify="center" if icon else "left",
-                       font=(FONT, theme.fs(
-                           10 if blk["type"] == "char"
-                           else (7 if icon and "\n" in text else 8))))
+                       font=(FONT, theme.fs(8 if two_lines else 9)))
         lab.pack(expand=True, fill="both",
                  padx=(0 if icon else TILE_TEXT_PAD, 0))
         parts.append(lab)
@@ -1887,22 +1886,40 @@ class SettingsWindow(tk.Toplevel):
         self._notify()
 
     def _tile_text(self, blk, span=1):
-        r"""칸 수에 맞춰 자른다 — 메인 창(main._fit_label)과 **같은 규칙**.
+        r"""칸 수에 맞춰 자른다 — 메인 창(app._fit_label)과 **완전히 같은 규칙**.
 
-        자동 아이콘(▦ ƒ 📄)은 넣지 않는다 — 사용자가 정한 이름 그대로 (2026-07-19).
-        줄바꿈은 살려서 줄마다 따로 자른다 — '양식\n채우기' 처럼 좁은 칸에
-        두 줄로 넣을 수 있게 (2026-07-25).
+        2026-07-30: 메인 창은 표시 폭(동아시아 너비) 기준으로 자르는데
+        (공백·숫자는 한글의 절반 폭) 여기는 글자 **수**로만 재고 있었다.
+        그래서 '마크다운 변환'처럼 공백이 낀 이름이 메인 창에서는 안 잘리는데
+        이 미리보기에서는 잘렸다 — 두 화면이 다른 물건처럼 보이는 원인이었다
+        (사용자 지적). app._fit_label 을 그대로 옮겨 쓴다(순환 임포트를 피해
+        복제하되, 갈라지지 않도록 폰트 크기도 app._BLOCK_ICON_FS 와 맞춘다
+        — _make_tile 참고).
         """
-        # 자수는 **칸 폭에서 계산한다** — 메인 창과 같은 규칙(main._block_label_max).
-        # 예전의 `span * 2` 는 26px 칸 시절 값이라, 칸이 커진 뒤에도 네 자에서
-        # 잘려 실제 팔레트보다 짧게 보였다 (2026-07-30).
+        import unicodedata
+
+        def w(ch):
+            return 1.0 if unicodedata.east_asian_width(ch) in ("W", "F") else 0.5
+
         cell = self._cell_px(self._cur_cols())
-        char = theme.fs(8) * 4 / 3          # 타일 이름 크기의 한글 한 자 폭
-        width = cell * span + CELL_GAP * (span - 1) - TILE_TEXT_PAD
-        limit = max(2, int(width // max(1, char)))
+        char_px = theme.fs(FS["body"]) * 4 / 3     # 메인 창과 같은 기준(body=9)
+        width = cell * span + CELL_GAP * (span - 1) - TILE_TEXT_PAD // 2
+        limit = max(2.0, width / max(1, char_px))
+
         lines = (self._block_label(blk) or "").split("\n")
-        return "\n".join(ln if len(ln) <= limit else ln[:limit] + "…"
-                         for ln in lines)
+        out = []
+        for line in lines:
+            if sum(w(c) for c in line) <= limit:
+                out.append(line)
+                continue
+            acc, kept = 0.0, []
+            for ch in line:
+                if acc + w(ch) > limit - 1.0:      # 말줄임표(…)도 한 자
+                    break
+                acc += w(ch)
+                kept.append(ch)
+            out.append("".join(kept) + "…")
+        return "\n".join(out)
 
     def _block_label(self, blk):
         # 사용자가 지은 표시 이름이 있으면 그것이 우선 (줄바꿈 포함 가능)
