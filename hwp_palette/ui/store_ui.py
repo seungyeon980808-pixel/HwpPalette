@@ -302,13 +302,17 @@ class StorePanel(tk.Frame):
         # 곡률은 메인 창 블럭과 같다 (RoundTile 머리말 참고)
         tile = RoundTile(parent, bg=CARD, radius=theme.RADIUS["ctl"],
                          zone_bg=CARD, cursor="hand2")
+        # 가운데 정렬로 통일 (사용자 지적 2026-07-30) — 팔레트 설정 미리보기의
+        # 블럭 이름과 같은 규칙이다.
         name = item.get("name", "?")
         nm = tk.Label(tile, text=name if len(name) <= 12 else name[:12] + "…",
-                      font=(FONT, theme.fs(FS["sub"]), "bold"), anchor="w")
+                      font=(FONT, theme.fs(FS["sub"]), "bold"),
+                      anchor="center", justify="center")
         nm.pack(fill="x", padx=6, pady=(5, 0))
         slots = int(item.get("slot_count") or 0)
         sub = tk.Label(tile, text=(f"빈칸 {slots}" if slots else " "),
-                       font=(FONT, theme.fs(FS["caption"])), anchor="w")
+                       font=(FONT, theme.fs(FS["caption"])),
+                       anchor="center", justify="center")
         sub.pack(fill="x", padx=6, pady=(0, 5))
         tile._parts = (nm, sub)
         tile._state = state
