@@ -23,7 +23,9 @@ BORDER = _C["border"]
 SUBBG = _C["subbg"]
 FONT = theme.FONT
 
-_TOPIC_W = 150          # 왼쪽 목록 폭 — 팔레트 설정의 탭 목록과 같은 감각
+# 왼쪽 목록 폭 — 150 이던 시절 "팔레트 통째로 주고받기" 같은 긴 제목이
+# 잘렸다 (2026-07-31). 제목도 짧게 고쳤지만 폭도 한 뼘 넓혀 여유를 둔다.
+_TOPIC_W = 170
 
 
 class HelpWindow(tk.Toplevel):
