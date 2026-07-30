@@ -39,6 +39,9 @@ a = Analysis(
         # 놓치면 exe 에서만 복사·붙여넣기가 조용히 실패한다
         "win32clipboard",
         "pyhwpx",
+        # 문항 엑셀(excel_form·excel_read)이 함수 안에서 부른다 — 창을 안 열면
+        # 안 불러도 되게 미룬 것이라, 정적 분석이 놓치면 exe 에서만 죽는다
+        "openpyxl",
         # 패키지로 나눈 뒤로는 하위 묶음도 명시한다 — app.py 가 전부 정적으로
         # 임포트하므로 지금은 분석이 잡지만, 지연 임포트(store_ui → library_ui)
         # 가 있어 한 번 놓치면 exe 에서만 죽는다

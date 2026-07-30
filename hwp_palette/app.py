@@ -67,6 +67,7 @@ from hwp_palette.ui import dock_bar                       # 감쌌을 때 위쪽
 from hwp_palette.hwp import engine_library
 from hwp_palette.hwp import exam_engine
 from hwp_palette.core import settings
+from hwp_palette.ui import excel_ui
 from hwp_palette.ui import form_fill_ui
 from hwp_palette.ui import form_table_ui            # 양식 채우기 표 (이름표 \학년\ 방식)
 from hwp_palette.model import library
@@ -140,6 +141,11 @@ def fn_open_library(cat=None):
 def fn_open_form_fill():
     """양식 채우기 — 채울 자리를 뽑아 AI에 넘기고, 채운 걸 받아 넣는다."""
     return _single("form_fill", lambda: form_fill_ui.open_form_fill(root))
+
+
+def fn_open_excel():
+    """문항 엑셀 — 엑셀 표에 채워 시험 문항을 만든다 (마크다운 안 치고)."""
+    return _single("exam_excel", lambda: excel_ui.open_excel(root))
 
 
 # ── 한컴 연결 ───────────────────────────────────────────
@@ -548,6 +554,7 @@ BUILTIN_DISPATCH = {
     "photo":        lambda: fn_pick_photo(),
     "special":      lambda: fn_open_library(cat="문자"),
     "form_fill":    lambda: fn_open_form_fill(),
+    "exam_excel":   lambda: fn_open_excel(),
     "library":      lambda: fn_open_library(),
     "search":       lambda: _open_search(),
 }
