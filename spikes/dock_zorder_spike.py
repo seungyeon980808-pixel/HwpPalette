@@ -45,8 +45,7 @@ def main():
     root.update()
     root_hwnd = win32gui.GetAncestor(root.winfo_id(), win32con.GA_ROOT)
 
-    dock = hwp_dock.Dock(root, host, hwnd,
-                         crop_top=hwp_dock.caption_height(hwnd))
+    dock = hwp_dock.Dock(root, host, hwnd)
     log(f"start() → {dock.start()}")
 
     steps = []
@@ -58,13 +57,17 @@ def main():
     def report(tag):
         z = z_order(hwnd, root_hwnd)
         above = "한글" if z[hwnd] < z[root_hwnd] else "우리 창"
+        hl, ht, hr, hb = win32gui.GetWindowRect(host.winfo_id())
+        at = win32gui.WindowFromPoint(((hl + hr) // 2, (ht + hb) // 2))
+        owner = win32gui.GetAncestor(at, win32con.GA_ROOT) if at else None
         log(f"{tag}: 한글 z={z[hwnd]} 우리 z={z[root_hwnd]} → **{above}가 위** "
-            f"(한글이어야 판이 안 덮인다)")
+            f"| 판 가운데 주인={'한글 ✓' if owner == hwnd else '남의 창 ✗'}")
 
     at(1.5, "붙은 직후", lambda: report("도킹"))
     at(2.0, "우리 창 활성화 (= 사용자가 우리 창을 누른 것)",
        lambda: win32gui.SetForegroundWindow(root_hwnd))
     at(3.5, "누른 뒤", lambda: report("우리 창 누른 뒤"))
+    at(3.8, "순서 잡기 (우리 창을 누른 셈)", lambda: dock.keep_order(force=True))
     at(4.0, "한글 활성화", lambda: win32gui.SetForegroundWindow(hwnd))
     at(5.0, "한글 누른 뒤", lambda: report("한글 누른 뒤"))
     at(5.5, "떼기", dock.stop)

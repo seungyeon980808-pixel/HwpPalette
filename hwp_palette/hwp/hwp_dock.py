@@ -234,10 +234,9 @@ class Dock:
                 self.top.bind("<FocusIn>", lambda e: self.raise_above(),
                               add="+"),
             ]
-            # z 는 이제 추적 스레드가 안 건드리므로(_MOVE_FLAGS 설명), 시작할 때
-            # **한 번만** 우리 창 위로 올려 둔다. 이게 없으면 방금 켠 한글이
-            # 우리 판 뒤에 깔려 회색 판만 보인다.
-            self.raise_above()
+            # 시작할 때는 포그라운드가 무엇이든 **한 번은** 순서를 잡아 둔다 —
+            # 이게 없으면 방금 켠 한글이 다른 창 뒤에 깔린 채 시작한다.
+            self.keep_order(force=True)
             return True
         except Exception as e:
             applog.exc("한글 창 도킹 실패 — 도킹 없이 계속", e)
@@ -286,27 +285,38 @@ class Dock:
         except Exception as e:
             applog.exc("창 구멍 메우기 실패 — 창 가운데가 뚫린 채 남는다", e)
 
-    def raise_above(self):
-        r"""한글을 맨 위로 한 번 올린다 (초점은 뺏지 않는다).
+    def keep_order(self, force=False):
+        r"""감싸는 동안 **우리 창은 늘 한글 아래**로 깔린다 (사용자 결정 2026-07-30).
 
-        **우리 창이 활성일 때만** 부른다 (시작할 때 · 우리 창이 앞에 올 때).
-        매 틱 올리면 선생님이 다른 프로그램으로 갔을 때도 한글이 그 위로
-        튀어 올라 남의 창을 가로챈다 — 예전에 "클릭이 안 된다"의 절반이 그것이었다.
+            "한글 문서가 아닌 영역을 누르면 바로 한글 파일이 다른 쪽으로 넘어가.
+             한글파일을 도킹했을 경우에는 무조건 내 프로그램이 가장 아래에
+             깔릴 수 있도록 해야합니다."
 
-        판 자리는 이미 우리 창에서 오려 냈으므로(_punch_hole), 우리 창과 순서를
-        다툴 일은 없다. 여기서 올리는 이유는 **다른 프로그램**(브라우저 등)이
-        구멍 아래에 끼어 있을 때 그것을 넘어서기 위해서다 — 실측에서 크롬 창이
-        판 자리를 차지하고 있었다.
+        정체: 우리 액자를 누르면 우리 창이 활성화돼 위로 올라오고, 그때 한글은
+        다른 프로그램(브라우저 등) 아래로 밀려 구멍에 엉뚱한 창이 비쳤다.
+
+        두 가지를 한 번에 한다 — 한글을 맨 위로, 우리 창을 그 바로 아래로.
+        **우리 짝(우리 창 또는 한글)이 활성일 때만** 손댄다: 선생님이 다른
+        프로그램을 쓰는 중에 한글을 올리면 남의 창을 가로채는 짓이 된다.
         """
         try:
             if not win32gui.IsWindow(self.hwnd):
                 return
-            win32gui.SetWindowPos(
-                self.hwnd, win32con.HWND_TOP, 0, 0, 0, 0,
-                win32con.SWP_NOMOVE | win32con.SWP_NOSIZE
-                | win32con.SWP_NOACTIVATE | win32con.SWP_SHOWWINDOW)
+            fg = win32gui.GetForegroundWindow()
+            if not force and fg not in (self.hwnd, self._root_hwnd):
+                return                      # 남의 프로그램을 쓰는 중 — 건드리지 않는다
+            flags = (win32con.SWP_NOMOVE | win32con.SWP_NOSIZE
+                     | win32con.SWP_NOACTIVATE)
+            win32gui.SetWindowPos(self.hwnd, win32con.HWND_TOP, 0, 0, 0, 0,
+                                  flags | win32con.SWP_SHOWWINDOW)
+            if self._root_hwnd:             # 우리 창은 한글 바로 아래로
+                win32gui.SetWindowPos(self._root_hwnd, self.hwnd, 0, 0, 0, 0,
+                                      flags)
         except Exception as e:
-            applog.exc("한글 창 올리기 실패 — 판 자리에 남의 창이 보일 수 있음", e)
+            applog.exc("도킹 창 순서 맞추기 실패 — 판에 남의 창이 비칠 수 있음", e)
+
+    # 예전 이름 — 호출부(양식 수정 도킹)가 그대로 쓴다
+    raise_above = keep_order
 
     # ── 추적 (별도 스레드 — Win32 호출만, Tk·COM 금지) ──
     def _snap(self):
@@ -369,6 +379,7 @@ class Dock:
                         and win32gui.IsWindow(self._host_hwnd)):
                     break
                 self._snap()                     # 200ms 안전망 (드리프트 교정)
+                self.keep_order()                # 순서도 함께 (우리 짝이 활성일 때만)
         finally:
             _user32.UnhookWinEvent(hook)
 

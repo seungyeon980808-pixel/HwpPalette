@@ -2117,54 +2117,25 @@ def _dock_mode():
 
 
 def fn_dock_hwp():
-    """도킹 버튼 — 감싸고 있으면 떼고, 아니면 시작 문서를 물은 뒤 감싼다."""
+    r"""도킹 버튼 — 감싸고 있으면 떼고, 아니면 **지금 열려 있는 한글**을 감싼다.
+
+    문서를 만들지도, 열지도, 묻지도 않는다 (사용자 지적 2026-07-30:
+    "왜 한글과 도킹을 눌렀을 때 새 한글 파일이 열리는 건데. 희망하지 않은
+    기능은 넣지를 마세요"). 도킹은 **창을 감싸는 일**이지 문서를 다루는 일이
+    아니다 — 새 문서든 파일 열기든 한글에서 하면 된다.
+
+    한글이 아예 안 떠 있으면 연결 과정에서 한글이 실행된다(그때만 한글이 자기
+    빈 문서를 만든다). 우리가 문서를 만드는 경로는 이제 없다.
+    """
     if _dock["dock"] is not None:
         _exit_dock()
         return
-    # 먼저 잇는다 — 지금 어떤 문서가 열려 있는지 알아야 물을 말이 정해진다.
     if not ensure_hwp():
         return
     try:
-        empty = engine_library.doc_is_empty()
+        hwp_engine.ensure_visible()      # 숨은 인스턴스면 켠다 (문서는 안 건드린다)
     except Exception as e:
-        applog.exc("도킹: 빈 문서 판정 실패 — 문서가 있다고 본다", e)
-        empty = False
-    # 이미 쓰던 문서가 있으면 **그것을 감싸는 것이 첫 번째 선택**이다
-    # (사용자 지적 2026-07-30: 새 문서를 만드니 옛 창이 밖에 남았다).
-    choices = []
-    if not empty:
-        choices.append(("지금 문서 그대로", "keep", "primary"))
-    choices.append(("새 문서로 시작", "new",
-                    "normal" if not empty else "primary"))
-    choices.append(("파일 불러오기", "open", "normal"))
-    what = messagebox.ask_choice(root, "한글과 도킹",
-                                 "어떤 문서를 감쌀까요?", choices)
-    if not what:
-        return
-    try:
-        if what == "open":
-            path = filedialog.askopenfilename(
-                title="한글 문서 열기", parent=root,
-                filetypes=[("한글 문서", "*.hwp *.hwpx"), ("모든 파일", "*.*")])
-            if not path:
-                return
-            hwp_engine.open_document(path)
-        elif what == "keep":
-            pass                    # 지금 문서를 그대로 감싼다 — 아무것도 안 만든다
-        elif empty:
-            # 이미 빈 문서가 떠 있으면 **그것을 쓴다** (사용자 지적 2026-07-30:
-            # "한글 파일이 두 개 열리고 빈 문서 1 은 밖에 따로 있다").
-            #
-            # 정체: 한글이 안 떠 있으면 connect 가 새로 띄우는데 그때 '빈 문서 1'
-            # 이 생긴다. 거기에 FileNew 를 또 하면 '빈 문서 2' 가 **새 창으로**
-            # 열려, 우리는 2 를 감싸고 1 은 밖에 남았다. 빈 문서를 굳이 하나 더
-            # 만들 이유가 없다.
-            applog.info("도킹: 이미 빈 문서가 있어 새로 만들지 않는다")
-        else:
-            hwp_engine.new_document()
-    except Exception as e:
-        report_error("한글 문서를 여는 데 실패했습니다", e)
-        return
+        applog.exc("도킹: 한글 창 켜기 실패 — 그대로 시도한다", e)
     hwnd = hwp_engine.connected_hwnd()
     if not hwnd:
         notify("error", "한글 창을 찾지 못해 도킹하지 못했습니다")

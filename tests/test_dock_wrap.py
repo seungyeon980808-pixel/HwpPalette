@@ -137,12 +137,22 @@ class HoleRules(unittest.TestCase):
         body = _read("hwp_dock").split("def stop(")[1].split("\n    def ")[0]
         self.assertIn("clear_hole", body)
 
-    def test_한글_올리기는_활성화될_때만(self):
-        r"""매 틱 올리면 다른 프로그램으로 갔을 때 한글이 그 위로 튀어 오른다."""
+    def test_우리_창은_늘_한글_아래로(self):
+        r"""사용자 결정 2026-07-30:
+
+            "한글 문서가 아닌 영역을 누르면 바로 한글 파일이 다른 쪽으로 넘어가.
+             한글파일을 도킹했을 경우에는 무조건 내 프로그램이 가장 아래에
+             깔릴 수 있도록 해야합니다."
+
+        한글을 맨 위로 올리고 우리 창을 그 **바로 아래**에 끼운다. 단
+        **우리 짝(우리 창·한글)이 활성일 때만** — 선생님이 다른 프로그램을
+        쓰는 중에 한글을 올리면 남의 창을 가로채는 짓이 된다.
+        """
         code = _read("hwp_dock")
-        for fn in ("_follow_loop", "_poll_fallback"):
-            body = code.split(f"def {fn}")[1].split("\n    def ")[0]
-            self.assertNotIn("raise_above", body, f"{fn} 이 순서를 건드린다")
+        body = code.split("def keep_order")[1].split("\n    def ")[0]
+        self.assertIn("GetForegroundWindow", body)      # 남의 앱일 때는 손 안 댐
+        self.assertIn("HWND_TOP", body)                 # 한글을 맨 위로
+        self.assertIn("self._root_hwnd, self.hwnd", body)   # 우리 창을 그 아래로
         self.assertIn('bind("<Activate>"', code)
 
     def test_원복은_저장한_사각형으로(self):
@@ -237,12 +247,17 @@ class AppRules(unittest.TestCase):
         self.assertIn("_exit_dock()", body)
         self.assertLess(body.index("_exit_dock()"), body.index("set_window_pos"))
 
-    def test_도킹은_문서를_먼저_고르게_한다(self):
-        """새 문서 / 파일 불러오기 — 사용자 결정 2026-07-29."""
+    def test_도킹은_문서를_만들지_않는다(self):
+        r"""사용자 지적 2026-07-30: "왜 한글과 도킹을 눌렀을 때 새 한글 파일이
+        열리는 건데. 희망하지 않은 기능은 넣지를 마세요."
+
+        도킹은 **창을 감싸는 일**이다 — 지금 열려 있는 한글을 그대로 감싼다.
+        새 문서든 파일 열기든 한글에서 할 일이라, 묻지도 만들지도 않는다.
+        """
         body = _fn_body(_read("app"), "fn_dock_hwp")
-        self.assertIn("새 문서로 시작", body)
-        self.assertIn("파일 불러오기", body)
-        self.assertIn("askopenfilename", body)
+        for banned in ("new_document", "ask_choice", "askopenfilename",
+                       "open_document"):
+            self.assertNotIn(banned, body, f"도킹이 {banned} 를 부른다")
 
 
 if __name__ == "__main__":
