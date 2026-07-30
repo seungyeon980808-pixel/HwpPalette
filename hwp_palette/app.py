@@ -63,7 +63,6 @@ from hwp_palette.ui import onboarding
 from hwp_palette.model import parser as md_parser
 from hwp_palette.hwp import hwp_engine
 from hwp_palette.hwp import hwp_dock                      # 한글 창을 우리 판 자리로 끌어온다 (감싸기)
-from hwp_palette.hwp import hwp_embed                     # 한글 창을 우리 판 '안'에 넣는다 (임베드)
 from hwp_palette.ui import dock_bar                       # 감쌌을 때 위쪽 물감 도구줄
 from hwp_palette.hwp import engine_library
 from hwp_palette.hwp import exam_engine
@@ -803,16 +802,8 @@ misc_row.pack(fill="x")
 # 메뉴는 윈도우 기본 tk.Menu 가 아니라 자체 팝오버(popover.py)로 그린다
 # (사용자 지적 2026-07-25: 기본 메뉴가 프로그램의 나머지와 따로 놀았다).
 # 버튼은 메뉴가 떠 있는 동안 켜져 있다가(on_close 로) 닫힐 때 꺼진다.
-def _settings_menu(anchor_widget):
-    # '물감 나누기'는 여기서 뺐다 (사용자 결정 2026-07-28) — 주고받기는
-    # **물감을 보고 있는 자리**에서 하는 일이라 팔레트 설정 화면의 ↗ 로 옮겼다.
-    # 설정 메뉴에 갈래가 하나뿐이라도 그대로 둔다: 톱니는 '설정하는 곳'이라는
-    # 자리 자체가 관습이고, 나중에 늘어날 자리이기도 하다.
-    _bar_active(anchor_widget, True)
-    (Popover(root, anchor_widget,
-             on_close=lambda: _bar_active(anchor_widget, False))
-     .add("물감·팔레트 설정", fn_open_palette_settings)
-     .show())
+# 설정 메뉴(팝오버)는 뺐다 (사용자 결정 2026-07-30): 갈래가 '물감·팔레트
+# 설정' 하나뿐이라, 한 번 더 고르게 하는 것은 손만 늘렸다. 톱니 = 바로 그 창.
 
 
 # 이 줄의 생김새 (사용자 결정 2026-07-25 — "심플하게").
@@ -843,7 +834,7 @@ def _bar_active(btn, on):
     btn.retint(bg=ACCENT_SOFT if on else CARD, fg=ACCENT if on else MUTED)
 
 
-_gear = _bar_btn("⚙", lambda: _settings_menu(_gear), "설정")
+_gear = _bar_btn("⚙", lambda: fn_open_palette_settings(), "물감·팔레트 설정")
 _gear.pack(side="left")
 
 
@@ -1116,45 +1107,21 @@ def _toggle_top():
 _top_btn = _bar_btn("⇧", lambda: _toggle_top(), "항상 위")
 _top_btn.pack(side="left", padx=(4, 0))
 
-# ── 한글과 도킹 ────────────────────────────────────────
-# 이 줄에서 **유일하게 글자가 있는 버튼**이다 (사용자 결정 2026-07-29).
-# 기호만으로는 '도킹'이 안 읽힌다 — ⚙·?·⇧ 처럼 관습이 있는 기호가 아니다.
-# 누르면 새 문서/불러오기를 고르고, 그 문서 옆에 세로 띠로 붙는다 (_enter_dock).
-_dock_btn = RoundButton(misc_row, text="한글과 도킹",
-                        command=lambda: fn_dock_hwp(),
-                        bg=ACCENT_SOFT, fg=ACCENT, radius=theme.RADIUS["ctl"],
-                        font=_font(8), outline="", zone_bg=CARD)
-_dock_btn.fit(pad_x=9, pad_y=4)
-_dock_btn.pack(side="left", padx=(6, 0))
-root.after_idle(lambda: _add_tooltip(_dock_btn, "한글을 이 창 안에 감쌉니다"))
-
-# 감싸고 있는 동안만 나타나는 두 단추 — **여기(설정·도움말 줄)에 둔다**
-# (사용자 지적 2026-07-30): 떼기·방식 갈아타기는 물감이 아니라 **창을 다루는
-# 일**이라, 개인 팔레트 옆이 아니라 ⚙·? 와 같은 위계에 있어야 한다.
-_undock_btn = RoundButton(misc_row, text="◱  떼기",
-                          command=lambda: _exit_dock(),
-                          bg=CARD, fg=MUTED, radius=theme.RADIUS["ctl"],
-                          font=_font(8), outline=BORDER, zone_bg=CARD)
-_undock_btn.fit(pad_x=9, pad_y=4)
-_mode_btn = RoundButton(misc_row, text="⇄  방식",
-                        command=lambda: _dock_toggle_mode(),
-                        bg=CARD, fg=MUTED, radius=theme.RADIUS["ctl"],
-                        font=_font(8), outline=BORDER, zone_bg=CARD)
-_mode_btn.fit(pad_x=9, pad_y=4)
+# ── 한글과 도킹 — 기호 버튼 **하나**가 토글한다 (사용자 결정 2026-07-30) ──
+# "도킹을 글자가 아니라 버튼으로. 이 버튼 하나만으로 동작해야 합니다."
+# "버튼들의 위계가 맞지 않습니다. 그림을 통일시켜주십시오."
+# → ⚙·?·↺·⌕·⇧ 와 똑같은 정사각(_bar_btn)으로 만들고, 누를 때마다
+#   감싸기 ↔ 떼기를 오간다. 감싸는 동안은 켜짐(파랑)으로 보인다.
+_dock_btn = _bar_btn("◫", lambda: fn_dock_hwp(), "한글과 도킹 (다시 누르면 떼기)")
+_dock_btn.pack(side="left", padx=(4, 0))
 
 
 def _show_dock_buttons(on):
-    """감싸는 동안만 떼기·방식 단추를 보인다 (평소엔 자리도 차지하지 않는다)."""
-    if on:
-        _mode_btn.set_text(f"⇄  {_MODE_LABEL[_dock['mode']]}", pad_x=9, pad_y=4)
-        _undock_btn.pack(side="left", padx=(6, 0))
-        _mode_btn.pack(side="left", padx=(4, 0))
-        _dock_btn.pack_forget()          # 감싼 동안은 '떼기'가 그 자리를 맡는다
-    else:
-        _undock_btn.pack_forget()
-        _mode_btn.pack_forget()
-        _dock_btn.pack(side="left", padx=(6, 0))
-    _dock_btn.retint(bg=ACCENT_SOFT, fg=ACCENT)
+    """도킹 상태를 버튼 켜짐(파랑)으로 보인다 — 버튼은 이 하나뿐이다."""
+    _bar_active(_dock_btn, on)
+    _tip(_dock_btn, "도킹 떼기" if on else "한글과 도킹")
+
+
 # 켜져 있으면 켜져 보여야 한다 — 상태를 말하지 않는 토글은 토글이 아니다
 _bar_active(_top_btn, bool(settings.get_config_value(_TOP_KEY, True)))
 
@@ -2089,31 +2056,14 @@ for _i in range(1, 10):
 # dock_bar 가 하고, 여기서는 **모드 전환**만 맡는다 — 평소 화면을 접었다 펴는 일.
 # ══════════════════════════════════════════════════════
 _dock = {"dock": None, "bar": None, "host": None, "job": None,
-         "packs": None, "geo": None, "mode": None}
+         "packs": None, "geo": None}
 _WRAP_PAD = 12             # 감싼 띠의 두께 — 이 여백이 곧 '감싸고 있다'는 표시
 _DOCK_ALIVE_MS = 500       # 한글이 살아 있는지만 보는 느린 확인 (자리 추적은 스레드가)
 # 감쌌을 때의 창 크기 — 화면을 다 먹지 않으면서 한글 한 쪽이 통째로 보이는 선.
 _DOCK_W, _DOCK_H = 1180, 900
-_MODE_LABEL = {"embed": "임베드", "dock": "도킹"}
-
-
-def _dock_mode():
-    r"""감싸는 방식 — "dock"(남남인 창, 기본) 또는 "embed"(한글이 자식 창).
-
-    사용자 결정 2026-07-30 (최종): **임베드 포기, 도킹이 기본.** 임베드는
-    강제 종료 때 문서 창이 통째로 사라지는 위험(docs/EMBED_검토.md)을 안고
-    가는데, 도킹의 유일한 단점이던 버벅임을 이벤트 훅으로 없앤 뒤로는
-    (hwp_dock 실측: 끌기 중 어긋남 평균 34px→0px) 임베드를 쓸 이유가 없다.
-    갈아타기 단추는 남긴다 — 훅이 안 먹는 환경에서 빠져나갈 문이다.
-    """
-    v = settings.get_config_value("dock_mode", "dock")
-    if v == "embed" and not settings.get_config_value("dock_mode_picked", False):
-        # 2026-07-30 잠깐 임베드가 기본이던 판(bdbabdd)에서 저장된 값이다.
-        # 사용자가 직접 고른 적이 없으므로 도킹으로 되돌린다 — 사용자 지적
-        # "도킹이 아니라 임베드라고 뜬다".
-        settings.set_config_value("dock_mode", "dock")
-        return "dock"
-    return v if v in ("embed", "dock") else "dock"
+# 임베드(hwp_embed)는 **버렸다** (사용자 결정 2026-07-30 최종): 강제 종료 때
+# 원고가 위험하고(docs/EMBED_검토.md), 도킹의 버벅임을 이벤트 훅으로 없앤 뒤로는
+# 쓸 이유가 없다. 방식 갈아타기 단추·설정(dock_mode)도 함께 걷어냈다.
 
 
 def fn_dock_hwp():
@@ -2163,7 +2113,6 @@ def _enter_dock(hwnd):
         if w is not misc_row:
             w.pack_forget()
 
-    _dock["mode"] = _dock_mode()
     _dock["bar"] = dock_bar.DockBar(
         root, scale=SCALE, font_fn=_font, run_block=run_palette_block,
         label_fn=_block_label, block_color_fn=theme.block_color,
@@ -2202,10 +2151,7 @@ def _enter_dock(hwnd):
     root.update_idletasks()
 
     hwp_engine.ensure_visible()         # 숨은 인스턴스면 먼저 켜야 한다
-    if _dock["mode"] == "embed":
-        # 임베드는 자리를 미리 잡을 필요가 없다 — SetParent 하는 순간 판 안이다
-        dock = hwp_embed.Embed(root, _dock["host"], hwnd)
-    else:
+    if True:
         hwp_dock.preposition(hwnd, _dock["host"])   # 숨긴 채 미리 자리로
         # 한글 제목줄은 그대로 둔다 (사용자 결정 2026-07-30): 잘라내 봤더니
         # 리본까지 날아가 편집을 못 했다. 화면이 잘 보이고 부드럽게 따라오는
@@ -2218,22 +2164,7 @@ def _enter_dock(hwnd):
     _dock["dock"] = dock
     _show_dock_buttons(True)
     _dock["job"] = root.after(_DOCK_ALIVE_MS, _dock_watch)
-    notify("ok", f"한글을 감쌌습니다 ({_MODE_LABEL[_dock['mode']]})")
-
-
-def _dock_toggle_mode():
-    r"""임베드 ↔ 도킹 갈아타기 — 뗐다가 반대 방식으로 다시 감싼다.
-
-    두 방식은 창 관계 자체가 달라 중간에 바꿀 수 없다. 한 번 풀고 다시 문다
-    (한글 문서는 그대로다 — 우리가 만지는 것은 창뿐이다).
-    """
-    hwnd = hwp_engine.connected_hwnd()
-    settings.set_config_value(
-        "dock_mode", "dock" if _dock_mode() == "embed" else "embed")
-    settings.set_config_value("dock_mode_picked", True)   # 이제부터는 뜻이 있는 값
-    _exit_dock()
-    if hwnd:
-        root.after(150, lambda: _enter_dock(hwnd))
+    notify("ok", "한글과 도킹했습니다")
 
 
 def _dock_pal_menu(anchor):
@@ -2299,6 +2230,14 @@ def _exit_dock():
 
 def _restore_normal_layout():
     """접어 뒀던 평소 화면을 그대로 되돌린다 (차례·여백까지)."""
+    # 최대화(전체화면)된 채 떼면 geometry 가 안 먹는다 — 먼저 보통 상태로
+    # (사용자 결정 2026-07-30: "전체화면이더라도 도킹을 해제하면 알아서
+    # 메인 화면은 작은 기본 화면으로 돌아올 것").
+    try:
+        if root.state() == "zoomed":
+            root.state("normal")
+    except Exception:
+        pass
     for key in ("bar", "host"):
         if _dock[key] is not None:
             _dock[key].destroy()

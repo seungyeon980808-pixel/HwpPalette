@@ -212,10 +212,12 @@ class BarRules(unittest.TestCase):
         joined = "\n".join(ln for ln in _read("dock_bar").splitlines()
                            if not ln.strip().startswith("#"))
         self.assertNotIn("✕", joined)
-        self.assertNotIn("◱", joined)          # 떼기는 위 도구줄로 갔다
+        self.assertNotIn("◱", joined)          # 떼기는 위 도구줄(도킹 토글)이 맡는다
         app_code = _read("app")
-        self.assertIn("◱", app_code)
+        # 2026-07-30 최종: 떼기 단추도 따로 없다 — 도킹 버튼 **하나**가 토글한다
+        # ("이 버튼 하나만으로 동작해야 합니다"). 상태는 켜짐(파랑)으로 보인다.
         self.assertIn("def _show_dock_buttons", app_code)
+        self.assertIn("_bar_active(_dock_btn", app_code)
 
     def test_기본_두께는_세_줄(self):
         """사용자 결정 2026-07-30: "팔레트 기본 두께는 3줄짜리가 되어야 합니다"."""
