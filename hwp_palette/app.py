@@ -819,9 +819,33 @@ misc_row.pack(fill="x")
 _BAR_BTN_PX = int(round(26 * SCALE))     # 정사각 한 변
 
 
-def _bar_btn(text, cmd, tip):
-    b = RoundButton(misc_row, text=text, command=cmd, bg=CARD, fg=MUTED,
-                    radius=theme.RADIUS["ctl"], font=_font(9), outline="", zone_bg=CARD)
+# 아이콘은 **PNG 한 벌**을 쓴다 (사용자 결정 2026-07-30, 시안 2 —
+# docs/mockups/toolbar-color.html). 유니코드 기호는 글꼴이 정한 크기대로
+# 그려져서, 같은 15px 로 찍어도 ⚙ 는 꽉 차고 ⌕ 는 눈에 절반이었다
+# (사용자 지적: "안에 들어가는 아이콘 크기가 맞지 않아서 문제가 있습니다").
+# assets/icons/ 의 한 벌은 획 굵기를 상자 비율로 잡아 구운 것이라 크기가 맞는다.
+_BAR_ICON_PX = 24 if SCALE > 1.1 else 20
+_bar_icons = {}                          # 이름 → PhotoImage (참조를 붙들어야 안 사라진다)
+
+
+def _bar_icon(name):
+    """도구줄 아이콘 하나. 없으면 None (그때는 글자로 물러난다)."""
+    if name in _bar_icons:
+        return _bar_icons[name]
+    path = paths.RESOURCE_DIR / "assets" / "icons" / f"{name}-{_BAR_ICON_PX}.png"
+    try:
+        _bar_icons[name] = tk.PhotoImage(file=str(path))
+    except Exception as e:
+        applog.exc(f"도구줄 아이콘 로드 실패 ({name}) — 기호로 대신한다", e)
+        _bar_icons[name] = None
+    return _bar_icons[name]
+
+
+def _bar_btn(text, cmd, tip, icon=None):
+    img = _bar_icon(icon) if icon else None
+    b = RoundButton(misc_row, text="" if img else text, command=cmd, bg=CARD,
+                    fg=MUTED, radius=theme.RADIUS["ctl"], font=_font(9),
+                    outline="", zone_bg=CARD, image=img)
     b.config(width=_BAR_BTN_PX, height=_BAR_BTN_PX)   # fit() 대신 정사각 고정
     # 기호만 있으므로 이름은 툴팁이 맡는다. _add_tooltip 은 이 줄보다 아래에서
     # 정의되므로(파일 순서), 화면이 다 만들어진 뒤에 붙인다.
@@ -834,7 +858,8 @@ def _bar_active(btn, on):
     btn.retint(bg=ACCENT_SOFT if on else CARD, fg=ACCENT if on else MUTED)
 
 
-_gear = _bar_btn("⚙", lambda: fn_open_palette_settings(), "물감·팔레트 설정")
+_gear = _bar_btn("⚙", lambda: fn_open_palette_settings(), "물감·팔레트 설정",
+                 icon="settings")
 _gear.pack(side="left")
 
 
@@ -1065,8 +1090,11 @@ def _start_tutorial():
 
 
 
-_help_btn = _bar_btn("?", lambda: _help_menu(_help_btn), "도움말")
-_help_btn.pack(side="left", padx=(4, 0))
+_help_btn = _bar_btn("?", lambda: _help_menu(_help_btn), "도움말",
+                     icon="help")
+# 도움말은 **맨 뒤**에 붙인다 (사용자 결정 2026-07-30: "도움말은 가장 뒤에
+# 가야합니다"). pack 은 부르는 차례대로 왼쪽에 붙으므로, 여기서는 만들어만
+# 두고 붙이는 것은 도킹 단추 다음이다 (구분선도 그때 함께).
 
 # ── 늘 보이는 도구 셋 (사용자 결정 2026-07-28) ─────────
 #
@@ -1076,11 +1104,13 @@ _help_btn.pack(side="left", padx=(4, 0))
 #   ↺  되돌리기   — 한글 Ctrl+Z 를 몇 번 눌러야 하는지 프로그램이 대신 센다
 #   ⌕  통합 찾기  — Ctrl+K 로만 있던 것. 물감이 팔레트보다 많아지면 여기가 입구다
 #   ⇧  항상 위    — 한글을 전체화면으로 쓸 때 잠깐 내린다 (창 위치처럼 기억된다)
-_undo_btn = _bar_btn("↺", lambda: fn_undo_last(), "되돌릴 것이 없습니다")
+_undo_btn = _bar_btn("↺", lambda: fn_undo_last(), "되돌릴 것이 없습니다",
+                     icon="undo")
 _undo_btn.pack(side="left", padx=(4, 0))
 _undo_btn.retint(fg=FAINT)          # 되돌릴 것이 생기면 진해진다 (_sync_undo_btn)
 
-_search_btn = _bar_btn("⌕", lambda: _open_search(), "통합 찾기  (Ctrl+K)")
+_search_btn = _bar_btn("⌕", lambda: _open_search(), "통합 찾기  (Ctrl+K)",
+                       icon="search")
 _search_btn.pack(side="left", padx=(4, 0))
 
 _TOP_KEY = "always_on_top"
@@ -1104,7 +1134,7 @@ def _toggle_top():
                    else "이 창이 다른 창 뒤로 갈 수 있습니다")
 
 
-_top_btn = _bar_btn("⇧", lambda: _toggle_top(), "항상 위")
+_top_btn = _bar_btn("⇧", lambda: _toggle_top(), "항상 위", icon="pin")
 _top_btn.pack(side="left", padx=(4, 0))
 
 # ── 한글과 도킹 — 기호 버튼 **하나**가 토글한다 (사용자 결정 2026-07-30) ──
@@ -1112,8 +1142,14 @@ _top_btn.pack(side="left", padx=(4, 0))
 # "버튼들의 위계가 맞지 않습니다. 그림을 통일시켜주십시오."
 # → ⚙·?·↺·⌕·⇧ 와 똑같은 정사각(_bar_btn)으로 만들고, 누를 때마다
 #   감싸기 ↔ 떼기를 오간다. 감싸는 동안은 켜짐(파랑)으로 보인다.
-_dock_btn = _bar_btn("◫", lambda: fn_dock_hwp(), "한글과 도킹 (다시 누르면 떼기)")
+_dock_btn = _bar_btn("◫", lambda: fn_dock_hwp(),
+                     "한글과 도킹 (다시 누르면 떼기)", icon="dock")
 _dock_btn.pack(side="left", padx=(4, 0))
+
+# 여기까지가 '자주 쓰는 것', 구분선 뒤가 '드물게 쓰는 것'이다.
+tk.Frame(misc_row, bg=BORDER, width=1, height=int(round(16 * SCALE))).pack(
+    side="left", padx=(8, 4))
+_help_btn.pack(side="left")
 
 
 def _show_dock_buttons(on):

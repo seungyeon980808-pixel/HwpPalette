@@ -28,7 +28,7 @@ class RoundButton(tk.Canvas):
     def __init__(self, parent, text="", command=None, bg="#ffffff",
                  fg="#1d1d1f", radius=8, font=None, outline="",
                  focus_color="#0071e3", zone_bg=None, justify="center",
-                 trailing=None, pad_in=10, align="center"):
+                 trailing=None, pad_in=10, align="center", image=None):
         # zone_bg = 모서리 '바깥'에 비칠 색. 안 주면 부모 배경을 따른다.
         super().__init__(parent, highlightthickness=0, bd=0,
                          bg=zone_bg or parent.cget("bg"),
@@ -58,6 +58,10 @@ class RoundButton(tk.Canvas):
         # 줄 맞춰 서 있어도 **글자는 줄이 안 맞는다.** 왼쪽에 붙이면 세로로
         # 글머리가 한 줄에 서고, 두 줄 이름도 첫 글자가 어긋나지 않는다.
         self._align = align
+        # image: 글자 대신 그림을 가운데 놓는다 (2026-07-30 — 툴바 아이콘).
+        # 참조를 여기 붙들어 둔다: Tk 는 PhotoImage 를 안 붙들면 가비지 컬렉션돼
+        # 그림이 빈칸으로 나온다.
+        self._image = image
         self._base = bg
         self._hover = ui_fx.darken(bg, ui_fx.HOVER_FACTOR)
         self._press = ui_fx.darken(bg, ui_fx.PRESS_FACTOR)
@@ -131,6 +135,10 @@ class RoundButton(tk.Canvas):
             self.create_polygon(pts, smooth=True, fill=self._fill,
                                 outline=edge or "",
                                 width=2 if self._focused else 1, tags="body")
+            if self._image is not None:
+                self.create_image(w // 2, h // 2 + dy, image=self._image,
+                                  tags="icon")
+                return
             self.create_text(lx, h // 2 + dy, text=self._text, anchor=lanchor,
                              font=self._font, fill=self._fg,
                              justify=self._justify, tags="label")
@@ -143,6 +151,9 @@ class RoundButton(tk.Canvas):
         self.coords("body", *pts)
         self.itemconfig("body", fill=self._fill, outline=edge or "",
                         width=2 if self._focused else 1)
+        if self._image is not None:
+            self.coords("icon", w // 2, h // 2 + dy)
+            return
         self.coords("label", lx, h // 2 + dy)
         self.itemconfig("label", text=self._text, fill=self._fg,
                         font=self._font, anchor=lanchor)
