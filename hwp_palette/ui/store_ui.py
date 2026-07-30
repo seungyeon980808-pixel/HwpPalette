@@ -53,12 +53,18 @@ FONT = theme.FONT
 SP = theme.SP
 FS = theme.FS
 
-# 흰색 = 안 씀 / 파랑 = 다른 팔레트에서 쓰는 중 / 코랄 = 이 팔레트 / 초록 = 고른 것.
+# 흰색 = 안 씀 / 초록 = 다른 팔레트에서 쓰는 중 / 코랄 = 이 팔레트 / 파랑 = 고른 것.
 # 파랑·코랄·초록은 색상환에서 멀리 떨어져 있어 나란히 놓여도 구별된다.
+#
+# 2026-07-31: '쓰는 중'과 '고른 것'의 색을 맞바꿨다(사용자 지적) — 강조색
+# 계열인 파랑은 **지금 고른 것**(가장 눈에 띄어야 하는 상태)에 주고,
+# '쓰는 중'(그냥 정보성 표시)은 초록으로 내렸다. 이름(USED_*/SEL_*)은
+# 그대로 두고 **값만** 바꿨다 — 이 값들을 쓰는 다른 코드(선택 강조·
+# share_btn 등)를 전부 고칠 필요가 없다.
 FREE_BG, FREE_LINE, FREE_FG = CARD, BORDER, TEXT
-USED_BG, USED_LINE, USED_FG = ACCENT_SOFT, "#54aeff", "#0550ae"
+USED_BG, USED_LINE, USED_FG = "#e6f6ea", "#2da44e", "#116329"
 HERE_BG, HERE_LINE, HERE_FG = "#ffefe9", "#f0997b", "#8a3418"
-SEL_BG, SEL_LINE, SEL_FG = "#e6f6ea", "#2da44e", "#116329"
+SEL_BG, SEL_LINE, SEL_FG = ACCENT_SOFT, "#54aeff", "#0550ae"
 
 # 고른 해시태그는 **회색**이다 (사용자 지적 2026-07-28) — 예전엔 옅은 파랑이라
 # 바로 아래 '안 씀' 견본과 색이 겹쳐, 태그를 고른 것인지 물감 상태인지가
@@ -129,10 +135,11 @@ class StorePanel(tk.Frame):
         # 보였다 (사용자 지적 2026-07-27).
         legend = tk.Frame(self, bg=CARD)
         legend.pack(fill="x", padx=8, pady=(0, 6))
-        # 네 칸이 되면서 이름을 줄였다 — 견본은 색과 뜻을 잇는 물건이라
-        # 짧을수록 좋고, 긴 이름은 칸을 밀어내 색 판이 찌그러진다.
-        states = (("안 씀", FREE_BG, FREE_LINE, FREE_FG),
-                  ("쓰는 중", USED_BG, USED_LINE, USED_FG),
+        # '안 씀'은 뺐다 (사용자 지적 2026-07-31: "안씀의 경우에는 알려주는
+        # 표시가 없어야 합니다") — 안 쓰는 물감은 원래도 흰 카드 그대로라
+        # 색이 없다. 색 없는 상태를 위해 색 견본을 그리는 것 자체가 모순이라,
+        # 실제로 색이 있는 세 상태만 안내한다.
+        states = (("쓰는 중", USED_BG, USED_LINE, USED_FG),
                   ("이 팔레트", HERE_BG, HERE_LINE, HERE_FG),
                   ("고른 것", SEL_BG, SEL_LINE, SEL_FG))
         for i, (text, bg, line, fg) in enumerate(states):
@@ -455,14 +462,16 @@ class StorePanel(tk.Frame):
         from hwp_palette.design.popover import Popover
         pairs = self._multi_pairs()
         pop = Popover(self.winfo_toplevel(), self.share_btn)
+        # 말줄임표를 안 쓴다 (사용자 지적 2026-07-31, palette_ui._share_menu 와
+        # 같은 이유·같은 자리).
         if pairs:
-            pop.add(f"고른 물감 {len(pairs)}개 내보내기…",
+            pop.add(f"고른 물감 {len(pairs)}개 내보내기",
                     lambda: library_ui.export_items_flow(
                         self.winfo_toplevel(), pairs, on_done=self.clear_multi))
         else:
             pop.add("내보낼 물감을 Ctrl+클릭으로 고르세요", lambda: None)
         pop.separator()
-        pop.add("불러오기…",
+        pop.add("불러오기",
                 lambda: library_ui.import_flow(self.winfo_toplevel(),
                                                on_saved=self.refresh))
         pop.show()
@@ -513,6 +522,18 @@ class StorePanel(tk.Frame):
         self._paint_selection()
         if self.on_select:
             self.on_select(cat, item)
+
+    def clear_selection(self):
+        """바깥(팔레트 설정 격자)에서 블럭을 고르면 이쪽 선택을 지운다.
+
+        예전에는 두 선택이 서로 몰라서 **동시에 파랗게** 보일 수 있었다
+        (사용자 지적 2026-07-31: "팔레트에 있는 물감과 물감 창고에 있는
+        물감이 동시에 선택이 가능한 버그"). 한 번에 하나만 선택된다.
+        """
+        if self.sel_key is None:
+            return
+        self.sel_key = None
+        self._paint_selection()
 
     # ── 바깥(미리보기 판)에서 부르는 동작 ─────────────
     def place_item(self, cat, item):

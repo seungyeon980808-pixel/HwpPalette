@@ -493,7 +493,7 @@ def fn_pick_photo():
         pop.add_check(f"{name}  ({f['count']}장)",
                       lambda p=f["path"]: _pick_photo_in(p))
     pop.separator()
-    pop.add("파일에서 직접 고르기…", _pick_photo_file, indent=True)
+    pop.add("파일에서 직접 고르기", _pick_photo_file, indent=True)  # 말줄임표 안 씀 (2026-07-31)
     pop.show()
 
 
@@ -1614,7 +1614,10 @@ def render_palette():
 
     if not tabs:
         _sync_pal_pick(tabs, 0)         # 고르개는 '팔레트 없음'으로 두고
-        tk.Label(pal_area, text="‘팔레트 관리…’에서 팔레트를 만들어보세요.",
+        # '팔레트 관리' 메뉴 항목은 없어진 지 오래다(위 주석) — 실제로는
+        # ⚙ 설정에서 만든다. 없는 메뉴를 가리키던 안내문을 바로잡는다
+        # (2026-07-31, 말줄임표 정리 겸 발견).
+        tk.Label(pal_area, text="⚙ 설정에서 팔레트를 만들어보세요.",
                  font=_font(8), fg=MUTED, bg=SUBBG).pack(anchor="w")
         return
     cur = _pal_state["tab"]
@@ -1964,7 +1967,12 @@ def _make_block_button(parent, blk, span=1, show_icon=True, cell_px=None):
     # 가 None 을 돌려주면) 자동으로 글자로 물러난다.
     icon_image = None
     if icon_asset:
-        icon_image = _block_icon_image(icon_asset, icon_font[1] * 4 // 3)
+        # 목표 크기는 **글자 크기(pt) 값을 그대로 px 로** 쓴다. pt→px 환산
+        # (×4/3)을 얹었더니 그림이 옆 글자 아이콘보다 눈에 띄게 커 보였다
+        # (사용자 지적 2026-07-31: "더 작아야 하고 메인 팔레트에서 보이는
+        # 화면과 동일해야합니다"). 설정 미리보기(palette_ui._tile_icon_image)
+        # 도 같은 식으로 재야 두 화면의 아이콘이 같은 비율로 보인다.
+        icon_image = _block_icon_image(icon_asset, icon_font[1])
     btn = RoundButton(parent, text=label,
                       command=lambda b=blk: run_palette_block(b),
                       bg=bg, fg=theme.text_on(bg), radius=theme.RADIUS["ctl"], font=_font(size),

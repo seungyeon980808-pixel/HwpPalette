@@ -712,10 +712,13 @@ class SettingsWindow(tk.Toplevel):
         cur = tabs[self.sel_tab] if 0 <= self.sel_tab < len(tabs) else None
         pop = Popover(self, self.share_btn)
         if cur is not None:
-            pop.add(f"'{cur['name']}' 팔레트 내보내기…",
+            # 말줄임표를 안 쓴다 (사용자 지적 2026-07-31: "말줄임표를 사용하는
+            # 경향이 짙다") — "…"는 서양 UI 관례(뒤에 대화상자가 온다는 뜻)
+            # 인데 이 프로그램은 안 쓰기로 했다.
+            pop.add(f"'{cur['name']}' 팔레트 내보내기",
                     lambda t=cur: library_ui.export_palette_flow(self, t))
         pop.separator()
-        pop.add("불러오기…", self._import_share)
+        pop.add("불러오기", self._import_share)
         pop.show()
 
     def _import_share(self):
@@ -751,6 +754,10 @@ class SettingsWindow(tk.Toplevel):
         """
         if self._edit_ctx is not None:
             return              # 고치는 중 — 판을 다른 내용으로 갈아끼우지 않는다
+        # 물감 창고에서 고르면 격자 쪽 선택은 지운다 — 동시에 둘 다 파랗게
+        # 보이던 버그 (사용자 지적 2026-07-31).
+        if self.sel_block is not None:
+            self._set_selection(None)
         self._detail = (cat, item)
         self._edit_form = None
         for w in self._zoom_body.winfo_children():
@@ -1239,11 +1246,18 @@ class SettingsWindow(tk.Toplevel):
         m.add_command(label="▼ 아래로", command=lambda: self._move_tab(idx, 1),
                       state="normal" if idx < len(tabs) - 1 else "disabled")
         m.add_separator()
-        m.add_command(label="팔레트 내보내기…",
+        m.add_command(label="팔레트 내보내기",
                       command=lambda: self._export_chip(idx))
         m.add_separator()
         m.add_command(label="삭제", command=lambda: self._del_tab(idx))
-        m.tk_popup(*self.winfo_pointerxy())
+        # 팔레트 고르기(tab_pick) 바로 아래에 연다 — 마우스 위치에 그대로
+        # 띄우면(예전 방식) 목록 아래쪽 줄에서 열었을 때 메뉴가 격자 위에
+        # 겹쳐, 그 사이 tab_pick 드롭다운 자리가 안 보이는 것처럼 느껴졌다
+        # (사용자 지적 2026-07-31: "팔레트 드롭다운은 남아있어야 하는데
+        # 어디 가버리고 없습니다"). Popover 와 같은 자리(고르기 버튼 아래)에
+        # 열면 항상 예측 가능한 곳에 뜬다.
+        m.tk_popup(self.tab_pick.winfo_rootx(),
+                  self.tab_pick.winfo_rooty() + self.tab_pick.winfo_height() + 2)
 
     def _pick_tab(self, idx):
         if idx == self.sel_tab:
@@ -1733,8 +1747,9 @@ class SettingsWindow(tk.Toplevel):
         if icon:
             icon_img = None
             if icon_asset:
-                icon_img = _tile_icon_image(icon_asset,
-                                            theme.fs(icon_size) * 4 // 3)
+                # app._make_block_button 과 같은 식(pt 값을 그대로 px 로) —
+                # 두 화면의 그림 아이콘이 같은 비율로 보이게 (2026-07-31).
+                icon_img = _tile_icon_image(icon_asset, theme.fs(icon_size))
             if icon_img:
                 # 사진처럼 그림이 있는 아이콘 — 메인 창과 같은 파일을 쓴다.
                 parts.append(tk.Label(tile, image=icon_img, bg=bg))
@@ -1758,6 +1773,10 @@ class SettingsWindow(tk.Toplevel):
                        font=(FONT, theme.fs(label_size)))
         lab.pack(expand=True, fill="both", padx=4)
         parts.append(lab)
+        # 선택 표시(파랑 물들이기)가 되돌아갈 원래 색 — _set_selection 참고.
+        tile._base_bg = bg
+        tile._base_fg = [p.cget("fg") for p in parts]
+        tile._parts = parts
         self._tiles[i] = tile
         for w in [tile] + parts:
             self._tile_map[str(w)] = i
@@ -2016,13 +2035,33 @@ class SettingsWindow(tk.Toplevel):
         release마다 _render_blocks()로 다시 그리면 타일 위젯이 파괴돼,
         뒤이어 와야 할 <Double-Button-1>(수정)이 도달하지 못한다(실측 버그).
         그래서 선택은 위젯 config만 바꾼다.
+
+        물감 창고와 **같은 방식**으로 그린다 (사용자 지적 2026-07-31: "선택이
+        되어 있는 것이므로 파란색으로 물들고 테두리가 그려져야 합니다") —
+        예전에는 테두리 굵기만 바뀌고 배경은 그대로라 '테두리만 이상하게
+        굵어진 흰 칸'으로 보였다. store_ui._paint_tile 과 똑같이 배경·테두리·
+        글자색을 함께 바꾸고, 풀 때는 만들 때 저장해 둔 원래 색으로 되돌린다.
         """
         self.sel_block = idx
         for i, tile in getattr(self, "_tiles", {}).items():
             sel = (i == idx)
             try:
-                tile.config(highlightbackground=ACCENT if sel else BORDER,
+                bg = store_ui.SEL_BG if sel else getattr(tile, "_base_bg", CARD)
+                line = store_ui.SEL_LINE if sel else BORDER
+                tile.config(bg=bg, highlightbackground=line,
                             highlightthickness=2 if sel else 1)
+                base_fg = getattr(tile, "_base_fg", None)
+                for j, w in enumerate(getattr(tile, "_parts", [])):
+                    fg = (store_ui.SEL_FG if sel
+                          else (base_fg[j] if base_fg else theme.text_on(bg)))
+                    w.config(bg=bg, fg=fg)
+            except Exception:
+                pass
+        # 물감 창고에서 무언가 골라 놓은 상태였다면 지운다 — 한 번에 하나만
+        # 선택되게 한다 (사용자 지적 2026-07-31: "동시에 선택이 가능한 버그").
+        if idx is not None:
+            try:
+                self.store.clear_selection()
             except Exception:
                 pass
 
