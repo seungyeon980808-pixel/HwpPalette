@@ -57,8 +57,10 @@ class Popover(tk.Toplevel):
         """체크 표시가 붙는 항목 (지금 선택된 팔레트 등).
 
         more 를 주면 항목 오른쪽에 ⋯ 단추가 붙는다 — 그 항목에 대한 관리
-        메뉴(이름·순서·삭제 등)를 여는 용도. 항목 본체를 누르면 command,
-        ⋯ 를 누르면 more 가 실행된다 (둘 다 팝오버를 먼저 닫는다).
+        메뉴(이름·순서·삭제 등)를 여는 용도. 항목 본체를 누르면 command
+        (팝오버를 닫고 실행), ⋯ 를 누르면 **이 판은 열린 채로** more(항목 줄
+        위젯)가 불린다 — 계단식 하위 메뉴(show_beside)를 그 줄 옆에 붙이라는
+        뜻이다 (2026-07-31, 사용자 지적: ⋯ 를 누르면 목록이 사라졌다).
         """
         return self._item(text, command, lead="✓  " if checked else "    ",
                           bold=checked, more=more)
@@ -78,7 +80,7 @@ class Popover(tk.Toplevel):
             dots.pack(side="right")
             dots.bind("<Enter>", lambda e: dots.config(fg=_C["accent"]))
             dots.bind("<Leave>", lambda e: dots.config(fg=_C["muted"]))
-            dots.bind("<ButtonRelease-1>", lambda e, c=more: self._run(c))
+            dots.bind("<ButtonRelease-1>", lambda e, c=more, fr=f: c(fr))
             dots.config(cursor="hand2")
             parts.append(dots)
         lab.pack(side="left", fill="x", expand=True)
@@ -113,6 +115,47 @@ class Popover(tk.Toplevel):
         # 떠 있는 창의 메뉴가 다른 화면으로 순간이동한다 (2026-07-26 버그).
         if not screens.fits_below(self, y, h):
             y = self._anchor.winfo_rooty() - h - 2      # 자리가 없으면 위로
+        x, y = screens.clamp_window(self, x, y, w, h)
+        self.geometry(f"{w}x{h}+{x}+{y}")
+        self.deiconify()
+        self.lift()
+        self.bind("<ButtonPress-1>", self._maybe_close_outside)
+        self.bind("<Escape>", lambda e: self.close())
+        try:
+            self.focus_set()
+        except Exception:
+            pass
+        self._grab()
+        return self
+
+    # ── 계단식 하위 메뉴 (2026-07-31) ───────────────────
+    # 탭 관리(⋯)처럼 항목마다 딸린 메뉴는 윈도우 기본 tk.Menu 로 띄웠었는데,
+    # 그 순간 이 판이 닫혀 목록이 사라졌고 회색 기본 메뉴는 프로그램의 얼굴과도
+    # 달랐다 (사용자 지적). 하위 메뉴도 같은 Popover 로, 항목 줄 오른쪽에
+    # 한글의 계단식 메뉴처럼 붙인다.
+    def suspend_grab(self):
+        """하위 메뉴가 클릭을 받도록 grab 을 잠시 내준다."""
+        try:
+            self.grab_release()
+        except Exception:
+            pass
+
+    def resume_grab(self):
+        """하위 메뉴가 닫힌 뒤 grab 을 되찾는다 — 바깥 클릭 감지가 다시 산다."""
+        if not self._closed:
+            self._grab()
+
+    def show_beside(self, row):
+        """다른 팝오버의 항목 줄(row) **오른쪽**에 계단식으로 펼친다.
+
+        부모 판은 닫히지 않고 그대로 남는다 — 부모는 suspend_grab 으로
+        grab 만 내주고, 이 판이 닫힐 때 on_close 에서 resume_grab 한다.
+        """
+        self.update_idletasks()
+        w = self.winfo_reqwidth()
+        h = self.winfo_reqheight()
+        x = row.winfo_rootx() + row.winfo_width() + 2
+        y = row.winfo_rooty() - 1
         x, y = screens.clamp_window(self, x, y, w, h)
         self.geometry(f"{w}x{h}+{x}+{y}")
         self.deiconify()

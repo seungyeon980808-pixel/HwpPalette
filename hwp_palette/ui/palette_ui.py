@@ -23,6 +23,7 @@ from hwp_palette.model import palette
 from hwp_palette.model import library
 from hwp_palette.model import func_catalog
 from hwp_palette.model import builtin_actions              # 프로그램 기능 블럭('도구') 카탈로그
+from hwp_palette.model import builtin_chars               # 내장 기호 (특수기호 블럭 만들기)
 from hwp_palette.hwp import engine_library               # 고치기 세션 마무리 (hide_window_if_ours)
 from hwp_palette.hwp import hwp_dock                     # 고치는 동안 한글 창을 미리보기 판에 도킹
 from hwp_palette.hwp import hwp_engine
@@ -1224,40 +1225,56 @@ class SettingsWindow(tk.Toplevel):
         for i, t in enumerate(tabs):
             pop.add_check(t["name"], lambda idx=i: self._pick_tab(idx),
                          checked=(i == self.sel_tab),
-                         more=lambda idx=i: self._tab_manage_menu(idx))
+                         more=lambda row, idx=i:
+                             self._tab_manage_menu(idx, row, pop))
         pop.separator()
         pop.add("＋ 새 팔레트 만들기", self._add_tab, indent=True)
         pop.show()
 
-    def _tab_manage_menu(self, idx):
-        """팔레트 관리 — 드롭다운 각 줄의 ⋯ 가 연다. 이름·순서·내보내기·삭제.
+    def _tab_manage_menu(self, idx, row=None, parent=None):
+        """팔레트 관리 — 드롭다운 각 줄의 ⋯ 가 **옆으로 펼치는** 계단식 메뉴.
 
-        네이티브 tk.Menu 를 쓴다 — 이 프로그램 전체에서 오른쪽 클릭 메뉴가
-        이미 이 모양이라(_tile_menu 등) 통일된다.
+        예전에는 윈도우 기본 tk.Menu 를 마우스 위치에 띄웠다. 그 순간
+        드롭다운이 닫혀 목록이 사라졌고, 회색 기본 메뉴는 이 프로그램의
+        얼굴과도 달랐다 (사용자 지적 2026-07-31). 이제 드롭다운은 열린 채로
+        두고, 그 줄 오른쪽에 같은 얼굴(Popover)의 하위 메뉴를 한글의 계단식
+        메뉴처럼 붙인다. 항목을 고르면 두 판을 다 닫고 실행한다.
+
+        '위로/아래로'는 안 되는 자리(맨 위/맨 아래)에서는 항목을 아예 안
+        보인다 — Popover 에는 회색 비활성이 없고, 눌리지도 않는 항목을
+        보여 주는 것보다 깔끔하다.
         """
         tabs = palette.load_tabs()
         if not (0 <= idx < len(tabs)):
             return
-        m = tk.Menu(self, tearoff=0)
-        m.add_command(label="이름 바꾸기", command=lambda: self._rename_tab(idx))
-        m.add_separator()
-        m.add_command(label="▲ 위로", command=lambda: self._move_tab(idx, -1),
-                      state="normal" if idx > 0 else "disabled")
-        m.add_command(label="▼ 아래로", command=lambda: self._move_tab(idx, 1),
-                      state="normal" if idx < len(tabs) - 1 else "disabled")
-        m.add_separator()
-        m.add_command(label="팔레트 내보내기",
-                      command=lambda: self._export_chip(idx))
-        m.add_separator()
-        m.add_command(label="삭제", command=lambda: self._del_tab(idx))
-        # 팔레트 고르기(tab_pick) 바로 아래에 연다 — 마우스 위치에 그대로
-        # 띄우면(예전 방식) 목록 아래쪽 줄에서 열었을 때 메뉴가 격자 위에
-        # 겹쳐, 그 사이 tab_pick 드롭다운 자리가 안 보이는 것처럼 느껴졌다
-        # (사용자 지적 2026-07-31: "팔레트 드롭다운은 남아있어야 하는데
-        # 어디 가버리고 없습니다"). Popover 와 같은 자리(고르기 버튼 아래)에
-        # 열면 항상 예측 가능한 곳에 뜬다.
-        m.tk_popup(self.tab_pick.winfo_rootx(),
-                  self.tab_pick.winfo_rooty() + self.tab_pick.winfo_height() + 2)
+        if parent is not None:
+            parent.suspend_grab()       # 하위 메뉴가 클릭을 받으려면 필요
+
+        def done(cmd):
+            # 실행 항목은 두 판을 모두 닫고 실행 — 뒤에 대화상자가 오거나
+            # 목록 자체가 바뀌므로(순서·삭제) 열어 둘 이유가 없다
+            def run():
+                if parent is not None:
+                    parent.close()
+                cmd()
+            return run
+
+        sub = Popover(self, row or self.tab_pick,
+                      on_close=lambda: parent and parent.resume_grab())
+        sub.add("이름 바꾸기", done(lambda: self._rename_tab(idx)))
+        sub.separator()
+        if idx > 0:
+            sub.add("▲ 위로", done(lambda: self._move_tab(idx, -1)))
+        if idx < len(tabs) - 1:
+            sub.add("▼ 아래로", done(lambda: self._move_tab(idx, 1)))
+        sub.separator()
+        sub.add("팔레트 내보내기", done(lambda: self._export_chip(idx)))
+        sub.separator()
+        sub.add("삭제", done(lambda: self._del_tab(idx)))
+        if row is not None:
+            sub.show_beside(row)
+        else:
+            sub.show()
 
     def _pick_tab(self, idx):
         if idx == self.sel_tab:
@@ -1717,10 +1734,12 @@ class SettingsWindow(tk.Toplevel):
         # 곡률도 메인 창과 같다 (RoundTile 머리말 — 같은 물건은 같은 모양이어야
         # 같은 물건으로 읽힌다). highlight* 로 테두리를 바꾸던 기존 코드는
         # RoundTile 이 그대로 받아 준다.
+        # 선택 상태는 만들고 나서 _paint_sel_tile 이 칠한다 — 만들 때 테두리만
+        # 파랗게 하던 옛 방식은 배경이 안 물들어 '테두리만 굵은 흰 칸'이 됐다
+        # (사용자 지적 2026-07-31). 창고(_paint_tile)와 같은 한 규칙으로 간다.
         tile = RoundTile(parent, bg=bg, radius=theme.RADIUS["ctl"],
                          zone_bg=parent.cget("bg"),
-                         highlightbackground=ACCENT if selected else BORDER,
-                         highlightthickness=2 if selected else 1)
+                         highlightbackground=BORDER, highlightthickness=1)
         tile.pack_propagate(False)
         # 아이콘을 이름 **위**에 얹는다 — 메인 창 블럭과 같은 규칙 (H안 2026-07-29).
         # 여기가 그 블럭의 미리보기이므로 얼굴이 다르면 다른 물건으로 보인다.
@@ -1735,14 +1754,30 @@ class SettingsWindow(tk.Toplevel):
         icon = theme.block_icon(blk) if show_icon else None
         icon_asset = theme.block_icon_asset(blk) if show_icon else None
         # 2026-07-30 2차 수정: 아이콘·이름 **비율**을 메인 창과 맞춘다.
-        # 처음엔 pt 값(16/9)을 메인 창과 그대로 맞췄는데, 이 칸(44px)은
-        # 메인 창 칸(58px)보다 작아서 그 크기 그대로는 아이콘만으로 세로가
-        # 다 차 이름이 짓눌렸다(사용자 지적: "배치 자체가 안맞는데").
+        # 처음엔 pt 값을 메인 창과 그대로 맞췄는데, 이 칸(44px)은 메인 창
+        # 칸(58px)보다 작아서 그 크기 그대로는 아이콘만으로 세로가 다 차
+        # 이름이 짓눌렸다(사용자 지적: "배치 자체가 안맞는데").
         # _tile_scale() 로 칸 비율만큼 줄이면 절대 크기는 달라도 **아이콘 위
         # 이름 한 줄**이라는 배치 자체는 메인 창과 같은 모양이 된다.
+        # 기준값 12/10 은 메인 창의 _BLOCK_ICON_FS(25% 축소, 2026-07-31)와 짝.
         _, scale = self._tile_scale()
-        icon_size = max(7, round((13 if two_lines else 16) * scale))
+        icon_size = max(7, round((10 if two_lines else 12) * scale))
         label_size = max(6, round((8 if two_lines else 9) * scale))
+        # 이름이 칸 폭을 넘으면 **자르는 대신 글자를 한 단계씩 줄인다**
+        # (사용자 지적 2026-07-31: "글씨도 여전히 잘려있는것"). 잘린 이름은
+        # 무엇인지 알 수 없지만, 한 단계 작은 이름은 그대로 읽힌다.
+        # _tile_text 는 최소 크기(6)로도 안 들어가는 아주 긴 이름만 자른다.
+        try:
+            import tkinter.font as tkfont
+            cell = self._cell_px(self._cur_cols())
+            avail = cell * span + CELL_GAP * (span - 1) - 8
+            lf = tkfont.Font(family=FONT, size=theme.fs(label_size))
+            while (label_size > 6
+                   and max(lf.measure(ln) for ln in text.split("\n")) > avail):
+                label_size -= 1
+                lf.configure(size=theme.fs(label_size))
+        except Exception:
+            pass
         parts = []
         if icon:
             icon_img = None
@@ -1771,13 +1806,21 @@ class SettingsWindow(tk.Toplevel):
                        fg=theme.text_on(bg),
                        anchor="center", justify="center",
                        font=(FONT, theme.fs(label_size)))
-        lab.pack(expand=True, fill="both", padx=4)
+        # 위아래 여백 3px: 칸 테두리(RoundTile 이 캔버스에 그리는 폴리곤 선)를
+        # 라벨 위젯이 덮어 **아랫변만 안 그려진 것처럼** 보이던 원인
+        # (사용자 지적 2026-07-31: "테두리의 모양이 이상합니다"). 라벨이
+        # 가장자리까지 차지하지 않게 물러나면 테두리가 온전히 보인다.
+        lab.pack(expand=True, fill="both", padx=4,
+                 pady=((0 if icon else 3), 3))
         parts.append(lab)
-        # 선택 표시(파랑 물들이기)가 되돌아갈 원래 색 — _set_selection 참고.
+        # 선택 표시(파랑 물들이기)가 되돌아갈 원래 색 — _paint_sel_tile 참고.
         tile._base_bg = bg
         tile._base_fg = [p.cget("fg") for p in parts]
         tile._parts = parts
         self._tiles[i] = tile
+        if selected:
+            # 다시 그려질 때(드래그·크기 조절 뒤)도 선택 상태를 같은 규칙으로.
+            self._paint_sel_tile(tile, True)
         for w in [tile] + parts:
             self._tile_map[str(w)] = i
             w.bind("<ButtonPress-1>", lambda e, idx=i: self._on_press(idx, e))
@@ -1883,7 +1926,13 @@ class SettingsWindow(tk.Toplevel):
         """타일 우클릭 메뉴 — 옛 상단 바(편집·크기·삭제)를 여기로 옮겼다."""
         self._set_selection(idx)
         m = tk.Menu(self, tearoff=0)
-        m.add_command(label="편집  (더블클릭)", command=lambda: self._edit_block(idx))
+        # 도구 블럭은 '편집' 항목 자체를 안 보인다 — 편집할 내용물이 없다
+        # (_edit_block 의 builtin 갈래 참고, 2026-07-31)
+        blocks = palette.load_tabs()[self.sel_tab]["blocks"]
+        btype = blocks[idx].get("type") if 0 <= idx < len(blocks) else None
+        if btype != "builtin":
+            m.add_command(label="편집  (더블클릭)",
+                          command=lambda: self._edit_block(idx))
         m.add_command(label="이름 바꾸기 (줄바꿈 가능)",
                       command=lambda: self._rename_block(idx))
         m.add_command(label="복제", command=lambda: self._duplicate(idx))
@@ -1984,12 +2033,12 @@ class SettingsWindow(tk.Toplevel):
             return 1.0 if unicodedata.east_asian_width(ch) in ("W", "F") else 0.5
 
         cell, scale = self._tile_scale()
-        # 자르는 기준은 항상 **한 줄 이름 크기**(메인 창의 body=9와 같은 몫)로
-        # 잰다 — 실제로 두 줄이 되면 그보다 작은 글자로 그리므로(_make_tile)
-        # 여유가 생긴다. 메인 창의 _fit_label 도 같은 방식이다.
-        body_size = max(6, round(9 * scale))
-        char_px = theme.fs(body_size) * 4 / 3
-        width = cell * span + CELL_GAP * (span - 1) - TILE_TEXT_PAD // 2
+        # 자르는 기준은 **가장 작은 글자(6)까지 줄였을 때**다 (2026-07-31).
+        # 넘치는 이름은 _make_tile 이 글자를 한 단계씩 줄여 맞추므로, 여기서는
+        # 그래도 안 들어가는 아주 긴 이름만 자른다. 예전처럼 기본 크기로 재면
+        # 실제로는 들어갈 이름까지 미리 잘라 버렸다("마크다운 변환" 등).
+        char_px = theme.fs(6) * 4 / 3
+        width = cell * span + CELL_GAP * (span - 1) - 6
         limit = max(2.0, width / max(1, char_px))
 
         lines = (self._block_label(blk) or "").split("\n")
@@ -2044,19 +2093,7 @@ class SettingsWindow(tk.Toplevel):
         """
         self.sel_block = idx
         for i, tile in getattr(self, "_tiles", {}).items():
-            sel = (i == idx)
-            try:
-                bg = store_ui.SEL_BG if sel else getattr(tile, "_base_bg", CARD)
-                line = store_ui.SEL_LINE if sel else BORDER
-                tile.config(bg=bg, highlightbackground=line,
-                            highlightthickness=2 if sel else 1)
-                base_fg = getattr(tile, "_base_fg", None)
-                for j, w in enumerate(getattr(tile, "_parts", [])):
-                    fg = (store_ui.SEL_FG if sel
-                          else (base_fg[j] if base_fg else theme.text_on(bg)))
-                    w.config(bg=bg, fg=fg)
-            except Exception:
-                pass
+            self._paint_sel_tile(tile, i == idx)
         # 물감 창고에서 무언가 골라 놓은 상태였다면 지운다 — 한 번에 하나만
         # 선택되게 한다 (사용자 지적 2026-07-31: "동시에 선택이 가능한 버그").
         if idx is not None:
@@ -2064,6 +2101,25 @@ class SettingsWindow(tk.Toplevel):
                 self.store.clear_selection()
             except Exception:
                 pass
+
+    def _paint_sel_tile(self, tile, sel):
+        """타일 하나를 선택/보통 상태로 칠한다 — 창고(_paint_tile)와 같은 규칙.
+
+        선택 = 파란 배경 + 파란 테두리 2px + 파란 글자 (SEL_* 은 창고와 공유).
+        해제 = 만들 때 저장해 둔 원래 색(_base_bg/_base_fg)으로 되돌린다.
+        """
+        bg = store_ui.SEL_BG if sel else getattr(tile, "_base_bg", CARD)
+        line = store_ui.SEL_LINE if sel else BORDER
+        try:
+            tile.config(bg=bg, highlightbackground=line,
+                        highlightthickness=2 if sel else 1)
+            base_fg = getattr(tile, "_base_fg", None)
+            for j, w in enumerate(getattr(tile, "_parts", [])):
+                fg = (store_ui.SEL_FG if sel
+                      else (base_fg[j] if base_fg else theme.text_on(bg)))
+                w.config(bg=bg, fg=fg)
+        except Exception:
+            pass
 
     def _on_press(self, idx, event=None):
         self._drag_from = idx
@@ -2337,11 +2393,31 @@ class SettingsWindow(tk.Toplevel):
         if not (0 <= idx < len(blocks)):
             return
         blk = dict(blocks[idx])
+        if blk["type"] == "builtin":
+            # 도구 블럭(마크다운 변환·사진 등)은 편집할 내용물이 없다.
+            # 예전에는 아래 else 로 흘러 **서식 조합 창이 열렸다** (사용자
+            # 지적 2026-07-31: "왜 마크다운 변환 버튼인데 편집을 들어가니까
+            # 서식 조합 블럭이 나오는지") — 저장하면 도구가 서식 블럭으로
+            # 둔갑하는 사고까지 가능했다. 이름은 우클릭 → 이름 바꾸기.
+            return
         if blk["type"] == "char":
-            val = simpledialog.askstring("특수기호/문구 편집", "내용:",
-                                         initialvalue=blk.get("value", ""), parent=self)
-            if val is not None and val != "":
-                blk["value"] = val
+            dlg = _CharDialog(self, prefill=blk.get("value", ""))
+            self.wait_window(dlg)
+            if dlg.result:
+                blk["value"] = dlg.result
+                palette.update_block(self.sel_tab, idx, blk)
+        elif blk["type"] == "form":
+            # 양식 블럭 — 등록된 다른 양식으로 바꾼다 (2026-07-31 추가).
+            # 예전에는 이 갈래가 없어 else(서식 조합 창)로 흘렀다.
+            items = library.list_items("양식")
+            if not items:
+                return
+            pick = _ChoiceDialog(self, "양식 변경", [it["name"] for it in items])
+            self.wait_window(pick)
+            if pick.result:
+                it = next(x for x in items if x["name"] == pick.result)
+                blk["ref"] = it["id"]
+                blk["form"] = it["name"]
                 palette.update_block(self.sel_tab, idx, blk)
         elif blk["type"] == "template":
             items = library.list_items("템플릿")
@@ -2383,11 +2459,13 @@ class SettingsWindow(tk.Toplevel):
                 prefill = hwp_engine.read_selection_text(retries=6)
         except Exception:
             pass
-        val = simpledialog.askstring(
-            "특수기호/문구 블럭", "삽입할 기호나 문구 (한글에서 선택했다면 자동으로 채워집니다):",
-            initialvalue=prefill, parent=self)
-        if val:
-            self._place({"type": "char", "value": val,
+        # 윈도우 기본 입력창(askstring) 하나뿐이던 것을 자체 대화상자로 (2026-07-31).
+        # 프로그램에 내장된 기호 470여 개가 있는데도 여기서는 쓸 길이 없었다
+        # (사용자 지적: "지금은 한글에서 추가하는 방법밖에 작동하지 않습니다").
+        dlg = _CharDialog(self, prefill=prefill)
+        self.wait_window(dlg)
+        if dlg.result:
+            self._place({"type": "char", "value": dlg.result,
                          "span": span, "rows": rows})
 
     def _add_template(self, span=2, rows=1):
@@ -2442,14 +2520,14 @@ class SettingsWindow(tk.Toplevel):
         """
         if not self._need_tab():
             return
-        names = [f"{a['name']} — {a['hint']}"
-                 for a in builtin_actions.BUILTIN_ACTIONS]
-        pick = _ChoiceDialog(self, "도구 선택", names)
+        # "이름 — 설명"을 한 줄로 이어 콤보박스에 넣던 옛 방식은 콤보박스
+        # 폭에서 설명이 잘려 무엇을 고르는지 알 수 없었다 (사용자 지적
+        # 2026-07-31). 이름과 설명을 두 줄로 보여주는 전용 목록으로 바꿨다.
+        pick = _ToolPickDialog(self, builtin_actions.BUILTIN_ACTIONS)
         self.wait_window(pick)
         if not pick.result:
             return
-        idx = names.index(pick.result)
-        action = builtin_actions.BUILTIN_ACTIONS[idx]
+        action = pick.result
         self._place({"type": "builtin", "key": action["key"],
                      "name": action["name"], "span": span, "rows": rows})
 
@@ -2643,6 +2721,164 @@ class _SourceDialog(tk.Toplevel):
 
     def _pick(self, what):
         self.result = what
+        self.destroy()
+
+
+class _ToolPickDialog(tk.Toplevel):
+    r"""도구 고르기 — 이름과 설명을 **두 줄**로 보여준다 (2026-07-31).
+
+    예전에는 "이름 — 설명"을 한 줄로 이어 콤보박스(_ChoiceDialog)에 넣었는데,
+    콤보박스 폭에서 설명이 잘려 무엇을 고르는지 알 수 없었다 (사용자 지적:
+    "각각의 내용들이 알아보기가 힘이 듭니다"). 항목마다 이름(진하게) 아래
+    설명(흐리게)을 붙이고, 줄을 누르면 바로 골라진다 — Popover 항목과 같은
+    호버 규칙이라 따로 배울 것이 없다.
+    """
+
+    def __init__(self, master, actions):
+        super().__init__(master)
+        self.result = None              # 고른 action dict (취소면 None)
+        self.title(appinfo.WINDOW_TITLE)
+        self.configure(bg=BG)
+        self.attributes("-topmost", True)
+        self.resizable(False, False)
+        tk.Label(self, text="도구 고르기",
+                 font=(FONT, theme.fs(FS["title"]), "bold"),
+                 bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(12, 0))
+        tk.Label(self, text="프로그램이 제공하는 기능을 블럭으로 놓습니다.",
+                 font=(FONT, theme.fs(FS["caption"])), bg=BG, fg=MUTED
+                 ).pack(anchor="w", padx=16, pady=(0, 8))
+        box = tk.Frame(self, bg=CARD, highlightbackground=BORDER,
+                       highlightthickness=1)
+        box.pack(fill="both", expand=True, padx=16)
+        for a in actions:
+            self._row(box, a)
+        foot = tk.Frame(self, bg=BG, padx=16, pady=12)
+        foot.pack(fill="x")
+        _dialog_btn(foot, "취소", self.destroy).pack(side="right")
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.update_idletasks()
+        self.geometry(f"+{master.winfo_rootx()+60}+{master.winfo_rooty()+40}")
+        self.grab_set()
+
+    def _row(self, parent, action):
+        f = tk.Frame(parent, bg=CARD, padx=12, pady=5)
+        f.pack(fill="x")
+        nm = tk.Label(f, text=action["name"],
+                      font=(FONT, theme.fs(FS["body"]), "bold"),
+                      bg=CARD, fg=TEXT, anchor="w")
+        nm.pack(fill="x")
+        ht = tk.Label(f, text=action.get("hint", ""),
+                      font=(FONT, theme.fs(FS["caption"])),
+                      bg=CARD, fg=MUTED, anchor="w")
+        ht.pack(fill="x")
+        parts = (f, nm, ht)
+
+        def paint(on):
+            for w in parts:
+                w.config(bg=ACCENT_SOFT if on else CARD)
+            nm.config(fg=ACCENT if on else TEXT)
+
+        def choose(_e=None, a=action):
+            self.result = a
+            self.destroy()
+
+        for w in parts:
+            w.bind("<Enter>", lambda e: paint(True))
+            w.bind("<Leave>", lambda e: paint(False))
+            w.bind("<ButtonRelease-1>", choose)
+            w.config(cursor="hand2")
+
+
+class _CharDialog(tk.Toplevel):
+    r"""특수기호/문구 블럭 — 직접 쓰거나, 내장 기호에서 고른다 (2026-07-31).
+
+    예전에는 윈도우 기본 입력창(askstring) 하나뿐이라, 프로그램에 내장된
+    기호(원문자·수학·단위 470여 개, builtin_chars)가 있는데도 이 창에서는
+    쓸 길이 없었다 — 한글에서 미리 복사해 오는 수밖에. 입력칸 + 검색 +
+    기호 격자를 한 창에 둔다. 기호를 누르면 입력칸의 커서 자리에 들어가므로
+    여러 개를 이어 담을 수도 있다("① " 처럼 기호+공백 조합 등).
+    """
+    _COLS = 12          # 격자 열 수
+    _SHOW_MAX = 96      # 한 번에 그리는 최대 개수 — 나머지는 검색으로 좁힌다
+
+    def __init__(self, master, prefill=""):
+        super().__init__(master)
+        self.result = None
+        self.title(appinfo.WINDOW_TITLE)
+        self.configure(bg=BG)
+        self.attributes("-topmost", True)
+        self.resizable(False, False)
+        tk.Label(self, text="특수기호/문구 블럭",
+                 font=(FONT, theme.fs(FS["title"]), "bold"),
+                 bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(12, 0))
+        tk.Label(self, text="직접 쓰거나, 아래 내장 기호를 눌러 담습니다. "
+                            "(한글에서 선택해 두면 자동으로 채워집니다)",
+                 font=(FONT, theme.fs(FS["caption"])), bg=BG, fg=MUTED
+                 ).pack(anchor="w", padx=16, pady=(0, 8))
+
+        row = tk.Frame(self, bg=BG)
+        row.pack(fill="x", padx=16)
+        tk.Label(row, text="내용", font=(FONT, theme.fs(FS["body"])),
+                 bg=BG, fg=TEXT).pack(side="left")
+        self.entry = tk.Entry(row, font=(FONT, theme.fs(FS["head"])),
+                              relief="solid", bd=1)
+        self.entry.pack(side="left", fill="x", expand=True, padx=(8, 0),
+                        ipady=3)
+        self.entry.insert(0, prefill)
+
+        srow = tk.Frame(self, bg=BG)
+        srow.pack(fill="x", padx=16, pady=(10, 4))
+        tk.Label(srow, text="내장 기호", font=(FONT, theme.fs(FS["body"]), "bold"),
+                 bg=BG, fg=TEXT).pack(side="left")
+        self.q = tk.Entry(srow, font=(FONT, theme.fs(FS["body"])),
+                          relief="solid", bd=1, width=16)
+        self.q.pack(side="left", padx=(8, 0), ipady=2)
+        self.q.bind("<KeyRelease>", self._render)
+        self.count = tk.Label(srow, text="", font=(FONT, theme.fs(FS["caption"])),
+                              bg=BG, fg=MUTED)
+        self.count.pack(side="left", padx=(8, 0))
+
+        self.grid_box = tk.Frame(self, bg=CARD, highlightbackground=BORDER,
+                                 highlightthickness=1)
+        self.grid_box.pack(fill="x", padx=16)
+
+        foot = tk.Frame(self, bg=BG, padx=16, pady=12)
+        foot.pack(fill="x")
+        _dialog_btn(foot, "확인", self._ok, primary=True).pack(side="right")
+        _dialog_btn(foot, "취소", self.destroy).pack(side="right", padx=(0, 8))
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.bind("<Return>", lambda e: self._ok())
+
+        self._render()
+        self.update_idletasks()
+        self.geometry(f"+{master.winfo_rootx()+40}+{master.winfo_rooty()+40}")
+        self.grab_set()
+        self.entry.focus_set()
+
+    def _render(self, _e=None):
+        for w in self.grid_box.winfo_children():
+            w.destroy()
+        items = builtin_chars.search(self.q.get())
+        shown = items[:self._SHOW_MAX]
+        for k, (label, text, group) in enumerate(shown):
+            c = tk.Label(self.grid_box, text=text,
+                         font=(FONT, theme.fs(FS["head"])),
+                         bg=CARD, fg=TEXT, width=3, pady=2, cursor="hand2")
+            c.grid(row=k // self._COLS, column=k % self._COLS, padx=1, pady=1)
+            c.bind("<Enter>", lambda e, w=c: w.config(bg=ACCENT_SOFT))
+            c.bind("<Leave>", lambda e, w=c: w.config(bg=CARD))
+            c.bind("<ButtonRelease-1>",
+                   lambda e, t=text: self.entry.insert("insert", t))
+            _tip(c, f"{label} · {group}")
+        more = len(items) - len(shown)
+        self.count.config(
+            text=(f"{len(items)}개 중 {len(shown)}개 — 검색으로 좁혀 보세요"
+                  if more > 0 else f"{len(items)}개"))
+
+    def _ok(self):
+        val = self.entry.get()
+        if val:
+            self.result = val
         self.destroy()
 
 

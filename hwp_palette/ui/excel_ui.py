@@ -51,6 +51,22 @@ class ExcelWindow(tk.Toplevel):
                  text="마크다운을 치지 않고 엑셀 표에 채워 시험지를 만듭니다.",
                  font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(anchor="w", padx=16)
 
+        # 무엇을 할 수 있는 창인지 첫눈에 읽히게 (사용자 지적 2026-07-31:
+        # "어떤 것을 할 수 있다는 것인지 파악이 잘 안됩니다")
+        guide = tk.Frame(self, bg=CARD, highlightbackground=BORDER,
+                         highlightthickness=1)
+        guide.pack(fill="x", padx=16, pady=(10, 0))
+        tk.Label(guide, text="이 창에서 할 수 있는 것",
+                 font=(FONT, theme.fs(8), "bold"), bg=CARD, fg=TEXT
+                 ).pack(anchor="w", padx=12, pady=(8, 2))
+        tk.Label(guide, text=(
+            "· 합답형(ㄱㄴㄷ 고르기) · 정답형(오지선다) · 서술형 문항을 엑셀 표에 한 줄에 하나씩 적습니다\n"
+            "· [엑셀 양식 만들기] — 열이 미리 짜인 빈 엑셀을 만듭니다. 예시 문항을 넣어 형식을 보고 배울 수 있습니다\n"
+            "· [엑셀 파일 고르기] — 채워 온 엑셀을 읽어 시험지 마크다운과 정답표를 만듭니다. 잘못 쓴 칸은 읽기 결과가 짚어 줍니다\n"
+            "· [마크다운 복사] 뒤 한글에 붙여넣고 선택 → [마크다운 변환] — 등록해 둔 조각 서식 그대로 시험지가 완성됩니다"),
+            font=(FONT, theme.fs(8)), bg=CARD, fg=MUTED, justify="left"
+        ).pack(anchor="w", padx=12, pady=(0, 8))
+
         self._build_make()
         self._build_load()
 
@@ -97,7 +113,9 @@ class ExcelWindow(tk.Toplevel):
         RoundButton(btns, text="엑셀 양식 만들기", command=self._make,
                     bg=ACCENT, fg="white", radius=theme.RADIUS["ctl"],
                     font=(FONT, theme.fs(9), "bold"), outline="",
-                    zone_bg=BG).pack(side="right")
+                    # fit() 이 없으면 Canvas 기본 크기(378x265)로 나온다 —
+                    # 버튼이 화면을 채우던 원인 (사용자 지적 2026-07-31)
+                    zone_bg=BG).fit(pad_x=16, pad_y=6).pack(side="right")
 
     # ── ② 불러오기 ──────────────────────────────────────
     def _build_load(self):
@@ -110,7 +128,7 @@ class ExcelWindow(tk.Toplevel):
         RoundButton(head, text="엑셀 파일 고르기", command=self._load,
                     bg=CARD, fg=TEXT, radius=theme.RADIUS["ctl"],
                     font=(FONT, theme.fs(9)), outline=BORDER,
-                    zone_bg=BG).pack(side="right")
+                    zone_bg=BG).fit(pad_x=14, pad_y=5).pack(side="right")
 
         body = tk.Frame(box, bg=BG)
         body.pack(fill="both", expand=True, pady=(8, 0))
@@ -123,10 +141,10 @@ class ExcelWindow(tk.Toplevel):
         tk.Label(body, text="만들어진 마크다운", font=(FONT, theme.fs(8), "bold"),
                  bg=BG, fg=TEXT).grid(row=0, column=1, sticky="w", padx=(8, 0))
 
-        self.report_box = tk.Text(body, width=40, height=14, font=(FONT, theme.fs(8)),
+        self.report_box = tk.Text(body, width=40, height=11, font=(FONT, theme.fs(8)),
                                   relief="solid", bd=1, wrap="word")
         self.report_box.grid(row=1, column=0, sticky="nsew")
-        self.md_box = tk.Text(body, width=40, height=14, font=(MONO, theme.fs(8)),
+        self.md_box = tk.Text(body, width=40, height=11, font=(MONO, theme.fs(8)),
                               relief="solid", bd=1, wrap="none")
         self.md_box.grid(row=1, column=1, sticky="nsew", padx=(8, 0))
 
@@ -135,11 +153,11 @@ class ExcelWindow(tk.Toplevel):
         RoundButton(foot, text="정답표 복사", command=self._copy_answers,
                     bg=CARD, fg=TEXT, radius=theme.RADIUS["ctl"],
                     font=(FONT, theme.fs(9)), outline=BORDER,
-                    zone_bg=BG).pack(side="left")
+                    zone_bg=BG).fit(pad_x=14, pad_y=5).pack(side="left")
         RoundButton(foot, text="마크다운 복사", command=self._copy_md,
                     bg=ACCENT, fg="white", radius=theme.RADIUS["ctl"],
                     font=(FONT, theme.fs(10), "bold"), outline="",
-                    zone_bg=BG).pack(side="right")
+                    zone_bg=BG).fit(pad_x=16, pad_y=6).pack(side="right")
         tk.Label(foot, text="한글에 붙여넣고 선택한 뒤 [마크다운 변환]",
                  font=(FONT, theme.fs(8)), bg=BG,
                  fg=MUTED).pack(side="right", padx=(0, 10))
