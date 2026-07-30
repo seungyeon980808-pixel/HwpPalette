@@ -7,8 +7,9 @@ r"""버튼 손맛 — 호버 색 보간과 누름 피드백 (애플 디자인 A�
     느껴진다 — 애플 UI 의 부드러움은 대부분 이 **전환 구간**에서 나온다.
 
 어떻게 하나:
-    <Enter>/<Leave> 에서 배경색을 4단계로 보간한다 (30ms 간격 ≈ 120ms).
-    진짜 이징 곡선까진 필요 없다 — 사람 눈은 이 정도면 '부드럽다'로 읽는다.
+    <Enter>/<Leave> 에서 배경색을 ease-out cubic 곡선을 따라 보간한다.
+    걸리는 시간은 theme.MOTION["hover_ms"] 가 정하고(지금 128ms), 여기서는
+    60fps 프레임 주기(16ms)로 나눠 단계 수만 역산한다.
     누르면 즉시 진해진다 (전환 없이 — 누름은 **즉각** 반응해야 눌린 맛이 난다).
 
 주의:
@@ -17,9 +18,15 @@ r"""버튼 손맛 — 호버 색 보간과 누름 피드백 (애플 디자인 A�
 """
 
 from hwp_palette.core import applog
+from hwp_palette.design import theme
 
-STEPS = 8          # 보간 단계 수
-INTERVAL_MS = 16   # 단계 간격 — 8단계 × 16ms ≈ 130ms, 60fps 리듬
+# 단계 간격 — 60fps 화면이 새로 그려지는 주기. 이보다 촘촘히 잡아 봐야
+# 중간 색은 그려지지 않고 버려진다.
+INTERVAL_MS = 16
+# 보간 단계 수는 **토큰에서 역산한다**. 여기에 8 이라고 적어 두면 theme.MOTION
+# 의 값과 갈라져도 아무도 모른다 (실제로 128 vs 130 으로 갈라져 있었다).
+# 이제 호버 시간을 바꾸려면 theme.MOTION 한 곳만 고치면 된다.
+STEPS = max(1, round(theme.MOTION["hover_ms"] / INTERVAL_MS))
 
 
 def ease_out(t):
