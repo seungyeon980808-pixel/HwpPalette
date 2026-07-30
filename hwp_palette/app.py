@@ -823,7 +823,13 @@ misc_row.pack(fill="x")
 #   · 평소엔 테두리도 배경도 없다. 마우스를 올리면 옅은 회색, 눌러서 무언가
 #     열려 있는 동안(메뉴·사용법)에는 옅은 파랑 + 파란 기호.
 #   · 줄 높이는 버튼 크기 그대로 — 예전 두 칸 높이의 절반쯤이다.
-_BAR_BTN_PX = int(round(26 * SCALE))     # 정사각 한 변
+# 정사각 한 변. 26 → 32 (사용자 결정 2026-07-30, 시안 가 —
+# docs/mockups/design-2026-07-toolbar.html).
+#
+# 26px 은 접근성 최소선(24px)을 2px 넘겼을 뿐이라 "누를 자리"로는 빠듯했다.
+# 권장선은 44px 이지만 그건 손가락 기준이고, 이 프로그램은 마우스로 쓰므로
+# 32px 이면 빗나가지 않는다 — 창을 덜 두껍게 하는 쪽을 택했다.
+_BAR_BTN_PX = int(round(32 * SCALE))
 
 
 # 아이콘은 **PNG 한 벌**을 쓴다 (사용자 결정 2026-07-30, 시안 2 —
@@ -831,7 +837,9 @@ _BAR_BTN_PX = int(round(26 * SCALE))     # 정사각 한 변
 # 그려져서, 같은 15px 로 찍어도 ⚙ 는 꽉 차고 ⌕ 는 눈에 절반이었다
 # (사용자 지적: "안에 들어가는 아이콘 크기가 맞지 않아서 문제가 있습니다").
 # assets/icons/ 의 한 벌은 획 굵기를 상자 비율로 잡아 구운 것이라 크기가 맞는다.
-_BAR_ICON_PX = 24 if SCALE > 1.1 else 20
+# 버튼이 32 로 커진 만큼 아이콘도 한 벌 올린다 (20 → 24). 굽는 작업은 없다 —
+# assets/icons/ 에 16·20·24·32·48 다섯 벌이 이미 들어 있어 파일만 갈아끼운다.
+_BAR_ICON_PX = 32 if SCALE > 1.1 else 24
 _bar_icons = {}                          # 이름 → PhotoImage (참조를 붙들어야 안 사라진다)
 
 
@@ -1528,13 +1536,14 @@ def _render_current_tab(tabs=None):
             tk.Label(frame, text="이 탭에 블럭이 없습니다. ‘설정’으로 추가하세요.",
                      font=_font(8), fg=MUTED, bg=SUBBG).pack(anchor="w")
         else:
-            _render_block_grid(frame, tab)
+            # 개인 팔레트 — 아이콘 없이 글자만 (2026-07-30)
+            _render_block_grid(frame, tab, show_icon=False)
         cache[cur] = frame
     frame.pack(anchor="w", fill="x")
     _pal_state["shown_frame"] = frame
 
 
-def _render_block_grid(parent, tab):
+def _render_block_grid(parent, tab, show_icon=True):
     """탭의 블럭들을 정사각형 격자로 그린다 (팔레트·메인 버튼칸 공용).
 
     폭을 받지 않는다 — 칸 크기가 먼저 정해지고 **창이 그 결과를 따라간다**.
@@ -1569,7 +1578,8 @@ def _render_block_grid(parent, tab):
         cell.pack_propagate(False)
         cell.grid(row=r, column=c, columnspan=span, rowspan=rows,
                   padx=_BLOCK_GAP_PX // 2, pady=_BLOCK_GAP_PX // 2)
-        _make_block_button(cell, blk, span).pack(fill="both", expand=True)
+        _make_block_button(cell, blk, span, show_icon).pack(fill="both",
+                                                            expand=True)
 
 
 def render_palette():
@@ -1817,8 +1827,14 @@ def _add_tooltip(widget, text, force=False):
 #
 # 두 줄 이름일 때는 한 단계 내린다 (실측 2026-07-29): 아이콘 + 두 줄이
 # 칸 높이를 넘겨 **아래 줄이 잘렸다**. 이름이 잘리느니 기호가 작은 편이 낫다.
-_BLOCK_ICON_FS = 11
-_BLOCK_ICON_FS_2LINE = 9
+# 2026-07-30: 공통 팔레트를 **아이콘 주도**로 바꾸면서 한 단계가 아니라
+# 두 배 가까이 키웠다 (사용자 결정, docs/mockups/design-2026-07-picked.html).
+# 손에 익으면 이름을 안 읽고 모양으로 찾게 되는데, 그러려면 기호가 먼저
+# 눈에 들어와야 한다. 이름은 줄이지 않았다 — 줄이는 쪽이 원래 시안이었으나
+# "지금보다 25% 확대"(2026-07-25) 결정과 어긋나서, 기호만 키우는 것으로
+# 번역했다. 개인 팔레트에는 아이콘을 아예 안 붙인다 (_render_block_grid).
+_BLOCK_ICON_FS = 16
+_BLOCK_ICON_FS_2LINE = 13
 
 
 def _block_icon_fg(bg):
@@ -1830,7 +1846,7 @@ def _block_icon_fg(bg):
     return MUTED if theme.text_on(bg) != "#ffffff" else "#ffffff"
 
 
-def _make_block_button(parent, blk, span=1):
+def _make_block_button(parent, blk, span=1, show_icon=True):
     # 아이콘을 **이름 위 한 줄**에 얹는다 (H안, 사용자 결정 2026-07-29).
     #
     # 2026-07-19 에 뺐던 그 아이콘이 아니다: 그때는 이름 옆에 붙어 글자 자리를
@@ -1840,13 +1856,28 @@ def _make_block_button(parent, blk, span=1):
     full = _block_label(blk)
     label = _fit_label(full, span)
     bg = theme.block_color(blk)     # 사용자 지정 > 도구 강조(변환) > 종류별 기본
-    icon = theme.block_icon(blk)
+    # 개인 팔레트는 **글자만** 쓴다 (사용자 결정 2026-07-30).
+    # 개인 블럭은 사용자가 만든 것이라 종류가 몇 가지 안 되고, 같은 기호가
+    # 열 칸 스무 칸 반복되면 뜻을 전하는 대신 **무늬**가 된다. 공통 팔레트는
+    # 도구마다 기호가 달라서 아이콘이 제 몫을 하지만 여기서는 아니다.
+    icon = theme.block_icon(blk) if show_icon else None
+    # 가운데 정렬 기준 (2026-07-30):
+    #   아이콘이 있으면      → 가운데 (기호와 이름이 한 기둥에 선다)
+    #   개인 팔레트(글자만)   → 가운데 (승인된 시안)
+    #   공통 팔레트의 문자 블럭 → 왼쪽 (2026-07-28 규칙을 그대로 둔다)
+    # 아이콘 유무만으로 정하면 개인 팔레트가 통째로 왼쪽으로 가 버린다.
+    _centered = bool(icon) or not show_icon
     # 두 줄 이상이면 글자를 한 단계 줄인다 (사용자 결정 2026-07-25) —
     # 9pt 두 줄은 42px 칸에 빈틈없이 꽉 차 답답했다. 칸 크기는 그대로 두고
     # 글자만 줄이면 위아래 숨이 트인다.
     # 아이콘이 윗줄을 차지하면 남는 키가 더 줄어드니 한 단계 더 내린다.
     two_lines = "\n" in label
-    size = (7 if two_lines else 8) if icon else (8 if two_lines else 9)
+    # 2026-07-30: 아이콘이 있어도 이름을 줄이지 않는다 — 한 줄이면 body(9).
+    # 예전에는 아이콘이 윗줄을 먹는 만큼 이름을 한 단계씩 내렸는데, 아이콘을
+    # 키우면서 이름까지 작아지면 개인 팔레트(글자만)와 크기가 갈라져 두 구역이
+    # 남남처럼 보인다. 두 줄일 때만 한 단계 내린다 — 아이콘 + 두 줄은 칸
+    # 높이를 실제로 넘긴 적이 있다 (2026-07-29).
+    size = 8 if two_lines else 9
     # RoundButton (A안): 곡률 8px + 호버 보간 + 누름 침하.
     # 글자색을 TEXT 로 고정하면 사용자가 남색·빨강을 고르거나 어두운 모드로
     # 바꿨을 때 글자가 배경에 묻힌다 (UI 제안 18) — text_on 이 밝기를 재서 정한다.
@@ -1861,8 +1892,8 @@ def _make_block_button(parent, blk, span=1):
                       bg=bg, fg=theme.text_on(bg), radius=theme.RADIUS["ctl"], font=_font(size),
                       outline=theme.block_edge(), focus_color=ACCENT,
                       zone_bg=parent.cget("bg"),
-                      align="center" if icon else "left",
-                      justify="center" if icon else "left",
+                      align="center" if _centered else "left",
+                      justify="center" if _centered else "left",
                       pad_in=_BLOCK_TEXT_PAD,
                       icon=icon,
                       icon_font=_font(_BLOCK_ICON_FS_2LINE if two_lines
