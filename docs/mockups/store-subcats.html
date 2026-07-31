@@ -34,15 +34,17 @@
   .tab s{display:block;text-decoration:none;color:#a2a9b1;font-size:10px}
   .tab.on{background:#fff;color:#0d1117;font-weight:600;box-shadow:0 1px 2px rgba(16,22,26,.1)}
 
-  /* 하위 분류 줄 */
-  .subs{display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-bottom:6px;
-    padding:5px 6px;background:#fafbfc;border:1px solid #eceff2;border-radius:6px}
-  .sub{font-size:10.5px;border:1px solid #d0d7de;border-radius:10px;padding:2px 9px;
-    background:#fff;color:#57606a;cursor:default}
-  .sub.on{background:#0d1117;border-color:#0d1117;color:#fff;font-weight:600}
-  .sub.plus{border-style:dashed;color:#0969da;border-color:#a8c7e8}
-  .sub s{text-decoration:none;color:#a2a9b1;margin-left:3px;font-size:9.5px}
+  /* 하위 분류 — 분류 탭과 같은 **탭 형태**, 한 단 작게 (사용자 결정 2026-07-31:
+     "둥근 버튼으로 되어서는 안됩니다") */
+  .subs{display:flex;gap:2px;background:#f7f8fa;border:1px solid #e8ebef;border-radius:5px;
+    padding:2px;font-size:10.5px;margin-bottom:6px}
+  .sub{flex:1;text-align:center;padding:2px 1px;border-radius:3px;color:#8b939c}
+  .sub b{display:block;font-weight:400}
+  .sub s{display:block;text-decoration:none;color:#c2c8cf;font-size:9.5px}
+  .sub.on{background:#fff;color:#0d1117;box-shadow:0 1px 2px rgba(16,22,26,.08)}
+  .sub.on b{font-weight:600}
   .sub.on s{color:#8b939c}
+  .sub.plus{flex:0 0 26px;color:#0969da;display:flex;align-items:center;justify-content:center}
 
   .newrow{border:1px solid #a8c7e8;border-radius:6px;padding:6px;text-align:center;
     color:#0969da;font-weight:600;font-size:11.5px;background:#fff;margin-bottom:6px}
@@ -96,11 +98,11 @@
 <div class="rack">
 
   <div class="slot">
-    <h2><b>K-1</b> 창고 화면 — 분류 탭 아래 하위 분류 줄</h2>
+    <h2><b>K-1</b> 창고 화면 — 분류 탭 아래 하위 분류 탭</h2>
     <p class="why">
-      하위 분류는 탭이 아니라 <strong>둥근 칩 한 줄</strong>입니다 — 분류 탭(네모)과
-      생김새를 갈라야 위계가 읽힙니다. <strong>전체</strong>가 기본이라 평소에는
-      지금과 똑같이 다 보이고, 칩을 누르면 그 하위 분류만 남습니다.
+      하위 분류도 <strong>탭 형태</strong>입니다 — 분류 탭과 같은 생김새를 한 단
+      작게 써서 "그 아래 단"임이 읽히게 합니다. <strong>'전체'는 없습니다</strong>
+      (분류에서 없앤 것과 같은 이유) — 늘 하나가 켜져 있고, 기본은 미분류입니다.
       ＋ 로 그 자리에서 새 하위 분류를 만듭니다.
     </p>
     <div class="pane">
@@ -116,29 +118,25 @@
         <div class="tab"><b>도구</b><s>7</s></div>
       </div>
       <div class="subs">
-        <span class="sub on">전체 <s>24</s></span>
-        <span class="sub">미분류 <s>15</s></span>
-        <span class="sub">내신 <s>6</s></span>
-        <span class="sub">수능 <s>3</s></span>
+        <span class="sub"><b>미분류</b><s>15</s></span>
+        <span class="sub on"><b>내신</b><s>6</s></span>
+        <span class="sub"><b>수능</b><s>3</s></span>
         <span class="sub plus">＋</span>
       </div>
       <div class="newrow">＋ 새 템플릿 만들기</div>
       <div class="cards">
-        <div class="divider">내신 (6)</div>
         <div class="card"><b>합답형실험3선지</b><s>빈칸 11</s></div>
         <div class="card"><b>학교정답0사진1선지</b><s>빈칸 8</s></div>
-        <div class="divider">수능 (3)</div>
         <div class="card use"><b>합답형1사진3선지</b><s>빈칸 12</s></div>
         <div class="card"><b>3보기</b><s>빈칸 3</s></div>
-        <div class="divider">미분류 (15)</div>
-        <div class="card"><b>가정통신문머리</b><s>빈칸 2</s></div>
+        <div class="card"><b>학교합답2사진5선지</b><s>빈칸 14</s></div>
         <div class="card"><b>지문박스</b><s></s></div>
       </div>
     </div>
     <p class="why" style="margin-top:8px">
-      '전체'로 볼 때는 위처럼 <strong>하위 분류별 소제목 줄</strong>로 묶어 보여줍니다 —
-      정렬은 늘 위에서부터, 미분류가 맨 아래(이름 없는 것들이 앞을 가리지 않게).
-      칩 하나를 고르면 소제목 없이 그 물감들만 남습니다.
+      켜진 하위 분류의 물감만, <strong>늘 위에서부터</strong> 차례대로 보입니다.
+      분류 탭을 갈아타면 하위 분류는 그 분류의 기본(미분류)으로 돌아갑니다.
+      ＋ 줄(새 템플릿 만들기)로 만들면 지금 켜 놓은 하위 분류로 들어갑니다.
     </p>
   </div>
 
@@ -177,12 +175,12 @@
       <tr><th>범위</th><td>하위 분류는 <b>분류마다 따로</b>다. 템플릿의 '내신'과 양식의 '내신'은 남남 — 섞일 일이 없다. '도구'에는 하위 분류가 없다(프로그램 것이라).</td></tr>
       <tr><th>옮기기</th><td>물감 우클릭 → '분류 옮기기', 또는 수정 창의 드롭다운. 여러 개는 Ctrl+클릭으로 담아 한 번에.</td></tr>
       <tr><th>분류 관리</th><td>칩 우클릭 → 이름 바꾸기·지우기. <b>지우면 그 안의 물감은 미분류로</b> 돌아간다 — 물감이 지워지는 일은 없다.</td></tr>
-      <tr><th>정렬</th><td>어느 화면에서든 <b>위에서부터 차례대로</b>. '전체' 보기는 하위 분류 소제목으로 묶고, 미분류 묶음은 맨 아래.</td></tr>
+      <tr><th>정렬</th><td>어느 화면에서든 <b>위에서부터 차례대로</b>. '전체' 보기는 없다 — 늘 하나의 하위 분류만 보인다(분류에서 전체를 없앤 것과 같은 규칙).</td></tr>
       <tr><th>해체·섞기</th><td>문서 해체로 담을 때도 같은 드롭다운이 있다 — 시험지 하나를 해체하며 "수능" 분류로 몰아넣는 식. 꾸러미(MIX)도 하위 분류를 가질 수 있다.</td></tr>
     </table>
     <div class="note">
-      <b>결정 필요</b> — ① '전체' 보기의 소제목 묶음 vs 그냥 한 목록(소제목 없이).
-      ② 미분류를 맨 아래 둘지 맨 위 둘지. ③ 하위 분류 개수 제한(제안: 제한 없음, 줄바꿈 허용).
+      <b>결정 필요</b> — ① 하위 분류가 많아지면(6개+) 탭 줄바꿈 허용 여부(제안: 두 줄까지).
+      ② 분류 탭을 갈아탈 때 하위 분류를 기억할지, 늘 미분류로 돌아갈지(제안: 기억).
     </div>
   </div>
 
