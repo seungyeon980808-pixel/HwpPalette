@@ -596,18 +596,32 @@ class SettingsWindow(tk.Toplevel):
         size_box.pack(side="right", padx=(0, SP["m"]))
 
         def _size_pair(label, minus, plus, tip_minus, tip_plus):
+            # ＋/－ 를 숫자 양옆에 갈라 두던 것을 **오른쪽 한 곳의 ▲/▼**로
+            # 모았다 (사용자 지적 2026-07-31: "버튼을 양쪽에 두지 말고
+            # 한쪽에, 위아래 버튼으로"). 위 = 늘리기, 아래 = 줄이기 —
+            # 숫자 조절기(스피너)의 관례 그대로라 설명이 필요 없다.
             tk.Label(size_box, text=label, font=(FONT, theme.fs(FS["caption"])),
                      bg=CARD, fg=MUTED).pack(side="left", padx=(SP["s"], 2))
-            b1 = _mini_btn(size_box, "－", minus)
-            b1.pack(side="left")
             val = tk.Label(size_box, text="", width=2,
                            font=(FONT, theme.fs(FS["sub"]), "bold"),
                            bg=CARD, fg=TEXT)
             val.pack(side="left")
-            b2 = _mini_btn(size_box, "＋", plus)
-            b2.pack(side="left")
-            _tip(b1, tip_minus)
-            _tip(b2, tip_plus)
+            ud = tk.Frame(size_box, bg=CARD)
+            ud.pack(side="left", padx=(1, 0))
+
+            def _spin(glyph, cmd):
+                b = RoundButton(ud, text=glyph, command=cmd, bg=CARD, fg=MUTED,
+                                radius=2, font=(FONT, theme.fs(6)),
+                                outline=BORDER, zone_bg=CARD)
+                b.config(width=int(theme.fs(22) * 0.75),
+                         height=max(9, int(theme.fs(20) * 0.75) // 2))
+                b.pack(side="top", pady=(0, 1))
+                return b
+
+            b_up = _spin("▲", plus)
+            b_dn = _spin("▼", minus)
+            _tip(b_up, tip_plus)
+            _tip(b_dn, tip_minus)
             return val
 
         self._col_val = _size_pair("칸", self._remove_col, self._add_col,
@@ -1814,7 +1828,11 @@ class SettingsWindow(tk.Toplevel):
                 parts.append(tk.Label(
                     tile, text=icon, bg=bg, fg=icon_fg,
                     font=(FONT, theme.fs(icon_size))))
-            parts[-1].pack(fill="x", pady=(3, 0))
+            # 좌우 여백 6px: 이름 라벨(padx=4)과 같은 이유 — 아이콘 라벨이
+            # 칸 전체 폭을 차지하면 그 높이의 좌우 테두리(캔버스 폴리곤 선)를
+            # 덮어 **테두리가 중간에 끊긴 것처럼** 보였다 (사용자 지적
+            # 2026-07-31: "클릭하면 생기는 테두리가 끊어져 있습니다").
+            parts[-1].pack(fill="x", padx=6, pady=(3, 0))
         # 글자색은 배경 밝기에 맞춰 정한다 — 어두운 색을 골라도 읽히게 (제안 18)
         # 아이콘이 있으면 가운데, 없으면 예전처럼 왼쪽에 붙인다
         # (RoundButton.align 과 같은 규칙).
@@ -2280,7 +2298,7 @@ class SettingsWindow(tk.Toplevel):
         self._drag_from = None
         self._drop_hint = None
         self._grab_xy = None
-        self._drop_tile()               # 들어 올렸던 타일을 제자리로 (곧 다시 그린다)
+        self._drop_tile()               # 들어 올렸던 타일을 제자리로
         if src is None:
             return
         rc = self._xy_to_cell(e.x_root, e.y_root)
@@ -2295,7 +2313,7 @@ class SettingsWindow(tk.Toplevel):
                 self._render_blocks()
                 self._notify()
             else:
-                self._render_blocks()    # 겹쳐서 실패 — 강조만 지운다
+                self._clear_drag_paint()  # 겹쳐서 실패 — 강조만 지운다
             return
         if target is not None and target != src:
             palette.move_block_to(self.sel_tab, src, target)
@@ -2303,7 +2321,26 @@ class SettingsWindow(tk.Toplevel):
             self._render_blocks()
             self._notify()
         else:
-            self._render_blocks()        # 제자리 — 강조 원복
+            # 제자리 — 강조만 원복한다. 여기서 _render_blocks() 를 부르면
+            # **그냥 클릭할 때마다** 격자 전체(타일 수십 개 + 글꼴 측정)를
+            # 부수고 다시 만들어 그것이 버벅임으로 느껴졌다 (사용자 지적
+            # 2026-07-31: "팔레트를 누르면 계속해서 버벅거리는 현상").
+            # 데이터가 안 바뀌었으니 다시 그릴 것도 없다.
+            self._clear_drag_paint()
+
+    def _clear_drag_paint(self):
+        """드래그가 남긴 강조·흐리기를 제자리에서 지운다 — 전체 재렌더 없이.
+
+        타일은 _paint_sel_tile 이 만들 때 저장한 원래 색(_base_bg/_base_fg)으로
+        되돌리므로, 유령을 들며 흐려진 색까지 함께 복구된다.
+        """
+        for i, tile in getattr(self, "_tiles", {}).items():
+            self._paint_sel_tile(tile, i == self.sel_block)
+        for key in getattr(self, "_empty_map", {}):
+            try:
+                self.nametowidget(key).config(bg=EMPTY_BG)
+            except Exception:
+                pass
 
     # ── 선택 블럭 동작 ──
     def _need_sel(self):
