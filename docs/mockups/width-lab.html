@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>폭 실험실 — 팔레트 설정 · 물감 창고 · 물감 미리보기</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;padding:22px 20px 80px;background:#e7e9ec;color:#0d1117;
+    font-family:"IBM Plex Sans KR","Pretendard","맑은 고딕",system-ui,sans-serif}
+  h1{font-size:19px;margin:0 0 4px;letter-spacing:-.3px}
+  .lead{font-size:12.5px;color:#57606a;margin:0 0 16px;line-height:1.7;max-width:900px}
+  .lead b{color:#0d1117}
+
+  /* ── 조절판 ─────────────────────────────── */
+  .panelbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  .ctl{background:#fff;border:1px solid #d0d7de;border-radius:8px;padding:11px 13px;min-width:236px;flex:1}
+  .ctl h3{margin:0 0 8px;font-size:12.5px;display:flex;align-items:center;gap:6px}
+  .ctl h3 i{width:9px;height:9px;border-radius:2px;font-style:normal;flex:0 0 auto}
+  .row{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:11.5px;color:#57606a}
+  .row label{flex:0 0 62px}
+  .row input[type=range]{flex:1;min-width:70px}
+  .row output{flex:0 0 54px;text-align:right;font-family:"IBM Plex Mono",Consolas,monospace;
+    font-size:11.5px;color:#0d1117}
+  .row .pct{flex:0 0 46px;text-align:right;font-size:10.5px;color:#8b939c}
+
+  .total{background:#fff;border:1px solid #d0d7de;border-radius:8px;padding:11px 14px;
+    font-size:12.5px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+  .total b{font-family:"IBM Plex Mono",Consolas,monospace}
+  .total .ok{color:#0a6b2e}
+  .total .bad{color:#d1242f;font-weight:700}
+  .total .clip{margin-left:auto}
+  .presets{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+  .presets button{font:inherit;font-size:11.5px;padding:5px 11px;border:1px solid #d0d7de;
+    background:#fff;border-radius:6px;cursor:pointer}
+  .presets button:hover{background:#f3f5f7}
+  .presets button.now{background:#0969da;color:#fff;border-color:#0969da}
+
+  /* ── 창 미리보기 ────────────────────────── */
+  .stage{position:relative;overflow-x:auto;padding-bottom:8px}
+  .screen{position:relative;border-left:2px dashed #d1242f;border-right:2px dashed #d1242f;
+    padding:0;margin-bottom:6px}
+  .screen::after{content:"화면 폭 1080";position:absolute;right:4px;top:-16px;
+    font-size:10px;color:#d1242f}
+  .win{border:1px solid #c9ced6;border-radius:8px;overflow:hidden;background:#f5f5f7;
+    box-shadow:0 8px 22px rgba(16,22,26,.14);display:inline-block;vertical-align:top}
+  .tb{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px;
+    background:#f3f3f3;border-bottom:1px solid #e3e3e3;font-size:11px;color:#1a1a1a}
+  .tb i{width:11px;height:11px;border-radius:3px;background:#0071e3;font-style:normal}
+  .panes{display:flex;align-items:stretch;padding:10px;gap:0;background:#f5f5f7}
+  .pane{background:#fff;border:1px solid #d8dce2;border-radius:7px;padding:9px 10px;
+    display:flex;flex-direction:column;overflow:hidden}
+  .gap{flex:0 0 auto;width:10px}
+  .grip{flex:0 0 auto;width:14px;display:flex;align-items:center;justify-content:center;
+    color:#b6bcc4;font-size:12px}
+
+  .ptitle{display:flex;align-items:baseline;gap:6px;margin-bottom:4px;overflow:hidden}
+  .ptitle b{white-space:nowrap}
+  .ptitle span{color:#8b939c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  /* 팔레트 격자 */
+  .grid{display:grid;gap:3px;margin-top:6px}
+  .cell{border:1px solid #d8dce2;border-radius:5px;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:1px;background:#fff;overflow:hidden}
+  .cell i{font-style:normal;color:#57606a}
+  .cell u{text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    max-width:100%;display:block;text-align:center}
+  .cell.on{background:#0969da;border-color:#0969da;color:#fff}
+  .cell.on i{color:#fff}
+  .cell.empty{background:#fafbfc;border-style:dashed;border-color:#dfe3e8}
+
+  /* 창고 */
+  .tabs{display:flex;gap:2px;background:#f2f4f7;border:1px solid #e2e6eb;border-radius:6px;
+    padding:2px;margin-top:6px}
+  .tab{flex:1;text-align:center;padding:3px 1px;border-radius:4px;color:#57606a;overflow:hidden}
+  .tab b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tab s{display:block;text-decoration:none;color:#a2a9b1}
+  .tab.on{background:#fff;color:#0d1117;font-weight:600;box-shadow:0 1px 2px rgba(16,22,26,.1)}
+  .newrow{margin-top:6px;border:1px solid #a8c7e8;border-radius:6px;padding:5px;
+    text-align:center;color:#0969da;font-weight:600;white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis;background:#fff}
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:6px}
+  .card{border:1px solid #d8dce2;border-radius:6px;padding:6px 4px;text-align:center;
+    background:#fff;overflow:hidden}
+  .card b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .card s{display:block;text-decoration:none;color:#8b939c}
+  .card.use{background:#f0f9f3;border-color:#a7d8b8}
+  .card.sel{background:#eaf3ff;border-color:#54aeff}
+
+  /* 미리보기 */
+  .paper{border:1px solid #d8dce2;background:#fff;margin-top:8px;padding:6px;overflow:hidden}
+  .paper .doc{border:1px solid #999;font-size:5px;line-height:1.5;padding:3px}
+  .paper .doc div{border-bottom:1px solid #ccc;padding:1px 2px}
+  .prevfoot{margin-top:auto;display:flex;align-items:center;gap:6px;padding-top:8px}
+  .prevfoot .note{flex:1;color:#8b939c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .prevfoot .btn{background:#0969da;color:#fff;border-radius:5px;padding:4px 10px;
+    white-space:nowrap;flex:0 0 auto}
+
+  /* 잘림 표시 */
+  .clipped{outline:2px solid #d1242f;outline-offset:1px;background:#fff5f5!important}
+  .legend{font-size:11.5px;color:#57606a;margin:10px 0 0;line-height:1.8}
+  .legend .sw{display:inline-block;width:11px;height:11px;border:2px solid #d1242f;
+    background:#fff5f5;vertical-align:-1px;margin-right:4px;border-radius:2px}
+  .legend b{color:#0d1117}
+</style>
+</head>
+<body>
+
+<h1>폭 실험실 — 세 판의 너비와 글자 크기</h1>
+<p class="lead">
+  슬라이더를 움직이면 아래 창이 그대로 따라 바뀝니다.
+  <b>글자가 잘리는 곳은 빨간 테두리</b>로 표시되고, 위쪽에 몇 군데인지 셉니다.
+  붉은 점선은 이 컴퓨터의 <b>화면 폭 1080px</b> — 창이 그 선을 넘으면 오른쪽이 화면 밖으로 나갑니다.
+  마음에 드는 값을 찾으시면 그 숫자를 알려 주세요. 그대로 코드에 넣겠습니다.
+</p>
+
+<div class="presets">
+  <button data-preset="now">지금 코드 (격자 300 · 창고 300 · 미리보기 400 · 머리줄 361)</button>
+  <button data-preset="pick">고르신 값 + 머리줄 300</button>
+  <button data-preset="fit">화면에 딱 맞추기 (머리줄 280)</button>
+  <button data-preset="old">v0.3.0 (예전)</button>
+</div>
+
+<div class="panelbar">
+  <div class="ctl">
+    <h3><i style="background:#0969da"></i>팔레트 설정</h3>
+    <div class="row"><label>격자 폭</label><input type="range" id="wPal" min="240" max="560" step="4"><output id="oWPal"></output><span class="pct" id="pWPal"></span></div>
+    <div class="row"><label>머리줄</label><input type="range" id="head" min="240" max="460" step="5"><output id="oHead"></output><span class="pct" id="pHead"></span></div>
+    <div class="row"><label>글자 크기</label><input type="range" id="fPal" min="7" max="15" step="0.5"><output id="oFPal"></output></div>
+    <div class="row"><label>칸 수</label><input type="range" id="cols" min="4" max="15" step="1"><output id="oCols"></output></div>
+  </div>
+  <div class="ctl">
+    <h3><i style="background:#2da44e"></i>물감 창고</h3>
+    <div class="row"><label>판 폭</label><input type="range" id="wStore" min="240" max="520" step="4"><output id="oWStore"></output><span class="pct" id="pWStore"></span></div>
+    <div class="row"><label>글자 크기</label><input type="range" id="fStore" min="7" max="15" step="0.5"><output id="oFStore"></output></div>
+  </div>
+  <div class="ctl">
+    <h3><i style="background:#8250df"></i>물감 미리보기</h3>
+    <div class="row"><label>판 폭</label><input type="range" id="wPrev" min="180" max="620" step="4"><output id="oWPrev"></output><span class="pct" id="pWPrev"></span></div>
+    <div class="row"><label>글자 크기</label><input type="range" id="fPrev" min="7" max="15" step="0.5"><output id="oFPrev"></output></div>
+  </div>
+</div>
+
+<div class="total">
+  <span>창 전체 <b id="tot">–</b></span>
+  <span id="fit"></span>
+  <span class="clip">잘린 글자 <b id="nclip">0</b>곳</span>
+</div>
+
+<div class="stage">
+  <div class="screen" id="screen">
+    <div class="win" id="win">
+      <div class="tb"><i></i><span>HwpPalette — 팔레트 설정</span></div>
+      <div class="panes">
+        <div class="pane" id="panePal">
+          <div class="ptitle"><b>팔레트 설정</b><span>빈칸을 드래그해서 물감을 짭니다</span></div>
+          <div id="headrow" style="display:flex;align-items:center;gap:6px;margin-top:6px;
+               border:1px solid #eceff2;border-radius:5px;padding:4px 5px;overflow:hidden">
+            <span id="tabpick" style="border:1px solid #d0d7de;border-radius:4px;padding:2px 6px;
+                  white-space:nowrap;overflow:hidden;text-overflow:ellipsis">메인 ▾</span>
+            <span style="white-space:nowrap;color:#57606a">칸 8 ⇕</span>
+            <span style="white-space:nowrap;color:#57606a">줄 2 ⇕</span>
+            <span style="margin-left:auto;color:#8b939c">↗</span>
+          </div>
+          <div class="grid" id="grid"></div>
+        </div>
+        <div class="grip">〉</div>
+        <div class="pane" id="paneStore">
+          <div class="ptitle"><b>물감 창고</b><span>쓰는 중 · 이 팔레트 · 고른 것</span></div>
+          <div class="tabs" id="tabs"></div>
+          <div class="newrow" id="newrow">＋ 새 템플릿 만들기</div>
+          <div class="cards" id="cards"></div>
+        </div>
+        <div class="gap"></div>
+        <div class="pane" id="panePrev">
+          <div class="ptitle"><b>물감 미리보기</b></div>
+          <div style="color:#8b939c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+               id="prevSub">가정통신문머리 · #템플릿</div>
+          <div class="paper">
+            <div class="doc">
+              <div>우리 학교 가정통신문</div>
+              <div>학년 반 이름 ＼＼ 담임 ＼＼</div>
+              <div>안내 말씀드립니다.</div>
+            </div>
+          </div>
+          <div class="prevfoot">
+            <span class="note" id="prevNote">창고의 카드를 팔레트 빈 칸으로 끌어다 놓으세요</span>
+            <span class="btn">수정</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="legend">
+  <span class="sw"></span><b>빨간 테두리 = 글자가 잘린 곳.</b>
+  카드 이름·분류 탭·안내 문구처럼 폭이 좁아지면 가장 먼저 잘리는 자리를 실제로 재서 표시합니다.<br>
+  격자의 <b>칸 수</b>도 함께 움직여 보세요 — 칸이 늘면 한 칸이 작아져 블럭 이름이 먼저 잘립니다.
+</p>
+
+<script>
+(function () {
+  var CARDS = [
+    ["합답형실험3선지", "빈칸 11", ""],
+    ["학교정답0사진1선지", "빈칸 8", ""],
+    ["학교합답2사진5선지", "빈칸 14", ""],
+    ["가정통신문머리", "빈칸 2", "sel"],
+    ["가통머리", "", ""],
+    ["3보기", "빈칸 3", ""],
+    ["지문박스", "", ""],
+    ["합답형1사진3선지", "빈칸 12", "use"]
+  ];
+  var BLOCKS = [
+    ["⇒", "변환", "on"], ["가a", "글씨체", ""], ["▧", "사진", ""], ["※", "특수기호", ""],
+    ["▤", "양식 채우기", ""], ["가a", "기본 서식", ""], ["◆", "문항 엑셀", ""]
+  ];
+  var TABS = [["특수기호", 1], ["템플릿", 24], ["서식", 0], ["양식", 3], ["도구", 8]];
+
+  // 머리줄(head)이 팔레트 판의 **최소 폭**을 정한다 — 실측 2026-07-31:
+  // 격자를 300 으로 줄여도 판이 443 아래로 안 내려갔고, 범인이 이 줄이었다.
+  // 지금 코드는 361 (팔레트 이름 드롭다운 8자 + 칸/줄 조절 + ↗).
+  var PRESETS = {
+    now:  { wPal: 300, wStore: 300, wPrev: 400, head: 361, fPal: 10, fStore: 10, fPrev: 10, cols: 10 },
+    pick: { wPal: 300, wStore: 300, wPrev: 400, head: 300, fPal: 10, fStore: 10, fPrev: 10, cols: 10 },
+    fit:  { wPal: 300, wStore: 300, wPrev: 400, head: 280, fPal: 10, fStore: 10, fPrev: 10, cols: 10 },
+    old:  { wPal: 420, wStore: 400, wPrev: 396, head: 425, fPal: 11, fStore: 11, fPrev: 11, cols: 8 }
+  };
+
+  var ids = ["wPal", "wStore", "wPrev", "head", "fPal", "fStore", "fPrev", "cols"];
+  var el = {};
+  ids.forEach(function (k) { el[k] = document.getElementById(k); });
+
+  function apply(p) { ids.forEach(function (k) { el[k].value = p[k]; }); draw(); }
+
+  document.querySelectorAll(".presets button").forEach(function (b) {
+    b.addEventListener("click", function () {
+      document.querySelectorAll(".presets button").forEach(function (x) { x.classList.remove("now"); });
+      b.classList.add("now");
+      apply(PRESETS[b.dataset.preset]);
+    });
+  });
+  ids.forEach(function (k) { el[k].addEventListener("input", draw); });
+
+  function num(k) { return parseFloat(el[k].value); }
+
+  function draw() {
+    var wPal = num("wPal"), wStore = num("wStore"), wPrev = num("wPrev"), cols = num("cols");
+
+    document.getElementById("oWPal").textContent = wPal + "px";
+    document.getElementById("oWStore").textContent = wStore + "px";
+    document.getElementById("oWPrev").textContent = wPrev + "px";
+    document.getElementById("oFPal").textContent = num("fPal") + "px";
+    document.getElementById("oFStore").textContent = num("fStore") + "px";
+    document.getElementById("oFPrev").textContent = num("fPrev") + "px";
+    document.getElementById("oCols").textContent = cols + "칸";
+    function pct(id, v, base) {
+      var d = Math.round((v / base - 1) * 100);
+      document.getElementById(id).textContent = (d > 0 ? "+" : "") + d + "%";
+    }
+    var head = num("head");
+    document.getElementById("oHead").textContent = head + "px";
+    pct("pWPal", wPal, PRESETS.old.wPal);
+    pct("pWStore", wStore, PRESETS.old.wStore);
+    pct("pWPrev", wPrev, PRESETS.old.wPrev);
+    pct("pHead", head, PRESETS.old.head);
+
+    var pPal = document.getElementById("panePal");
+    var pStore = document.getElementById("paneStore");
+    var pPrev = document.getElementById("panePrev");
+    // 판 폭은 **격자와 머리줄 중 넓은 쪽**이 정한다 (실측 규칙)
+    document.getElementById("headrow").style.width = head + "px";
+    document.getElementById("tabpick").style.maxWidth = Math.max(60, head - 190) + "px";
+    pPal.style.width = (Math.max(wPal, head) + 22) + "px";
+    pPal.style.fontSize = num("fPal") + "px";
+    pStore.style.width = wStore + "px";
+    pStore.style.fontSize = num("fStore") + "px";
+    pPrev.style.width = wPrev + "px";
+    pPrev.style.fontSize = num("fPrev") + "px";
+
+    // 격자 — 한 칸 크기는 실제 규칙(폭/칸수, 24~44px 사이)을 그대로 쓴다
+    var cell = Math.max(24, Math.min(44, Math.floor((wPal - 2 * cols) / cols)));
+    var rowH = Math.round((cell + 16) * 0.8);      // 줄 높이 20% 축소 반영
+    var g = document.getElementById("grid");
+    g.style.gridTemplateColumns = "repeat(" + cols + ", " + cell + "px)";
+    g.innerHTML = "";
+    var used = 0;
+    BLOCKS.forEach(function (b) {
+      var d = document.createElement("div");
+      d.className = "cell" + (b[2] ? " on" : "");
+      d.style.gridColumn = "span 2";
+      d.style.height = rowH + "px";
+      d.innerHTML = "<i style='font-size:" + (num("fPal") * .95) + "px'>" + b[0] +
+        "</i><u>" + b[1] + "</u>";
+      g.appendChild(d); used += 2;
+    });
+    var slots = cols * 2;
+    for (var i = used; i < slots; i++) {
+      var e2 = document.createElement("div");
+      e2.className = "cell empty"; e2.style.height = rowH + "px";
+      g.appendChild(e2);
+    }
+
+    // 창고 탭 · 카드
+    var t = document.getElementById("tabs"); t.innerHTML = "";
+    TABS.forEach(function (x, i) {
+      var d = document.createElement("div");
+      d.className = "tab" + (i === 1 ? " on" : "");
+      d.innerHTML = "<b>" + x[0] + "</b><s>" + x[1] + "</s>";
+      t.appendChild(d);
+    });
+    var c = document.getElementById("cards"); c.innerHTML = "";
+    CARDS.forEach(function (x) {
+      var d = document.createElement("div");
+      d.className = "card" + (x[2] ? " " + x[2] : "");
+      d.innerHTML = "<b>" + x[0] + "</b><s>" + x[1] + "</s>";
+      c.appendChild(d);
+    });
+
+    // 재기는 배치가 끝난 뒤라야 한다. rAF 가 안 도는 환경(정적 미리보기)도
+    // 있으므로 즉시 한 번, 다음 틱에 한 번 — 둘 다 부른다.
+    measure();
+    setTimeout(measure, 0);
+  }
+
+  function measure() {
+    // 잘림 실측 — 글자가 제 칸보다 넓으면 표시한다
+    var n = 0;
+    document.querySelectorAll("#win b, #win u, #win s, #win span, #win div").forEach(function (w) {
+      w.classList.remove("clipped");
+      var over = w.scrollWidth - w.clientWidth;
+      if (w.clientWidth > 0 && over > 1 &&
+          getComputedStyle(w).whiteSpace === "nowrap") {
+        w.classList.add("clipped"); n++;
+      }
+    });
+    document.getElementById("nclip").textContent = n;
+
+    var win = document.getElementById("win");
+    var total = win.getBoundingClientRect().width;
+    document.getElementById("tot").textContent = Math.round(total) + "px";
+    var fit = document.getElementById("fit");
+    if (total <= 1080) {
+      fit.className = "ok"; fit.textContent = "✔ 화면(1080) 안에 들어옵니다";
+    } else {
+      fit.className = "bad";
+      fit.textContent = "✕ 화면을 " + Math.round(total - 1080) + "px 넘습니다";
+    }
+    document.getElementById("screen").style.width = "1080px";
+  }
+
+  document.querySelector(String.fromCharCode(46)+"presets button[data-preset=\"now\"]").classList.add("now");
+  apply(PRESETS.now);
+})();
+</script>
+</body>
+</html>
