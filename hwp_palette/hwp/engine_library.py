@@ -1469,10 +1469,10 @@ def _line_col():
         return 0
 
 
-def _line_bounds(para, offset):
+def _line_bounds(list_id, para, offset):
     """offset 이 놓인 **시각적 한 줄**의 (시작 offset, 끝 offset, 끝칸)."""
     hwp = _h()
-    hwp.SetPos(0, para, offset)
+    hwp.SetPos(list_id, para, offset)
     _run_action("MoveLineBegin")
     begin = hwp.GetPos()
     _run_action("MoveLineEnd")
@@ -1481,26 +1481,37 @@ def _line_bounds(para, offset):
 
 
 def _selected_para_range():
-    """선택 영역이 걸친 (첫 문단, 끝 문단). 본문(list 0) 이 아니면 None.
+    r"""선택 영역이 걸친 (list_id, 첫 문단, 끝 문단). 못 정하면 None.
 
-    표·글상자·머리말은 1차 범위에서 뺀다 — 셀마다 폭이 달라 기준 폭 계산이
-    통째로 달라진다 (스파이크 '남은 위험').
+    (2026-08-01, 피드백 034) **표 안도 받는다.** 예전에는 본문(list 0)만
+    통과시켰다 — 사용자 지적: *"표 안이라도 해도 자간맞춤 기능이 구현이
+    되어야 합니다."*
+
+    뺐던 이유는 주석에 "셀마다 폭이 달라 기준 폭 계산이 통째로 달라진다"였는데,
+    **실제 구현은 폭을 재지 않는다** — 자간을 한 단계 좁혀 보고 다음 줄 첫
+    어절이 끌려 올라왔는지 관찰하는 '해 보고 확인' 방식이라 그릇의 폭과
+    무관하다. 남아 있던 것은 좌표 배관 문제뿐이었다.
+
+    조건은 "양끝의 list 가 **같으면**"으로 완화한다 — 셀 하나 안의 선택이
+    통과된다. **여러 셀에 걸친 선택은 1차 제외**(양끝 list 가 다르다):
+    셀 블럭 선택은 GetSelectedPos 의 모양부터 달라 따로 다뤄야 한다.
     """
     try:
         got = _h().GetSelectedPos()
         # (성공여부, slist, spara, spos, elist, epara, epos)
-        if got and got[0] and int(got[1]) == 0 and int(got[4]) == 0:
+        if got and got[0] and int(got[1]) == int(got[4]):
+            lid = int(got[1])
             a, b = int(got[2]), int(got[5])
-            return (a, b) if a <= b else (b, a)
+            return (lid, a, b) if a <= b else (lid, b, a)
     except Exception as e:
         applog.exc("자간 맞춤: 선택 범위를 읽지 못함", e)
     return None
 
 
-def _set_break_by_word(para):
+def _set_break_by_word(list_id, para):
     """그 문단의 줄나눔을 어절 단위로. 이미 그렇다면 건드리지 않고 False."""
     hwp = _h()
-    hwp.SetPos(0, para, 0)
+    hwp.SetPos(list_id, para, 0)
     act, ps = hwp.HAction, hwp.HParameterSet
     act.GetDefault("ParagraphShape", ps.HParaShape.HSet)
     try:
@@ -1513,10 +1524,10 @@ def _set_break_by_word(para):
     return True
 
 
-def _read_spacing(para, offset):
+def _read_spacing(list_id, para, offset):
     """그 자리의 한글 자간(%) — 이미 손댄 줄을 가려내는 데 쓴다."""
     hwp = _h()
-    hwp.SetPos(0, para, offset)
+    hwp.SetPos(list_id, para, offset)
     ps = hwp.HParameterSet
     hwp.HAction.GetDefault("CharShape", ps.HCharShape.HSet)
     try:
@@ -1525,7 +1536,41 @@ def _read_spacing(para, offset):
         return 0
 
 
-def _apply_spacing(para, start, end, pct):
+def _select_run(list_id, para, start, end):
+    r"""[start, end) 를 실제로 **선택**한다. 성공했는가.
+
+    ⚠ 셀 안에서는 `SelectText` 가 **True 를 돌려주면서 아무것도 선택하지
+    않는다** (실측 2026-08-01, spikes/cell_spacing_spike.py):
+
+        SelectText(para, 0, para, 5) -> True
+        GetSelectedPos()             -> (False, None, …)   ← 선택이 없다
+
+    예전에는 예외가 났을 때만 대체 경로(MoveSelRight)로 갔다. 셀에서는
+    예외가 안 나므로 그 갈래를 못 타고, 뒤이은 CharShape 가 **선택 없는
+    자리**에 걸려 아무 일도 안 일어났다 — 표 안에서 조용히 실패하는 길이다.
+    그래서 돌려주는 값을 믿지 않고 **GetSelectedPos 로 확인**한다.
+    """
+    hwp = _h()
+    hwp.SetPos(list_id, para, start)
+    try:
+        hwp.SelectText(para, start, para, end)
+        got = hwp.GetSelectedPos()
+        if got and got[0]:
+            return True
+    except Exception:
+        pass                                # SelectText 가 없는 판 — 아래로
+    _run_action("Cancel")
+    hwp.SetPos(list_id, para, start)
+    for _ in range(end - start):
+        _run_action("MoveSelRight")
+    try:
+        got = hwp.GetSelectedPos()
+        return bool(got and got[0])
+    except Exception:
+        return False
+
+
+def _apply_spacing(list_id, para, start, end, pct):
     r"""[start, end) 구간에만 자간을 건다.
 
     GetDefault 를 먼저 부르는 이유: HSet 을 비운 채 Execute 하면 글꼴·크기까지
@@ -1534,12 +1579,9 @@ def _apply_spacing(para, start, end, pct):
     if end <= start:
         return
     hwp = _h()
-    hwp.SetPos(0, para, start)
-    try:
-        hwp.SelectText(para, start, para, end)
-    except Exception:
-        for _ in range(end - start):        # SelectText 가 없는 판 대비
-            _run_action("MoveSelRight")
+    if not _select_run(list_id, para, start, end):
+        _run_action("Cancel")
+        return                              # 선택이 안 잡혔다 — 걸 곳이 없다
     act, ps = hwp.HAction, hwp.HParameterSet
     act.GetDefault("CharShape", ps.HCharShape.HSet)
     for f in SPACING_FIELDS:
@@ -1551,7 +1593,7 @@ def _apply_spacing(para, start, end, pct):
     _run_action("Cancel")
 
 
-def _pull_up(para, start, end):
+def _pull_up(list_id, para, start, end):
     """한 줄의 자간을 한 단계씩 좁혀 다음 줄 첫 어절을 끌어올린다.
 
     반환: (그 줄의 새 끝 offset, 좁혔는가). 하한까지 가도 소득이 없으면
@@ -1561,47 +1603,55 @@ def _pull_up(para, start, end):
     cur = end
     pct = -FIT_STEP_PCT
     while pct >= FIT_MIN_PCT:
-        _apply_spacing(para, start, cur, pct)
-        _b, new_end, _c = _line_bounds(para, start)
+        _apply_spacing(list_id, para, start, cur, pct)
+        _b, new_end, _c = _line_bounds(list_id, para, start)
         if new_end > base:
             # 끌어올린 조각까지 같은 자간으로 — 한 줄 안에서 글자 폭이
             # 갈리면 그 이음매가 눈에 띈다.
-            _apply_spacing(para, start, new_end, pct)
-            _b, new_end, _c = _line_bounds(para, start)
+            _apply_spacing(list_id, para, start, new_end, pct)
+            _b, new_end, _c = _line_bounds(list_id, para, start)
             return new_end, True
         cur = max(cur, new_end)
         pct -= FIT_STEP_PCT
-    _apply_spacing(para, start, cur, 0)
-    _b, back, _c = _line_bounds(para, start)
+    _apply_spacing(list_id, para, start, cur, 0)
+    _b, back, _c = _line_bounds(list_id, para, start)
     return back, False
 
 
-def _tighten_para(para, budget):
-    """문단 하나를 위에서 아래로 훑으며 줄마다 당긴다. 좁힌 줄 수를 반환."""
+def _tighten_para(list_id, para, budget):
+    r"""문단 하나를 위에서 아래로 훑으며 줄마다 당긴다. 좁힌 줄 수를 반환.
+
+    멈춤 판정에 **list 까지 본다** (2026-08-01, 034): 표 안에서는 줄 끝의
+    MoveRight 가 다음 셀로 넘어갈 수 있는데, 문단 번호만 보면 그 셀의
+    0번 문단이 '같은 문단'으로 읽혀 남의 셀을 손대게 된다.
+    """
     hwp = _h()
     tightened = 0
-    start, end, _c = _line_bounds(para, 0)
+    start, end, _c = _line_bounds(list_id, para, 0)
+
+    def _still_here(nxt, end_):
+        return not (int(nxt[0]) != list_id or nxt[1] != para or nxt[2] <= end_)
+
     for _ in range(_FIT_MAX_LINES):
         if budget[0] <= 0:
             break
         # 다음 줄이 있어야 당길 것이 있다 (마지막 줄은 그냥 둔다)
-        hwp.SetPos(0, para, end)
+        hwp.SetPos(list_id, para, end)
         _run_action("MoveRight")
-        nxt = hwp.GetPos()
-        if nxt[1] != para or nxt[2] <= end:
+        if not _still_here(hwp.GetPos(), end):
             break
         budget[0] -= 1
         # 이미 자간을 손봐 둔 줄은 건너뛴다 — 남의 서식을 덮어쓰지 않는다
-        if end > start and _read_spacing(para, start) == 0:
-            end, changed = _pull_up(para, start, end)
+        if end > start and _read_spacing(list_id, para, start) == 0:
+            end, changed = _pull_up(list_id, para, start, end)
             if changed:
                 tightened += 1
-        hwp.SetPos(0, para, end)
+        hwp.SetPos(list_id, para, end)
         _run_action("MoveRight")
         nxt = hwp.GetPos()
-        if nxt[1] != para or nxt[2] <= end:
+        if not _still_here(nxt, end):
             break
-        start, end, _c = _line_bounds(para, nxt[2])
+        start, end, _c = _line_bounds(list_id, para, nxt[2])
     return tightened
 
 
@@ -1615,15 +1665,15 @@ def fit_line_spacing():
     rng = _selected_para_range()
     if rng is None:
         return {"paras": 0, "tightened": 0, "broke": 0}
-    first, last = rng
+    list_id, first, last = rng
     _run_action("Cancel")               # 선택을 풀어야 문단 단위로 옮겨 다닌다
     budget = [_FIT_MAX_LINES]
     paras = tightened = broke = 0
     for para in range(first, min(last, first + _FIT_MAX_PARAS - 1) + 1):
         try:
-            if _set_break_by_word(para):
+            if _set_break_by_word(list_id, para):
                 broke += 1
-            tightened += _tighten_para(para, budget)
+            tightened += _tighten_para(list_id, para, budget)
             paras += 1
         except Exception as e:
             applog.exc(f"자간 맞춤: 문단 {para} 는 건너뜀", e)

@@ -18,16 +18,19 @@ import pathlib
 
 from hwp_palette.core import applog
 from hwp_palette.core import paths                          # 블럭 아이콘 PNG 위치
+from hwp_palette.core import settings                       # 사진 폴더 연결·순서 (029)
 from hwp_palette.model import chip                       # 팔레트를 칩으로 내보내기
 from hwp_palette.model import palette
 from hwp_palette.model import library
 from hwp_palette.model import func_catalog
 from hwp_palette.model import builtin_actions              # 프로그램 기능 블럭('도구') 카탈로그
-from hwp_palette.model import builtin_chars               # 내장 기호 (특수기호 블럭 만들기)
+from hwp_palette.ui import char_source                    # 기호 목록·묶음 규칙 (창고와 공유)
 from hwp_palette.hwp import engine_library               # 고치기 세션 마무리 (hide_window_if_ours)
 from hwp_palette.hwp import hwp_dock                     # 고치는 동안 한글 창을 미리보기 판에 도킹
 from hwp_palette.hwp import hwp_engine
 from hwp_palette.design import disclosure                  # 접었다 펴는 안내 (양식 문법)
+from hwp_palette.design import fields                      # 자체 체크·수치칸 (030)
+from hwp_palette.design import ribbon                      # 칸 오른쪽 세로 띠 (037)
 from hwp_palette.ui import library_ui                  # commit_ime · capture_template_dialog 공용
 
 from hwp_palette.core import appinfo
@@ -323,24 +326,57 @@ class FunctionDialog(tk.Toplevel):
         _dialog_btn(pull, "가져오기", self._pull_from_hwp,
                     primary=True, zone_bg=CARD).pack(side="right")
 
-        body = tk.Frame(self, bg=BG, padx=16, pady=8)
+        # ── 17줄을 세 카드로 묶는다 (2026-08-01, 피드백 030 · 범위 ②) ──
+        # 평면 나열은 어디까지가 글자 이야기이고 어디부터 문단인지 눈이 매번
+        # 다시 찾았다. 체크·수치칸도 자체 부품(design/fields)으로 — 윈도우
+        # 기본 위젯이 섞이면 "여기까지가 이 프로그램"이라는 느낌이 깨진다
+        # (dialogs.py 가 세운 원칙 그대로).
+        _CARDS = (("글자", ("굵게", "기울임", "밑줄", "글씨체", "글씨크기",
+                           "자간", "글자색")),
+                  ("문단", ("가운데정렬", "왼쪽정렬", "양쪽정렬", "줄간격",
+                           "어절단위 줄바꿈", "자간 자동조절")),
+                  ("여백", ("들여쓰기", "내어쓰기", "왼쪽여백", "오른쪽여백")))
+        by_key = {f["key"]: f for f in func_catalog.FUNCTIONS}
+        grouped = {k for _t, ks in _CARDS for k in ks}
+        body = tk.Frame(self, bg=BG, padx=SP["l"], pady=SP["s"])
         body.pack(fill="x")
         self.rows = {}
-        for f in func_catalog.FUNCTIONS:
+
+        def _row(parent, f):
             key = f["key"]
-            row = tk.Frame(body, bg=BG)
-            row.pack(fill="x", pady=1)
+            row = tk.Frame(parent, bg=CARD)
+            row.pack(fill="x", pady=1, padx=SP["s"])
             chk = tk.BooleanVar(value=key in existing)
-            tk.Checkbutton(row, variable=chk, bg=BG, activebackground=BG,
-                           selectcolor=CARD).pack(side="left")
+            fields.Check(row, chk).pack(side="left", padx=(0, SP["xs"]))
             # 13 — 가장 긴 이름('어절단위 줄바꿈')이 잘리지 않는 폭.
             # (Tk 의 width 는 평균 글자 너비 단위라 한글은 두 칸쯤을 먹는다)
-            tk.Label(row, text=key, font=(FONT, theme.fs(FS["head"])), bg=BG, fg=TEXT,
-                     width=13, anchor="w").pack(side="left")
+            tk.Label(row, text=key, font=(FONT, theme.fs(FS["head"])),
+                     bg=CARD, fg=TEXT, width=13, anchor="w").pack(side="left")
             val_widget, val_var = self._value_widget(row, f, existing.get(key))
-            tk.Label(row, text=f.get("hint", ""), font=(FONT, theme.fs(FS["caption"])), bg=BG,
-                     fg=MUTED).pack(side="left", padx=(6, 0))
+            tk.Label(row, text=f.get("hint", ""),
+                     font=(FONT, theme.fs(FS["caption"])), bg=CARD,
+                     fg=MUTED).pack(side="left", padx=(SP["xs"], 0))
             self.rows[key] = (chk, f, val_var, val_widget)
+
+        for title, keys in _CARDS:
+            card = tk.Frame(body, bg=CARD, highlightbackground=BORDER,
+                            highlightthickness=1)
+            card.pack(fill="x", pady=(0, SP["xs"]))
+            tk.Label(card, text=title, font=(FONT, theme.fs(FS["caption"]), "bold"),
+                     bg=CARD, fg=MUTED, anchor="w").pack(
+                     fill="x", padx=SP["s"], pady=(SP["xs"], 0))
+            for k in keys:
+                if k in by_key:
+                    _row(card, by_key[k])
+        # 카탈로그에 새로 생긴 항목이 카드 목록에 아직 없으면 **맨 아래에라도**
+        # 나온다 — 위 목록을 안 고쳤다고 항목이 조용히 사라지면 안 된다.
+        rest = [f for f in func_catalog.FUNCTIONS if f["key"] not in grouped]
+        if rest:
+            card = tk.Frame(body, bg=CARD, highlightbackground=BORDER,
+                            highlightthickness=1)
+            card.pack(fill="x", pady=(0, SP["xs"]))
+            for f in rest:
+                _row(card, f)
 
         foot = tk.Frame(self, bg=BG, padx=16, pady=12)
         foot.pack(fill="x")
@@ -371,13 +407,13 @@ class FunctionDialog(tk.Toplevel):
             var = tk.StringVar(value="" if cur is None else str(cur))
             # 위아래 버튼을 단다 (사용자 요청 2026-07-31) — 값을 지우고 다시
             # 치는 대신 눈금 단위로 올리고 내린다. 직접 입력도 그대로 된다.
+            # ttk.Spinbox 기본 룩 대신 자체 부품 (2026-08-01, 030).
             lo, hi, step = func_catalog.SPIN.get(f["key"], (-999, 999, 1))
-            w = ttk.Spinbox(parent, textvariable=var, width=6,
-                            from_=lo, to=hi, increment=step,
-                            font=(FONT, theme.fs(FS["body"])))
+            w = fields.Spin(parent, textvariable=var, lo=lo, hi=hi, step=step,
+                            width=6, font=(FONT, theme.fs(FS["body"])))
             w.pack(side="left")
             tk.Label(parent, text=f.get("unit", ""), font=(FONT, theme.fs(FS["sub"])),
-                     bg=BG, fg=MUTED).pack(side="left")
+                     bg=parent.cget("bg"), fg=MUTED).pack(side="left")
             return w, var
         if kind == "color":
             var = tk.StringVar(value="" if cur is None else str(cur))
@@ -405,8 +441,8 @@ class FunctionDialog(tk.Toplevel):
             # 줄 높이에 맞춘 납작한 둥근 버튼 — 공용 helper 는 여기엔 크다
             RoundButton(parent, text="색 선택", command=pick, bg=CARD, fg=TEXT,
                         radius=theme.RADIUS["ctl"], font=(FONT, theme.fs(FS["sub"])), outline=BORDER,
-                        zone_bg=BG).fit(pad_x=8, pad_y=2).pack(side="left",
-                                                               padx=(4, 0))
+                        zone_bg=parent.cget("bg")).fit(pad_x=8, pad_y=2).pack(
+                        side="left", padx=(4, 0))
             return swatch, var
         return None, None
 
@@ -1188,52 +1224,103 @@ class SettingsWindow(tk.Toplevel):
                  justify="left", anchor="w", wraplength=ZOOM_W - 32).pack(
                  fill="x", padx=SP["m"], pady=(2, SP["s"]))
 
+        # ── 사용법 (2026-08-01, 피드백 027) ──
+        # 판의 아래가 늘 비어 있었다 — 도구는 보여줄 그림이 없어서다. 그 자리를
+        # "이건 이렇게 쓴다"로 채운다. **글의 출처는 builtin_actions 한 곳** —
+        # 힌트와 같은 파일에 있어야 한쪽만 고치는 사고가 없다.
+        usage = builtin_actions.usage_of(key)
+        if usage:
+            box = tk.Frame(self._zoom_body, bg=ROWBG,
+                           highlightbackground=BORDER, highlightthickness=1)
+            box.pack(fill="x", padx=SP["m"], pady=(0, SP["s"]))
+            tk.Label(box, text="사용법",
+                     font=(FONT, theme.fs(FS["caption"]), "bold"),
+                     bg=ROWBG, fg=MUTED, anchor="w").pack(
+                     fill="x", padx=SP["s"], pady=(SP["xs"], 0))
+            tk.Label(box, text=usage, font=(FONT, theme.fs(FS["caption"])),
+                     bg=ROWBG, fg=TEXT, justify="left", anchor="w",
+                     wraplength=ZOOM_W - 56).pack(
+                     fill="x", padx=SP["s"], pady=(2, SP["xs"]))
+
         config = builtin_actions.config_of(key)
         if config == "photo_dirs":
-            dirs = library.photo_folders_summary()
-            if dirs:
-                lines = "\n".join(
-                    f"· {pathlib.Path(d['path']).name or d['path']}  "
-                    + (f"{d['count']}장" if d["exists"] else "폴더 없음")
-                    for d in dirs)
-            else:
-                lines = "· 연결된 폴더가 없습니다"
-            tk.Label(self._zoom_body,
-                     text="연결된 사진 폴더\n" + lines,
-                     font=(FONT, theme.fs(FS["caption"])), bg=CARD, fg=TEXT,
-                     justify="left", anchor="w", wraplength=ZOOM_W - 32).pack(
-                     fill="x", padx=SP["m"], pady=(0, SP["s"]))
-            if len(dirs) > 1:
-                tk.Label(self._zoom_body,
-                         text="폴더가 여럿이라, 사진 버튼을 누르면 "
-                              "어느 폴더에서 고를지 먼저 물어봅니다.",
-                         font=(FONT, theme.fs(FS["caption"])), bg=CARD,
-                         fg=MUTED, justify="left", anchor="w",
-                         wraplength=ZOOM_W - 32).pack(
-                         fill="x", padx=SP["m"], pady=(0, SP["s"]))
-
+            # ── 폴더 관리를 **판 안에서** (2026-08-01, 피드백 029 · 안 1) ──
+            # 예전 [설정]은 다섯 탭짜리 물감 설정 창을 통째로 열었다 — 사용자
+            # 관찰대로 "바뀐 게 없다"였다. 폴더마다 한 줄(이름·장수·[↑][↓][해제])
+            # + 맨 아래 [＋ 폴더 연결]. 순서가 곧 이름 충돌 우선순위라
+            # 순서 바꾸기도 여기서 한다 (여태 바꿀 길이 없었다).
+            self._render_photo_dirs(item)
         acts = tk.Frame(self._zoom_foot, bg=CARD)
         acts.pack(fill="x", padx=SP["m"] - 2, pady=SP["s"])
-        if config:
-            RoundButton(acts, text="설정",
-                        command=lambda: self._open_tool_config(config),
-                        bg=ACCENT, fg="white", radius=theme.RADIUS["ctl"],
-                        font=(FONT, theme.fs(FS["body"]), "bold"),
-                        outline="", zone_bg=CARD).fit(
-                        pad_x=12, pad_y=5).pack(side="right")
         tk.Label(acts, text="창고의 카드를 팔레트 빈 칸으로 끌어다 놓으세요",
                  font=(FONT, theme.fs(FS["caption"])), bg=CARD,
                  fg=MUTED).pack(side="left")
 
-    def _open_tool_config(self, config):
-        """도구의 [설정] — 그 도구가 가진 설정 화면을 연다."""
-        try:
-            if config == "photo_dirs":
-                # 사진 폴더 연결·해제는 '물감 설정'의 사진 탭이 이미 하는 일이다
-                library_ui.open_manager(self, on_saved=self._after_new_paint,
-                                        cat="사진")
-        except Exception as e:
-            applog.exc(f"도구 설정 열기 실패 — {config}", e)
+    def _render_photo_dirs(self, item):
+        """사진 폴더 목록 + 관리 단추 — 바꾸면 이 판만 다시 그린다."""
+        dirs = library.photo_folders_summary()
+
+        def refresh():
+            self._show_detail("도구", item)     # 판 통째 — 요약·순서가 같이 갱신
+
+        wrap = tk.Frame(self._zoom_body, bg=CARD)
+        wrap.pack(fill="x", padx=SP["m"], pady=(0, SP["xs"]))
+        tk.Label(wrap, text="연결된 사진 폴더  (위 폴더가 이름 충돌 시 우선)",
+                 font=(FONT, theme.fs(FS["caption"]), "bold"), bg=CARD,
+                 fg=MUTED, anchor="w").pack(fill="x")
+        if not dirs:
+            tk.Label(wrap, text="연결된 폴더가 없습니다",
+                     font=(FONT, theme.fs(FS["caption"])), bg=CARD, fg=MUTED,
+                     anchor="w").pack(fill="x")
+        for n, d in enumerate(dirs):
+            row = tk.Frame(wrap, bg=CARD)
+            row.pack(fill="x", pady=1)
+            name = pathlib.Path(d["path"]).name or d["path"]
+            state = f"{d['count']}장" if d["exists"] else "폴더 없음"
+            tk.Label(row, text=f"{name}  ·  {state}",
+                     font=(FONT, theme.fs(FS["caption"])), bg=CARD,
+                     fg=TEXT if d["exists"] else MUTED, anchor="w").pack(
+                     side="left", fill="x", expand=True)
+
+            def small(txt, cmd, enabled=True):
+                b = RoundButton(row, text=txt, command=cmd, bg=CARD,
+                                fg=TEXT if enabled else BORDER,
+                                radius=theme.RADIUS["ctl"],
+                                font=(FONT, theme.fs(FS["caption"])),
+                                outline=BORDER, zone_bg=CARD)
+                b.fit(pad_x=5, pad_y=1).pack(side="right", padx=(3, 0))
+                return b
+
+            small("해제", lambda p=d["path"]: (
+                settings.remove_photo_dir(p), refresh()))
+            small("↓", lambda p=d["path"]: (
+                settings.move_photo_dir(p, +1), refresh()),
+                enabled=n < len(dirs) - 1)
+            small("↑", lambda p=d["path"]: (
+                settings.move_photo_dir(p, -1), refresh()),
+                enabled=n > 0)
+        add = RoundButton(wrap, text="＋ 폴더 연결", command=lambda: (
+                              self._add_photo_dir(refresh)),
+                          bg=CARD, fg=ACCENT, radius=theme.RADIUS["ctl"],
+                          font=(FONT, theme.fs(FS["caption"]), "bold"),
+                          outline=BORDER, zone_bg=CARD)
+        add.fit(pad_x=8, pad_y=2).pack(anchor="w", pady=(3, 0))
+        if len(dirs) > 1:
+            tk.Label(wrap, text="폴더가 여럿이라, 사진 버튼을 누르면 "
+                                "어느 폴더에서 고를지 먼저 물어봅니다.",
+                     font=(FONT, theme.fs(FS["caption"])), bg=CARD, fg=MUTED,
+                     justify="left", anchor="w", wraplength=ZOOM_W - 32).pack(
+                     fill="x", pady=(3, 0))
+
+    def _add_photo_dir(self, refresh):
+        path = filedialog.askdirectory(parent=self, title="사진 폴더 고르기")
+        if not path:
+            return
+        if not settings.add_photo_dir(path):
+            messagebox.showinfo("이미 연결된 폴더",
+                                "그 폴더는 이미 연결되어 있습니다.", parent=self)
+            return
+        refresh()
 
     def _show_edit_form(self, cat, item):
         """[수정] — 미리보기 자리에 이름·태그 폼을 심는다 (창 없음)."""
@@ -2400,6 +2487,11 @@ class SettingsWindow(tk.Toplevel):
         tile._base_bg = bg
         tile._base_fg = [p.cget("fg") for p in parts]
         tile._parts = parts
+        # 여럿을 담은 칸은 오른쪽에 세로 띠 (2026-08-01, 037 — 공용 부품).
+        # 겹친 칸 = 개수 숫자 · 꾸러미 = MIX. 판정은 library.block_badge 한 곳.
+        badge = library.block_badge(blk)
+        if badge:
+            ribbon.attach(tile, *badge)
         self._tiles[i] = tile
         if selected:
             # 다시 그려질 때(드래그·크기 조절 뒤)도 선택 상태를 같은 규칙으로.
@@ -3505,9 +3597,24 @@ class _CharDialog(tk.Toplevel):
     쓸 길이 없었다 — 한글에서 미리 복사해 오는 수밖에. 입력칸 + 검색 +
     기호 격자를 한 창에 둔다. 기호를 누르면 입력칸의 커서 자리에 들어가므로
     여러 개를 이어 담을 수도 있다("① " 처럼 기호+공백 조합 등).
+
+    (2026-08-01, 피드백 028 — 회귀 복원) **묶음 목록**과 **내가 등록한 기호**를
+    돌려놓았다. 022 를 반영하며 창을 하나로 합칠 때 기능이 적은 이 창을 기준으로
+    삼는 바람에 둘 다 사라졌다:
+
+        "원래 특수기호가 종류별로 잘 정리가 되어있었는데 … 종류별로 분류되어
+         있어야 합니다. 내가 추가한 특수기호도 들어가야하는거고요"
+
+    목록을 만드는 규칙은 `char_source` 가 갖는다 — 창고의 '문자' 탭과 **같은
+    목록**이다. 두 곳이 각자 만들다가 한쪽만 기능이 빠진 것이 이 회귀의 원인이라,
+    같은 실수를 못 하게 규칙 자체를 한 곳으로 모았다.
+
+    96개 상한은 없앴다: 묶음을 고르면 묶음 하나가 그보다 작고, 그래도 큰
+    '전체'는 창고와 같은 **나눠 그리기**로 버틴다.
     """
     _COLS = 12          # 격자 열 수
-    _SHOW_MAX = 96      # 한 번에 그리는 최대 개수 — 나머지는 검색으로 좁힌다
+    _CHUNK = 3          # 나눠 그리기 — 한 번에 몇 줄씩 (창고 격자와 같은 규칙)
+    _FIRST_ROWS = 8     # 눈에 보일 몇 줄은 즉시
 
     def __init__(self, master, prefill=""):
         super().__init__(master)
@@ -3536,7 +3643,7 @@ class _CharDialog(tk.Toplevel):
 
         srow = tk.Frame(self, bg=BG)
         srow.pack(fill="x", padx=16, pady=(10, 4))
-        tk.Label(srow, text="내장 기호", font=(FONT, theme.fs(FS["body"]), "bold"),
+        tk.Label(srow, text="기호 고르기", font=(FONT, theme.fs(FS["body"]), "bold"),
                  bg=BG, fg=TEXT).pack(side="left")
         self.q = tk.Entry(srow, font=(FONT, theme.fs(FS["body"])),
                           relief="solid", bd=1, width=16)
@@ -3546,9 +3653,22 @@ class _CharDialog(tk.Toplevel):
                               bg=BG, fg=MUTED)
         self.count.pack(side="left", padx=(8, 0))
 
-        self.grid_box = tk.Frame(self, bg=CARD, highlightbackground=BORDER,
+        # 묶음 + 격자를 좌우로 (창고 '문자' 탭과 같은 배치 — 2026-08-01, 028).
+        # 묶음이 열몇 갈래라 세로 목록이 맞다: 가로 칩으로 늘어놓으면 줄이 접혀
+        # 창 위쪽을 다 먹는다 (2026-07-26 에 창고에서 이미 겪은 것).
+        body = tk.Frame(self, bg=BG)
+        body.pack(fill="both", expand=True, padx=16)
+        self._group = char_source.ALL_GROUP
+        self.side = tk.Frame(body, bg=CARD, highlightbackground=BORDER,
+                             highlightthickness=1)
+        self.side.pack(side="left", fill="y", padx=(0, 8))
+        self._chip_btns = {}
+        self._build_chips()
+
+        self.grid_box = tk.Frame(body, bg=CARD, highlightbackground=BORDER,
                                  highlightthickness=1)
-        self.grid_box.pack(fill="x", padx=16)
+        self.grid_box.pack(side="left", fill="both", expand=True)
+        self._grid_job = None
 
         foot = tk.Frame(self, bg=BG, padx=16, pady=12)
         foot.pack(fill="x")
@@ -3563,25 +3683,77 @@ class _CharDialog(tk.Toplevel):
         self.grab_set()
         self.entry.focus_set()
 
+    def _build_chips(self):
+        """왼쪽 묶음 목록 — 창고 '문자' 탭과 **같은 묶음**(char_source)."""
+        for w in self.side.winfo_children():
+            w.destroy()
+        self._chip_btns = {}
+        inner = tk.Frame(self.side, bg=CARD)
+        inner.pack(fill="both", expand=True)
+        for g in char_source.groups():
+            on = g == self._group
+            b = RoundButton(inner, text=g, command=lambda gg=g: self._pick(gg),
+                            bg=ACCENT if on else CARD,
+                            fg="white" if on else TEXT,
+                            radius=theme.RADIUS["ctl"],
+                            font=(FONT, theme.fs(FS["sub"])), outline="",
+                            zone_bg=CARD, justify="left")
+            b.fit(pad_x=8, pad_y=4,
+                  min_w=int(round(96 * (theme.FONT_SCALE or 1))))
+            b.pack(anchor="w", padx=4, pady=1)
+            self._chip_btns[g] = b
+
+    def _pick(self, group):
+        self._group = group
+        for g, b in self._chip_btns.items():
+            on = g == group
+            b.retint(bg=ACCENT if on else CARD, fg="white" if on else TEXT)
+        self._render()
+
     def _render(self, _e=None):
+        # 나눠 그리기가 돌고 있으면 멈춘다 — 부순 격자에 계속 그리면 안 된다
+        if self._grid_job is not None:
+            try:
+                self.after_cancel(self._grid_job)
+            except Exception:
+                pass
+            self._grid_job = None
         for w in self.grid_box.winfo_children():
             w.destroy()
-        items = builtin_chars.search(self.q.get())
-        shown = items[:self._SHOW_MAX]
-        for k, (label, text, group) in enumerate(shown):
-            c = tk.Label(self.grid_box, text=text,
+        items = char_source.entries(self._group, self.q.get())
+        self.count.config(text=f"{len(items)}개" if items else "없습니다")
+        cols = self._COLS
+
+        def _cell(k, e):
+            # 문구가 긴 항목(자주 쓰는 문장)은 앞부분만 — 전체는 툴팁에서
+            shown = (e["text"] or "").replace("\n", " ")
+            if len(shown) > 4:
+                shown = shown[:3] + "…"
+            c = tk.Label(self.grid_box, text=shown,
                          font=(FONT, theme.fs(FS["head"])),
                          bg=CARD, fg=TEXT, width=3, pady=2, cursor="hand2")
-            c.grid(row=k // self._COLS, column=k % self._COLS, padx=1, pady=1)
-            c.bind("<Enter>", lambda e, w=c: w.config(bg=ACCENT_SOFT))
-            c.bind("<Leave>", lambda e, w=c: w.config(bg=CARD))
+            c.grid(row=k // cols, column=k % cols, padx=1, pady=1)
+            c.bind("<Enter>", lambda ev, w=c: w.config(bg=ACCENT_SOFT))
+            c.bind("<Leave>", lambda ev, w=c: w.config(bg=CARD))
             c.bind("<ButtonRelease-1>",
-                   lambda e, t=text: self.entry.insert("insert", t))
-            _tip(c, f"{label} · {group}")
-        more = len(items) - len(shown)
-        self.count.config(
-            text=(f"{len(items)}개 중 {len(shown)}개 — 검색으로 좁혀 보세요"
-                  if more > 0 else f"{len(items)}개"))
+                   lambda ev, t=e["text"]: self.entry.insert("insert", t))
+            _tip(c, f"{e['label']} · {e['group']}")
+
+        def _build(start):
+            self._grid_job = None
+            if not self.grid_box.winfo_exists():
+                return              # 그 사이 묶음·검색이 바뀌어 부서졌다
+            end = min(len(items), start + cols * self._CHUNK)
+            for k in range(start, end):
+                _cell(k, items[k])
+            if end < len(items):
+                self._grid_job = self.after(1, lambda: _build(end))
+
+        first = min(len(items), cols * self._FIRST_ROWS)
+        for k in range(first):
+            _cell(k, items[k])
+        if first < len(items):
+            self._grid_job = self.after(1, lambda: _build(first))
 
     def _ok(self):
         val = self.entry.get()

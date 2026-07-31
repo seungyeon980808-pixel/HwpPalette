@@ -141,15 +141,29 @@ class ToolDetailTest(_PanelBase):
         self.assertIn("사진", body)
         self.assertEqual(self.win._zoom_title.cget("text"), "도구")
 
-    def test_설정이_있는_도구에는_설정_단추가_붙는다(self):
+    # (2026-08-01, 피드백 029 · 안 1) [설정] 단추는 **없앴다** — 다섯 탭짜리
+    # 물감 설정 창을 통째로 열던 그 단추다. 폴더 관리는 판 안에서 직접 한다.
+    def test_사진_도구는_판_안에서_폴더를_관리한다(self):
         self.win._show_detail("도구", self._photo_item())
-        self.assertIn("설정", self.foot_text())
+        self.assertNotIn("설정", self.foot_text())
+        body = self.body_text()
+        self.assertIn("＋ 폴더 연결", body)
+        self.assertIn("우선", body)             # 순서 = 이름 충돌 우선순위 안내
 
-    def test_설정이_없는_도구에는_설정_단추가_없다(self):
+    def test_설정_창을_여는_단추가_없다(self):
         convert = next(it for _c, it in self.win.store._items(key="도구")
                        if it["key"] == "convert")
         self.win._show_detail("도구", convert)
         self.assertNotIn("설정", self.foot_text())
+
+    def test_도구_판에_사용법이_보인다(self):
+        """(2026-08-01, 피드백 027) 빈자리를 사용법으로 — 출처는 builtin_actions."""
+        convert = next(it for _c, it in self.win.store._items(key="도구")
+                       if it["key"] == "convert")
+        self.win._show_detail("도구", convert)
+        body = self.body_text()
+        self.assertIn("사용법", body)
+        self.assertIn("드래그로 선택", body)
 
     def test_연결된_사진_폴더를_판에_보여준다(self):
         self.win._show_detail("도구", self._photo_item())

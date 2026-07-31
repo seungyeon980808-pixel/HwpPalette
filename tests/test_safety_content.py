@@ -139,33 +139,41 @@ class RunWithAttributesTest(TmpDirTest):
         raw = zipfile.ZipFile(dst).read("Contents/section0.xml").decode("utf-8")
         self.assertIn('<hp:t xml:space="preserve">3</hp:t>', raw)
 
-    def test_줄바꿈_태그에_가려진_빈칸은_경고로_잡힌다(self):
-        """자식 태그가 든 조각은 못 채운다 — 대신 hidden 으로 정직하게 센다."""
+    # (2026-08-01, 피드백 033-a) 아래 셋은 **뒤집혔다** — 예전에는 "자식 태그가
+    # 든 조각은 못 채운다, 대신 hidden 으로 센다"가 규칙이었는데, 그 한계가
+    # 수능양식의 "빈칸 2개 중 1개만 보인다"의 정체였다 (실측: 둘째 \\ 앞에
+    # <hp:fwSpace/> 가 있었다). 이제 읽고 채우는 것이 규칙이다.
+    def test_자식_태그가_든_조각도_읽고_채운다(self):
         src = self._make(raw_body=(
             '<hp:p><hp:run>'
             '<hp:t>머리<hp:lineBreak/>\\학년\\</hp:t>'
             '</hp:run></hp:p>'))
+        # 읽기: 자식 태그는 공백으로 눕는다 — 태그 양쪽 홑 \ 가 쌍으로 붙어
+        # 보이는 오인을 막는 규칙 (예전 _hidden_token_count 와 같다)
+        self.assertEqual(form_fill.read_runs(src), [(0, "머리 \\학년\\")])
         dst = self.dir / "out.hwpx"
         report = form_fill.fill_named(src, dst, {"학년": "3"})
-        self.assertEqual(report["filled"], 0)
-        self.assertEqual(report["hidden"], 1)
+        self.assertEqual(report["filled"], 1)
+        self.assertEqual(report["hidden"], 0)
 
-    def test_가려진_조각은_fill_의_바꾼_개수에도_안_들어간다(self):
+    def test_자식_태그가_든_조각도_fill_이_바꾼다(self):
         src = self._make(raw_body=(
             '<hp:p><hp:run>'
             '<hp:t>머리<hp:lineBreak/>\\</hp:t>'
             '</hp:run></hp:p>'))
         dst = self.dir / "out.hwpx"
-        self.assertEqual(form_fill.fill(src, dst, {0: "값"}), 0)
+        self.assertEqual(form_fill.fill(src, dst, {0: "값"}), 1)
+        raw = zipfile.ZipFile(dst).read("Contents/section0.xml").decode("utf-8")
+        # 조각 통째로 갈린다 — 사용자가 눕힌 글 전체를 보고 대체 글을 줬다
+        self.assertIn("<hp:t>값</hp:t>", raw)
 
-    def test_전부_가려진_양식은_파일_단위_세기로_잡힌다(self):
-        """빈칸이 전부 가려진 양식을 '자리 없음'으로 오판해 표시를 지우면 안 된다."""
+    def test_자식_태그가_든_이름_자리도_목록에_잡힌다(self):
         src = self._make(raw_body=(
             '<hp:p><hp:run>'
             '<hp:t>머리<hp:lineBreak/>\\학년\\</hp:t>'
             '</hp:run></hp:p>'))
-        self.assertEqual(form_fill.named_slots(src), [])
-        self.assertEqual(form_fill.hidden_slot_count(src), 1)
+        self.assertEqual(form_fill.named_slots(src), [("학년", 1)])
+        self.assertEqual(form_fill.hidden_slot_count(src), 0)
 
     def test_가려진_빈칸이_없으면_세기는_0이다(self):
         src = self._make(runs=["\\학년\\ 성명 \\\\"])

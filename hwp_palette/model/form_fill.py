@@ -30,11 +30,16 @@ SECTION_RE = re.compile(r"Contents/section\d+\.xml$")
 # 여는 태그에 속성이 붙을 수 있다 (xml:space="preserve" 실측, 2026-07-31) —
 # <hp:t> 만 찾으면 그런 조각의 빈칸이 통째로 안 보인다. 속성까지 잡되,
 # 바꿔 쓸 때 여는 태그(1번 묶음)를 그대로 살려야 속성이 안 사라진다.
-RUN_RE = re.compile(r"(<hp:t\b[^>]*>)([^<]*)</hp:t>")
+#
+# (2026-08-01, 피드백 033-a) **자식 태그가 든 조각까지 잡는다** (`.*?`).
+# 예전 판(`[^<]*`)은 `<hp:t><hp:fwSpace/>\\</hp:t>` 처럼 안에 태그가 있으면
+# 통째로 건너뛰었다 — 수능양식의 "빈칸 2개 중 1개만 보인다"의 정체다
+# (실측 spikes/hidden_slot_spike.py: 글상자가 아니라 고정폭 공백 태그였다).
+# 등록(GetTextFile)은 그 글자를 세고 채우기 창은 못 세니 개수가 어긋났다.
+RUN_RE = re.compile(r"(<hp:t\b[^>]*>)(.*?)</hp:t>", re.S)
 
-# 안에 줄바꿈·탭 같은 자식 태그가 든 조각까지 통째로 잡는 판 — 이런 조각은
-# RUN_RE 로 바꿔 쓸 수 없지만, "못 읽은 빈칸이 있다"는 경고용으로는 세어야 한다.
-ANY_RUN_RE = re.compile(r"<hp:t\b[^>]*>(.*?)</hp:t>", re.S)
+# 조각 안의 자식 태그 (<hp:fwSpace/>·<hp:lineBreak/> …) — 읽을 때 눕힌다
+_CHILD_TAG_RE = re.compile(r"<[^>]+>")
 
 SLOT_MARK = "\\"        # 템플릿 빈칸 표시 — 이게 든 조각을 '채울 자리'로 본다
 
@@ -68,6 +73,15 @@ def _section_names(zf):
     return [n for n in zf.namelist() if SECTION_RE.search(n)]
 
 
+def _flat(inner):
+    r"""조각 속 글자를 사람이 읽을 모양으로 — 자식 태그는 **공백**으로 눕힌다.
+
+    공백인 이유(033-a): 태그 양쪽의 홑 `\` 가 붙어 한 쌍(`\\`)으로 보이는
+    오인을 막는다. _hidden_token_count 가 세던 방식과 같은 규칙이다.
+    """
+    return saxutils.unescape(_CHILD_TAG_RE.sub(" ", inner))
+
+
 def read_runs(hwpx_path):
     """(번호, 글자) 목록. 번호는 문서 전체에서 조각이 나오는 순서다."""
     runs = []
@@ -75,7 +89,7 @@ def read_runs(hwpx_path):
         for name in _section_names(zf):
             xml = zf.read(name).decode("utf-8")
             for m in RUN_RE.finditer(xml):
-                runs.append((len(runs), saxutils.unescape(m.group(2))))
+                runs.append((len(runs), _flat(m.group(2))))
     return runs
 
 
@@ -86,19 +100,16 @@ def _count_tokens(text):
 
 
 def _hidden_token_count(xml):
-    r"""RUN_RE 가 못 여는 조각 속의 자리 토큰 수 (경고용).
+    r"""RUN_RE 가 못 여는 조각 속의 자리 토큰 수 (경고용 안전망).
 
-    줄바꿈(<hp:lineBreak/>)·탭 같은 자식 태그가 든 조각은 RUN_RE 로 바꿔 쓸
-    수 없어, 그 안의 빈칸은 조용히 안 채워진다. 통째 판(ANY_RUN_RE)으로 센
-    전체에서 RUN_RE 가 보는 만큼을 빼면 '가려진' 개수가 남는다. 자식 태그
-    자리는 공백으로 바꾼다 — 태그 양쪽의 홑 \ 가 한 쌍으로 붙어 보이는
-    오인을 막기 위함.
+    (2026-08-01, 033-a) RUN_RE 가 자식 태그 든 조각까지 잡게 되면서 평소에는
+    **0 이 정상**이다. 그래도 남겨 둔다 — 아직 모르는 모양(주석·변경추적 등
+    `<hp:t>` 밖의 글자)이 나타나면 여기서 다시 잡힌다. 문서 전체를 통째로
+    눕혀 센 것에서 조각 단위로 읽은 만큼을 뺀다.
     """
-    total = 0
-    for m in ANY_RUN_RE.finditer(xml):
-        flat = saxutils.unescape(re.sub(r"<[^>]+>", " ", m.group(1)))
-        total += _count_tokens(flat)
-    exposed = sum(_count_tokens(saxutils.unescape(m.group(2)))
+    stripped = _CHILD_TAG_RE.sub(" ", xml)
+    total = _count_tokens(saxutils.unescape(stripped))
+    exposed = sum(_count_tokens(_flat(m.group(2)))
                   for m in RUN_RE.finditer(xml))
     return max(0, total - exposed)
 
@@ -211,6 +222,13 @@ def fill(src_hwpx, dst_hwpx, replacements):
             if counter[0] not in replacements:
                 return m.group(0)
             changed[0] += 1
+            # 자식 태그(<hp:fwSpace/> 등)가 든 조각이면 태그가 함께 사라진다
+            # (2026-08-01, 033-a). 사용자는 눕힌 글자를 보고 조각 **통째**의
+            # 대체 글을 주므로 이게 맞는 동작이다 — 고정폭 공백 하나가 새 글로
+            # 바뀌는 것뿐이지만, 소리 없이 지나가지는 않게 기록만 남긴다.
+            if _CHILD_TAG_RE.search(m.group(2)):
+                applog.info("양식 채우기: 자식 태그가 든 조각 %d번을 통째로 "
+                            "갈아끼움" % counter[0])
             return "%s%s</hp:t>" % (
                 m.group(1), saxutils.escape(replacements[counter[0]]))
 

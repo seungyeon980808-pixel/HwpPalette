@@ -486,6 +486,25 @@ def add_photo_dir(path):
     return True
 
 
+def move_photo_dir(path, delta):
+    r"""폴더 순서를 delta(±1)만큼 옮긴다. 옮겼으면 True (2026-08-01, 피드백 029).
+
+    왜 필요한가: **등록 순서가 곧 이름 충돌 시 우선순위**인데(먼저 등록한
+    폴더가 이긴다) 여태 순서를 바꿀 길이 어디에도 없었다.
+    """
+    key = _dir_key(path)
+    dirs = get_photo_dirs()
+    idx = next((i for i, d in enumerate(dirs) if _dir_key(d) == key), None)
+    if idx is None:
+        return False
+    j = idx + (1 if delta > 0 else -1)
+    if not 0 <= j < len(dirs):
+        return False
+    dirs[idx], dirs[j] = dirs[j], dirs[idx]
+    _write_photo_dirs(dirs)
+    return True
+
+
 def remove_photo_dir(path):
     """폴더 연결 해제. 없던 폴더면 False (파일은 건드리지 않는다)."""
     key = _dir_key(path)

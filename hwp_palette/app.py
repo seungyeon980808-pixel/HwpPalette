@@ -72,6 +72,7 @@ from hwp_palette.design import dialogs as messagebox   # 윈도우 기본 대화
 
 from hwp_palette.core import applog
 from hwp_palette.core import paths
+from hwp_palette.design import ribbon                   # 칸 오른쪽 세로 띠 (037)
 from hwp_palette.design import theme
 from hwp_palette.core import clipboard                    # 윈도우 클립보드 (실패한 변환의 원문 대피용)
 from hwp_palette.ui import onboarding
@@ -580,7 +581,11 @@ def fn_spacing_fit():
         r = engine_library.fit_line_spacing()
         _seal_undo()
         if r["paras"] == 0:
-            notify("warn", "다듬을 문단을 찾지 못했습니다 (표 안은 제외됩니다)")
+            # 표 안도 이제 된다 (2026-08-01, 034) — 남은 실패 경로는 '여러
+            # 셀에 걸친 선택'뿐이라, 안내도 그것을 가리켜야 한다. 예전 문구
+            # ("표 안은 제외됩니다")는 이제 틀린 말이다.
+            notify("warn", "다듬을 문단을 찾지 못했습니다 — "
+                           "표에서는 셀 하나씩 선택해 주세요")
         else:
             notify("ok", f"자간 맞춤 — 문단 {r['paras']}개 · 자간을 좁힌 줄 "
                          f"{r['tightened']}개")
@@ -724,7 +729,9 @@ BUILTIN_DISPATCH = {
     "special":      lambda: fn_open_library(cat="문자"),
     "form_fill":    lambda: fn_open_form_fill(),
     "exam_excel":   lambda: fn_open_excel(),
-    "library":      lambda: fn_open_library(),
+    # '라이브러리' 도구는 없앴다 (2026-08-01, 피드백 039 — RETIRED_KEYS).
+    # fn_open_library 자체는 남는다: 도구 '특수기호'(위 special)와 사진 폴더
+    # 관리가 같은 창을 다른 입구로 계속 쓴다.
     "search":       lambda: _open_search(),
 }
 
@@ -875,7 +882,7 @@ def run_palette_block(block, _anchor=None):
             return              # 진행 중 — 조용히 무시
         _busy(name)
         try:
-            _run_palette_block(block)
+            _run_palette_block(block, _anchor)
         finally:
             _unbusy()
         return
@@ -889,7 +896,7 @@ def run_palette_block(block, _anchor=None):
     # 표가 나중에 넣은 순간 ↺ 가 "직접 고친 내용이 있다"는 엉뚱한 거절만
     # 되풀이한다. 문서를 실제로 고치는 갈래가 _run_palette_block 안에서 찍는다.
     try:
-        _run_palette_block(block)
+        _run_palette_block(block, _anchor)
     finally:
         _op_busy[0] = False
         _unbusy()
@@ -948,45 +955,42 @@ def _block_form_name(block):
     return it["name"] if it else block.get("form")
 
 
-def _run_palette_block(block):
-    if block.get("type") == "builtin":
-        # 프로그램 기능은 한글 연결 없이도 여는 것이 있다(라이브러리·찾기).
-        # 연결이 필요한 것은 각 함수가 스스로 ensure_hwp 를 한다.
-        key = block.get("key")
-        run = BUILTIN_DISPATCH.get(key)
-        if run is None:
-            notify("warn", f"모르는 도구입니다: {key}")
-            return
-        try:
-            run()
-        except Exception as e:
-            report_error(f"도구 실행 실패: {builtin_actions.name_of(key)}", e,
-                         detail=True)
-        return
-    # 채울 자리가 있는 양식은 그냥 열지 않고 '채우기 표'를 먼저 띄운다
-    # (2026-07-27). 자리가 없는 양식은 지금까지처럼 바로 열린다.
-    # 표 창을 여는 두 갈래는 되돌리기 지점을 찍지 않는다 (2026-07-31):
-    # 창은 비모달이라 여는 즉시 돌아오고, 문서는 사용자가 표에서 '넣기'를
-    # 누른 뒤에야 바뀐다. 이전 작업의 지점도 건드리지 않는다 (도구 블럭과
-    # 같은 취급).
+def _fill_table_fn(block):
+    r"""'채워 넣고 꽂기'가 할 일 — 없으면 None (고를 것이 없는 물감).
+
+    (2026-08-01, 피드백 040 · 안 A) 표를 띄우는 두 갈래를 여기로 모았다.
+    템플릿은 예전에 **이름 있는 자리만** 표를 띄웠는데, 이제 이름 없는
+    `\` 만이어도 표로 간다 — 표 창이 그런 자리를 '빈칸 1, 2 …'로 이미
+    받아 주므로(TemplateTableWindow), 갈래를 사용자가 신경 쓸 일이 없다.
+
+    표 창을 여는 갈래는 되돌리기 지점을 찍지 않는다 (2026-07-31): 창은
+    비모달이라 여는 즉시 돌아오고, 문서는 '넣기'를 누른 뒤에야 바뀐다.
+    """
     if block.get("type") == "form" and _form_has_slots(block):
-        if not ensure_hwp(): return
-        path = _form_path_by_ref(block)
-        if path:
-            form_table_ui.open_form_table(root, path,
-                                          title=_block_form_name(block))
-            return
-    # 이름 있는 자리(\학년\)를 가진 템플릿도 표를 띄운다 (2026-07-27) —
-    # 이름을 붙였다는 것 자체가 "표로 채울 물건"이라는 선언이다.
+        def _fill_form():
+            if not ensure_hwp():
+                return
+            path = _form_path_by_ref(block)
+            if path:
+                form_table_ui.open_form_table(root, path,
+                                              title=_block_form_name(block))
+        return _fill_form
     if block.get("type") == "template":
         it = library.get_item("템플릿", item_id=block.get("ref"),
                               name=block.get("template"))
-        if it and any(n for n in it.get("slot_names") or []):
-            if not ensure_hwp(): return
-            form_table_ui.open_template_table(root, it)
-            return
-    if not ensure_hwp(): return
-    # 여기부터가 문서를 실제로 고치는 갈래 — 지점은 이 갈래에서만 찍는다.
+        if it and (it.get("slot_names") or []):
+            def _fill_template():
+                if not ensure_hwp():
+                    return
+                form_table_ui.open_template_table(root, it)
+            return _fill_template
+    return None
+
+
+def _insert_block_now(block):
+    """문서를 실제로 고치는 갈래 — 되돌리기 지점은 여기서만 찍는다."""
+    if not ensure_hwp():
+        return
     _mark_undo(_block_label(block).replace("\n", " "))
     block = _resolve_function_block(block)
     try:
@@ -1000,6 +1004,61 @@ def _run_palette_block(block):
     except Exception as e:
         report_error("팔레트 블럭 실행 실패", e, detail=True)
     _seal_undo()    # 예외가 났어도 봉인 — 일부만 들어갔어도 통째로 물릴 수 있게
+
+
+def _insert_block_guarded(block):
+    """팝오버 콜백용 — 잠금·상태 표시를 제 손으로 챙긴다.
+
+    run_palette_block 의 잠금은 팝오버가 뜨는 순간 이미 풀려 있다
+    (Popover.show 는 바로 돌아온다) — 콜백이 잠그지 않으면 실행 중 재클릭이
+    끼어든다.
+    """
+    if _op_busy[0]:
+        return
+    _op_busy[0] = True
+    _busy(_block_label(block).replace("\n", " "))
+    try:
+        _insert_block_now(block)
+    finally:
+        _op_busy[0] = False
+        _unbusy()
+
+
+def _run_palette_block(block, anchor=None):
+    if block.get("type") == "builtin":
+        # 프로그램 기능은 한글 연결 없이도 여는 것이 있다(찾기 등).
+        # 연결이 필요한 것은 각 함수가 스스로 ensure_hwp 를 한다.
+        key = block.get("key")
+        run = BUILTIN_DISPATCH.get(key)
+        if run is None:
+            notify("warn", f"모르는 도구입니다: {key}")
+            return
+        try:
+            run()
+        except Exception as e:
+            report_error(f"도구 실행 실패: {builtin_actions.name_of(key)}", e,
+                         detail=True)
+        return
+    # ── 빈칸이 있는 물감은 **옵션을 고른다** (2026-08-01, 피드백 040 · 안 A) ──
+    #
+    # 예전에는 물감마다 달랐다: 이름 없는 템플릿은 바로 꽂히고, 이름 있는
+    # 템플릿과 양식은 표가 떴다 — "누르기 전에 무엇이 일어날지 알 수 없다"가
+    # 사용자가 물은 혼란의 정체다. 이제 빈칸이 있으면 **늘 같은 팝오버**가
+    # 뜨고, 없으면 팝오버 없이 즉시 꽂는다(고를 것이 없으므로).
+    # 아랫줄이 곧 033-b 가 말한 '채워서 꽂기' 입구다 — 우클릭 메뉴는
+    # 따로 만들지 않는다 (038-d 에서 우클릭은 삭제 전용으로 정리했다).
+    fill = _fill_table_fn(block)
+    if fill is not None:
+        pop = Popover(root, anchor if anchor is not None else root)
+        pop.add(r"빈칸인 채로 꽂기  (\ 가 그대로 남습니다)",
+                lambda: _insert_block_guarded(block))
+        pop.add("채워 넣고 꽂기  (표에서 채웁니다)", fill)
+        if anchor is not None:
+            pop.show()
+        else:                       # 앵커가 없으면(검색 등) 커서 자리에
+            pop.show_at(*root.winfo_pointerxy())
+        return
+    _insert_block_now(block)
 
 
 # ── UI 색 ─────────────────────────────────────
@@ -2425,6 +2484,17 @@ def _make_block_button(parent, blk, span=1, show_icon=True, cell_px=None):
     _btn_holder.append(btn)
     if blk.get("type") == "builtin" and blk.get("key"):
         _builtin_btns[blk["key"]] = btn
+    # 여럿을 담은 칸은 오른쪽 세로 띠 (2026-08-01, 피드백 037 · 안 B).
+    # 겹친 칸 = 개수 숫자(청록) · 꾸러미 = MIX(보라). 판정은 library.block_badge
+    # 한 곳 — 설정 격자·창고 카드와 같은 답을 쓴다. 이 표시가 없어서 "답안"
+    # 칸에 여섯 개가 든 것을 겉에서 알 수 없었다.
+    try:
+        badge = library.block_badge(blk)
+        if badge:
+            kind, text = badge
+            btn.set_ribbon(text, *ribbon.colors(kind))
+    except Exception as e:
+        applog.exc("블럭 세로 띠 표시 실패 (표시만 빠진다)", e)
     # 이름이 안 잘려도 '무엇이 들었는지'를 보여주므로 늘 붙인다 (UI 제안 6).
     # 문구는 함수로 넘긴다 — 실제로 마우스가 머무는 순간에만 만든다 (2026-07-31)
     _add_tooltip(btn, lambda b=blk: _block_tooltip(b))

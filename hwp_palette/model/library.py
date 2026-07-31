@@ -401,6 +401,28 @@ def find_by_id(category, item_id):
     return None
 
 
+def block_badge(block):
+    r"""이 블럭이 **여럿을 담았는가** — 세로 띠 표시 판정 (2026-08-01, 037).
+
+    세 화면(메인 팔레트·설정 격자·창고 카드)이 **같은 답**을 써야 같은 물감이
+    화면마다 다르게 보이지 않는다. 그래서 판정은 여기 한 곳뿐이다.
+
+    반환: ("stack", "6") — 겹친 칸은 **개수**(택일, 몇 개 들었나가 궁금한 정보)
+          ("mix", "MIX") — 꾸러미는 MIX (합체 — 겹침과 다른 물건이라 글자를 가른다)
+          None — 낱개
+    """
+    if not isinstance(block, dict):
+        return None
+    if block.get("type") == "stack":
+        n = len(block.get("items") or [])
+        return ("stack", str(n)) if n else None
+    if block.get("type") == "template":
+        it = find_by_id("템플릿", block.get("ref"))
+        if it and it.get("mix"):
+            return ("mix", "MIX")
+    return None
+
+
 def get_item(category, item_id=None, name=None):
     """id 우선, 없으면 이름으로 조회 (구 데이터 하위호환)."""
     items = load().get(category, [])
