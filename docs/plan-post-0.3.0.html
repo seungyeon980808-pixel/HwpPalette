@@ -281,9 +281,9 @@
     <tr><td>도킹 칩의 겹침</td><td>이번 라운드 미적용</td></tr>
     <tr><td>섞기 이름 겹침</td><td>나온 순서대로 배분</td></tr>
     <tr><td>채워서 꽂기 입구</td>
-        <td><s>우클릭 메뉴 (기존 양식 채우기 창 재사용)</s> → <b>2026-08-01 재검토 중</b>:
-            누르면 <b>옵션을 고르게</b> 하는 안이 유력 (피드백 040 · 권함 A).
-            <span class="ref">우클릭은 038-d 에서 ‘삭제 전용’으로 정리 중이라 자리가 겹친다</span></td></tr>
+        <td><s>우클릭 메뉴</s> → <b>2026-08-01 안 A 확정·구현</b>:
+            빈칸이 있는 물감은 누르면 <b>옵션 팝오버</b>
+            (빈칸인 채로 꽂기 / 채워 넣고 꽂기). 우클릭은 038-d 대로 삭제 전용.</td></tr>
     <tr><td>카드 ‘빈칸 N’</td><td>서식=수치 요약 · 특수기호=문자 미리보기 · 도구=한 줄 설명</td></tr>
     <tr><td>실측 실패 시</td><td>그 묶음은 조사 보고서만 남기고 다음으로 진행</td></tr>
     <tr><td>버전</td><td><b>올리지 않는다</b> — 사용자가 결정</td></tr>
@@ -337,10 +337,10 @@
       <td class="ok">파트 1 완료</td></tr>
   <tr><td class="num">033</td><td><b>버그</b></td>
       <td>양식 빈칸 판독기 불일치(등록 2 vs 채우기 1) · 우클릭 ‘채워서 꽂기’ 미구현</td>
-      <td class="ok">다음 라운드</td></tr>
+      <td class="ok">파트 3 완료</td></tr>
   <tr><td class="num">034</td><td>기능</td>
       <td>자간 맞춤이 <b>표 안</b>에서도 동작해야 함</td>
-      <td class="ok">다음 라운드</td></tr>
+      <td class="ok">파트 3 완료</td></tr>
   <tr><td class="num">035</td><td><b>버그</b></td>
       <td>도킹 중 <b>팔레트 드롭다운</b>을 열면 도킹 화면이 안 보임</td>
       <td class="ok">파트 1 완료</td></tr>
@@ -362,7 +362,7 @@
       <td><code>\\</code> 와 <code>\이름\</code> 이 다르게 취급된다 —
           누르면 <b>옵션을 고르게</b> 할지 결정<br>
           <span class="ref">서로 어긋나는 결정이 셋 (2026-07-27 / 07-31 / 08-01)</span></td>
-      <td>동작 안 결정 대기</td></tr>
+      <td class="ok">안 A 확정 · 파트 3 완료</td></tr>
 </table>
 
 
@@ -631,6 +631,25 @@
      부정적이면 <b>안전망</b>(채우기 창에 불일치를 그대로 알림)만이라도.</p>
   <p><b>034</b> 자간 맞춤을 <b>표 안</b>에서도. <code>list_id</code> 배관 문제일 뿐이다.
      <b>여러 셀에 걸친 선택은 1차 제외.</b> 실측 3건 먼저.</p>
+  <div class="card" style="border-left:3px solid #0a6b2e;margin:10px 0 0">
+    <h3 style="margin-top:0">진행 결과 — 2026-08-01 <span class="ok">완료</span></h3>
+    <ul style="margin:6px 0 0;padding-left:20px">
+      <li><b>040 = 안 A 확정(사용자).</b> 빈칸 있는 물감은 누르면 옵션 팝오버 두 줄
+          (빈칸인 채로 / 채워 넣고). 이름 없는 <code>\</code> 만인 템플릿도 표로
+          갈 수 있다. <b>033-b 는 소멸</b> — 팝오버 아랫줄이 그 입구다.</li>
+      <li><b>033-a</b> 실측이 추정을 뒤집었다: 글상자가 아니라 <b><code>&lt;hp:t&gt;</code>
+          안의 자식 태그</b>(<code>&lt;hp:fwSpace/&gt;</code>). 판을 넓혀 읽기·쓰기를
+          같은 열거로 통일. 실제 수능양식 왕복 실측 — <b>빈칸 2 = 2, 둘 다 채워짐,
+          zip 무결</b>.</li>
+      <li><b>034</b> 실측 3건 뒤 <code>list_id</code> 배관 완성. 실측이 하나 더 알려줌:
+          셀에서 <code>SelectText</code> 는 <b>True 를 주면서 선택하지 않는다</b> →
+          <code>_select_run</code> 이 GetSelectedPos 로 확인. 검증 스파이크 —
+          본문 회귀 없음 · 셀 통과 · 자간 실제 적용.</li>
+    </ul>
+    <p style="margin-bottom:0">테스트 <b>793개</b> 통과. 실측 기록:
+      <code>spikes/cell_spacing_spike.py</code> · <code>cell_fit_verify.py</code> ·
+      <code>hidden_slot_spike.py</code> (전부 새 문서·사본 — 원본 무변경).</p>
+  </div>
 </div></div>
 
 <div class="phase"><div class="no">4</div><div>
