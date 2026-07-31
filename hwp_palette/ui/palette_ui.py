@@ -92,6 +92,16 @@ CELL_GAP = 2
 # 3px 여유가 있었지만, 배율 환경의 실제 렌더에서 바닥에 닿았다 — 여유를
 # 반올림 오차보다 크게 잡는다.
 CELL_ROW_EXTRA_PX = 16
+
+# 블럭 한 줄의 높이를 20% 줄인다 (사용자 결정 2026-07-31). 격자의 **가로** 칸
+# 크기(cell_px)는 그대로 두고 세로만 낮춘다 — 칸 수에 맞춘 가로 폭은 메인
+# 창의 실제 블럭과 짝을 맞추는 값이라 건드리면 미리보기가 실물과 어긋난다.
+ROW_H_RATIO = 0.8
+
+
+def row_h(cell_px):
+    """블럭 한 줄의 픽셀 높이 — 격자·빈칸·좌표 계산이 모두 이 하나를 쓴다."""
+    return int(round((cell_px + CELL_ROW_EXTRA_PX) * ROW_H_RATIO))
 HEADER_ROWS = 1          # 격자 맨 위 열 머리글 한 줄 (좌표 계산 시 빼야 한다)
 HEADER_COLS = 1          # 격자 맨 왼쪽 줄 머리글 한 칸 (칸 번호와 짝을 맞춘다)
 # 머리글 크기를 px 상수로 두지 않는다 (2026-07-25 버그 수정). 예전 HEADER_PX=12 는
@@ -554,12 +564,16 @@ _FORM_SYNTAX_LINES = [
 # 미리보기 판 폭 (사용자 결정 2026-07-31: "저렇게 넓을 필요는 없습니다.
 # 펼치기 접기 기능도 필요없기 때문에 더욱 그렇습니다"). 396 → 268.
 # 창고와 나란히 서되 눈에 덜 무겁고, 창 전체 폭도 그만큼 줄어든다.
-ZOOM_W = 226
-ZOOM_IDLE_HINT = "고르면 보입니다"      # 좁은 판에 맞춘 짧은 안내
-# 왜 226 인가: 이 컴퓨터의 주 모니터는 **세로(1080×1920)** 다. 396 이던 시절
-# 설정 창은 화면 폭을 훌쩍 넘어 오른쪽이 잘려 나갔다(실측 2026-07-31: 창고를
-# 340 으로 못박은 뒤에도 1083px). 여기를 226 으로 줄여야 8칸 팔레트 기준으로
-# 창 전체(≈1077)가 1080 안에 들어온다.
+ZOOM_W = 316
+ZOOM_IDLE_HINT = "고르면 보입니다"
+# 폭의 내력 (2026-07-31): 396 → 226 → 316.
+#   396 은 화면 밖으로 나갔다. 이 컴퓨터의 주 모니터가 **세로(1080×1920)** 라
+#   설정 창이 1280px 을 넘으면 오른쪽이 잘린다.
+#   그래서 226 까지 줄였는데, 이건 **시키지 않은 축소**였다 (사용자 지적:
+#   "지시를 한 적이 없는데 줄었습니다"). 미리보기가 좁으면 물감 그림을
+#   알아볼 수 없으니 목적 자체가 흐려진다.
+#   지금은 226 에서 40% 늘린 316 이다. 창 전체는 여전히 1080 안에 들어온다 —
+#   블럭 줄 높이를 20% 줄이면서(ROW_H_RATIO) 세로에도 여유가 생겼다.
 
 # 격자 블럭 안쪽 글자 여백 — main._BLOCK_TEXT_PAD 와 같은 값이어야 한다.
 # (이 판은 메인 창 블럭의 미리보기다)
@@ -1714,8 +1728,8 @@ class SettingsWindow(tk.Toplevel):
             rows = max(1, int(blk.get("rows", 1)))
             cell = tk.Frame(grid, bg=CARD,
                             width=cell_px * span + CELL_GAP * (span - 1),
-                            height=(cell_px * rows + CELL_GAP * (rows - 1)
-                                   + CELL_ROW_EXTRA_PX))
+                            height=(row_h(cell_px) * rows
+                                    + CELL_GAP * (rows - 1)))
             cell.pack_propagate(False)
             cell.grid(row=int(blk.get("row", 0)) + HEADER_ROWS,
                       column=int(blk.get("col", 0)) + HEADER_COLS,
@@ -1853,7 +1867,7 @@ class SettingsWindow(tk.Toplevel):
     # ── 빈칸: 끌어서 새 블럭 자리 지정 ──
     def _make_empty_cell(self, grid, r, c, cell_px):
         f = tk.Frame(grid, bg=EMPTY_BG, width=cell_px,
-                     height=cell_px + CELL_ROW_EXTRA_PX,
+                     height=row_h(cell_px),
                      highlightbackground=BORDER, highlightthickness=1)
         f.pack_propagate(False)
         f.grid(row=r + HEADER_ROWS, column=c + HEADER_COLS,
@@ -1896,7 +1910,7 @@ class SettingsWindow(tk.Toplevel):
         # 더 높다(글자가 테두리에 안 닿게, 2026-07-30). 예전처럼 한 값으로
         # 나누면 아래쪽 줄일수록 클릭 판정이 위로 밀린다 — 두 축을 따로 잰다.
         col_px = self._grid_cell_px + CELL_GAP
-        row_px = self._grid_cell_px + CELL_GAP + CELL_ROW_EXTRA_PX
+        row_px = row_h(self._grid_cell_px) + CELL_GAP
         c = (x_root - g.winfo_rootx() - origin[0]) // col_px
         r = (y_root - g.winfo_rooty() - origin[1]) // row_px
         if 0 <= c < self._grid_cols and 0 <= r < self._grid_total_rows:
@@ -3253,7 +3267,9 @@ class _BuiltinPickDialog(tk.Toplevel):
     def __init__(self, master, actions):
         super().__init__(master)
         self.result = None              # 고른 action dict (취소면 None)
-        self.title(appinfo.WINDOW_TITLE)
+        # 제목은 **무엇을 고르는 창인지**를 말해야 한다 (2026-07-31). 앱 이름을
+        # 그대로 쓰면 작업표시줄에도 본 창과 똑같이 보여, 창이 뜬 것을 못 알아챈다.
+        self.title("도구 고르기")
         self.configure(bg=BG)
         self.attributes("-topmost", True)
         self.resizable(False, False)
