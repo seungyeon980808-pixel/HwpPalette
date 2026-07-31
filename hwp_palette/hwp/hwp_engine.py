@@ -865,7 +865,10 @@ def read_shape_here():
                 out["글씨크기"] = round(hwp.HwpUnitToPoint(h), 1)
             except Exception:
                 out["글씨크기"] = round(h / 100.0, 1)
-        sp = getattr(cs, "Spacing", None)
+        # 자간 속성 이름은 `Spacing` 이 **아니다** — 글자 종류마다 따로다
+        # (자간 스파이크 실측 2026-07-31: SpacingHangul/Latin/Hanja/Japanese/
+        # Other/Symbol/User 일곱 개). 한글 문서이므로 한글 값을 대표로 읽는다.
+        sp = getattr(cs, "SpacingHangul", None)
         if sp is not None:
             out["자간"] = int(sp)
         if getattr(cs, "Bold", 0):

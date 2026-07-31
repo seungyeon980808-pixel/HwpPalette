@@ -644,6 +644,7 @@ class SettingsWindow(tk.Toplevel):
         self._edit_form = None     # 판에 심은 이름·태그 폼 (수정 상태)
         self._notify_job = None    # 메인 창 반영 디바운스 (400ms 모아 한 번)
         self._last_req = None      # _fit_window 가 마지막으로 잡은 요청 크기
+        self._decompose = None     # 문서 해체 중이면 그 판 (없으면 None)
 
         # 창 제목·설명 줄은 없앴다 (사용자 지적 2026-07-27: "윗부분에 남는
         # 공간이 너무 많다"). 판마다 머리말이 이미 있어서 — '팔레트',
@@ -1077,6 +1078,17 @@ class SettingsWindow(tk.Toplevel):
         acts.pack(fill="x", padx=SP["m"] - 2, pady=SP["s"])
         # 버튼은 오른쪽 정렬 (사용자 결정 2026-07-28). '팔레트에 놓기' 버튼은
         # 없앴다 — 창고 타일을 격자로 **끌어다 놓는** 것으로 대신한다.
+        if cat == "양식":
+            # [문서 해체] — 파일이 **선택된 상태에서** 바로 시작한다 (사용자
+            # 결정 2026-07-31: "쉽게 집어넣을 수 있게 파일이 선택된 상태에서
+            # 문서 해체를 누르면 해체가 되어야 합니다"). 파일을 다시 고르는
+            # 절차를 두지 않는다.
+            RoundButton(acts, text="문서 해체",
+                        command=lambda: self._start_decompose(item),
+                        bg=CARD, fg=TEXT, radius=theme.RADIUS["ctl"],
+                        font=(FONT, theme.fs(FS["body"])),
+                        outline=BORDER, zone_bg=CARD).fit(
+                        pad_x=10, pad_y=5).pack(side="right", padx=(0, 6))
         if cat in ("템플릿", "양식"):
             # 창(MetaDialog)을 띄우지 않고 이 판을 수정 폼으로 갈아끼운다
             # (사용자 결정 2026-07-27 — "미리보기 창이 템플릿 수정으로 치환")
@@ -1982,6 +1994,59 @@ class SettingsWindow(tk.Toplevel):
             self._add_builtin(span, rows)
         self._pending_area = None
         self._pending_color = None
+
+    def _start_decompose(self, item):
+        r"""문서 해체 시작 — 복사본을 열고, 오른쪽에 골라 담기 판을 세운다.
+
+        **항상 복사본**이다 (사용자 결정 2026-07-31). 담는 중에 문서를 지우고
+        고치게 되므로, 원본 시험지가 상하는 사고를 이 한 가지가 막는다.
+        마침 양식 수정이 쓰던 open_form_copy 가 그 일을 이미 한다.
+        """
+        if getattr(self, "_decompose", None) is not None:
+            return                          # 이미 해체 중
+        path = library.template_path(item)
+        if not path:
+            messagebox.showwarning("파일이 없습니다",
+                                   "이 양식의 파일을 찾지 못했습니다.", parent=self)
+            return
+        try:
+            hwp_engine.connect()
+            engine_library.open_form_copy(path)
+        except Exception as e:
+            applog.exc("문서 해체: 복사본 열기 실패", e)
+            messagebox.showerror("열지 못했습니다",
+                                 "한글에서 복사본을 열지 못했습니다.", parent=self)
+            return
+        from hwp_palette.ui import decompose_ui          # 순환 참조 회피
+        panel = decompose_ui.DecomposePanel(
+            self._paint_group, doc_name=f"{item.get('name', '')} (복사본)",
+            on_finish=self._finish_decompose)
+        # 미리보기 자리를 잠깐 내주고 그 자리에 선다 — 창 폭이 안 늘어난다
+        self.zoom_pane.pack_forget()
+        panel.pack(side="left", fill="y")
+        self._decompose = panel
+        panel.rescan()
+
+    def _finish_decompose(self, taken_names):
+        """해체 끝 — 판을 걷고, 담은 것들로 팔레트 탭을 만들지 묻는다."""
+        panel, self._decompose = getattr(self, "_decompose", None), None
+        if panel is not None:
+            try:
+                panel.destroy()
+            except Exception:
+                pass
+        self.zoom_pane.pack(side="left", fill="y")
+        self.store.refresh()
+        if not taken_names:
+            return
+        if messagebox.askyesno(
+                "팔레트 탭 만들기",
+                f"담은 {len(taken_names)}개로 새 팔레트 탭을 만들까요?",
+                parent=self):
+            from hwp_palette.ui import decompose_ui
+            if decompose_ui.make_palette_tab("해체", taken_names):
+                self._reload_tabs()
+                self._notify(items_changed=True)
 
     def _new_paint(self, cat):
         r"""창고의 ＋ — 지금 켜 놓은 분류의 물감을 **만들기만** 한다 (2026-07-31).
