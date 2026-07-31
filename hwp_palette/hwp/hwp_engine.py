@@ -833,6 +833,81 @@ def set_char_shape(font, size_pt):
     act.Execute("CharShape", ps.HCharShape.HSet)
 
 
+def read_shape_here():
+    r"""커서(또는 선택 영역) 자리의 **글자·문단 서식을 읽어** dict 로 준다.
+
+    왜 필요한가 (사용자 2026-07-31): 서식 조합 블럭을 만들 때 수치를 전부
+    손으로 적어야 했다 — "저런식으로 모든 것을 내가 다 정해야한다면 입력하기
+    골치가 아픕니다". 한글에는 이미 '모양 복사(Alt+C)'가 있으니, 같은 일을
+    우리 창에서 하면 된다: 마음에 드는 문단에 커서를 두고 [한글에서 가져오기]
+    를 누르면 아래 칸이 그 값으로 채워진다.
+
+    돌려주는 키는 **func_catalog 의 기능 이름 그대로**다 — 받는 쪽(서식 조합
+    창)이 옮겨 담을 때 이름을 매핑할 필요가 없게.
+
+    읽기만 한다 — 문서를 고치지 않는다. GetDefault 는 '지금 자리의 값'을
+    파라미터셋에 채워 주므로, Execute 를 부르지 않으면 아무 일도 안 일어난다.
+    선택이 없어도 커서 자리 값이 나온다(실측 2026-07-31).
+    """
+    out = {}
+    act = hwp.HAction
+    ps = hwp.HParameterSet
+    try:
+        act.GetDefault("CharShape", ps.HCharShape.HSet)
+        cs = ps.HCharShape
+        font = getattr(cs, "FaceNameHangul", None)
+        if font:
+            out["글씨체"] = str(font)
+        h = getattr(cs, "Height", None)
+        if h:
+            # HwpUnit → pt. 되돌리는 함수가 없는 판이 있어 나눗셈으로도 받는다.
+            try:
+                out["글씨크기"] = round(hwp.HwpUnitToPoint(h), 1)
+            except Exception:
+                out["글씨크기"] = round(h / 100.0, 1)
+        sp = getattr(cs, "Spacing", None)
+        if sp is not None:
+            out["자간"] = int(sp)
+        if getattr(cs, "Bold", 0):
+            out["굵게"] = True
+        if getattr(cs, "Italic", 0):
+            out["기울임"] = True
+        if getattr(cs, "UnderlineType", 0):
+            out["밑줄"] = True
+    except Exception as e:
+        applog.exc("서식 읽기: 글자 모양 실패", e)
+    try:
+        act.GetDefault("ParagraphShape", ps.HParaShape.HSet)
+        pp = ps.HParaShape
+        ls = getattr(pp, "LineSpacing", None)
+        if ls:
+            out["줄간격"] = int(ls)
+        ind = getattr(pp, "Indentation", None)
+        if ind:
+            # 양수 = 들여쓰기, 음수 = 내어쓰기. 한글은 한 값에 부호로 담는다.
+            pt = _hwp_to_pt(ind)
+            out["들여쓰기" if ind > 0 else "내어쓰기"] = abs(pt)
+        for key, attr in (("왼쪽여백", "LeftMargin"), ("오른쪽여백", "RightMargin")):
+            v = getattr(pp, attr, None)
+            if v:
+                out[key] = round(_hwp_to_pt(v) * 25.4 / 72.0, 1)   # pt → mm
+        align = getattr(pp, "AlignType", None)
+        if align is not None:
+            out.update({0: {"왼쪽정렬": True}, 1: {"오른쪽정렬": True},
+                        2: {"가운데정렬": True}, 3: {"양쪽정렬": True}
+                        }.get(int(align), {}))
+    except Exception as e:
+        applog.exc("서식 읽기: 문단 모양 실패", e)
+    return out
+
+
+def _hwp_to_pt(v):
+    try:
+        return round(hwp.HwpUnitToPoint(v), 1)
+    except Exception:
+        return round(v / 100.0, 1)
+
+
 def _maybe_apply_font():
     f = S.get("font", {})
     if f.get("apply"):

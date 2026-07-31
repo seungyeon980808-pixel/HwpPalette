@@ -148,6 +148,27 @@ class FunctionDialog(tk.Toplevel):
         tk.Entry(namef, textvariable=self.name_var, width=20, font=(FONT, theme.fs(FS["head"])),
                  relief="solid", bd=1).pack(side="left", padx=(8, 0))
 
+        # ── 한글에서 가져오기 (2026-07-31) ─────────────────
+        # 수치를 손으로 다 적게 하지 않는다. 한글에서 마음에 드는 자리에
+        # 커서를 두고 이걸 누르면 아래 칸이 그 값으로 채워지고 **체크까지
+        # 켜진다**. 남이 정한 기본값보다 내 문서에서 뽑은 값이 쓸모 있다
+        # (사용자 2026-07-31: "서식을 내가 보고 하나하나 조정하는 것 보다
+        # 이렇게 하는것이 훨씬 편리합니다"). 한글의 '모양 복사(Alt+C)'와
+        # 같은 일을 이 창에서 하는 셈이다.
+        pull = tk.Frame(self, bg=CARD, padx=10, pady=7,
+                        highlightbackground=ACCENT, highlightthickness=1)
+        pull.pack(fill="x", padx=16, pady=(8, 0))
+        ptxt = tk.Frame(pull, bg=CARD)
+        ptxt.pack(side="left", fill="x", expand=True)
+        tk.Label(ptxt, text="한글에서 가져오기", font=(FONT, theme.fs(FS["body"]), "bold"),
+                 bg=CARD, fg=ACCENT, anchor="w").pack(fill="x")
+        self._pull_note = tk.Label(
+            ptxt, text="지금 커서 자리의 서식을 읽어 아래를 채웁니다",
+            font=(FONT, theme.fs(FS["caption"])), bg=CARD, fg=MUTED, anchor="w")
+        self._pull_note.pack(fill="x")
+        _dialog_btn(pull, "가져오기", self._pull_from_hwp,
+                    primary=True, zone_bg=CARD).pack(side="right")
+
         body = tk.Frame(self, bg=BG, padx=16, pady=8)
         body.pack(fill="x")
         self.rows = {}
@@ -186,6 +207,11 @@ class FunctionDialog(tk.Toplevel):
             w.pack(side="left")
             return w, var
         if kind == "number":
+            # 빈칸으로 두지 않는다 — 값이 없으면 흔히 쓰는 기본값을 미리 넣어
+            # 둔다 (func_catalog.DEFAULTS 머리말 참고). 체크는 꺼진 채라
+            # 그냥 두면 아무 일도 일어나지 않는다.
+            if cur is None:
+                cur = func_catalog.DEFAULTS.get(f["key"])
             var = tk.StringVar(value="" if cur is None else str(cur))
             w = tk.Entry(parent, textvariable=var, width=6, font=(FONT, theme.fs(FS["body"])),
                          relief="solid", bd=1)
@@ -223,6 +249,46 @@ class FunctionDialog(tk.Toplevel):
                                                                padx=(4, 0))
             return swatch, var
         return None, None
+
+    def _pull_from_hwp(self):
+        r"""[한글에서 가져오기] — 커서 자리 서식을 읽어 칸을 채우고 체크를 켠다.
+
+        읽어 온 항목만 켠다 — 안 읽힌 것은 손대지 않는다. 값이 0 이거나
+        비어 있으면 켜지 않는다: "왼쪽여백 0" 처럼 굳이 넣을 필요 없는 것까지
+        블럭에 담기면 나중에 무엇을 의도했는지가 흐려진다.
+        """
+        try:
+            hwp_engine.connect()
+        except Exception as e:
+            applog.exc("서식 가져오기: 한글 연결 실패", e)
+            self._pull_note.config(text="한글을 찾지 못했습니다 — 한글을 켜고 다시 눌러 주세요")
+            return
+        try:
+            shape = hwp_engine.read_shape_here()
+        except Exception as e:
+            applog.exc("서식 가져오기 실패", e)
+            self._pull_note.config(text="서식을 읽지 못했습니다")
+            return
+        got = 0
+        for key, val in shape.items():
+            row = self.rows.get(key)
+            if row is None:
+                continue                    # 이 창에 없는 항목 (오른쪽정렬 등)
+            chk, f, var, _w = row
+            if f["kind"] in ("toggle", "para"):
+                if val:
+                    chk.set(True)
+                    got += 1
+                continue
+            if val in (None, "", 0):
+                continue
+            if var is not None:
+                var.set(str(val))
+            chk.set(True)
+            got += 1
+        self._pull_note.config(
+            text=(f"문서에서 {got}가지를 가져왔습니다 — 필요 없는 것은 체크를 끄세요"
+                  if got else "커서 자리에서 가져올 서식이 없습니다"))
 
     def _ok(self):
         # 한글 IME 로 조합 중인 마지막 글자를 확정시킨다 (library_ui.commit_ime 설명 참고)
