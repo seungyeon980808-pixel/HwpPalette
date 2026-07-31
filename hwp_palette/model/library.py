@@ -122,6 +122,111 @@ def normalize_tags(tags):
     return out
 
 
+# ── 하위 분류 (2026-07-31, 시안 docs/mockups/store-subcats.html) ──
+#
+# 분류(특수기호·템플릿·서식·양식) **아래**에 사용자가 만드는 한 단계 서랍이다.
+# 태그(위)와 다른 점: 하위 분류는 **배타적**이고(항목당 하나), '전체' 보기가
+# 없으며, 기본은 미분류다 — 분류는 의무가 아니라 선택이다.
+#
+# 저장 구조:
+#   library.json 최상위 "subcats" = {분류: [이름, …]}  ← 빈 하위 분류도 남는다
+#   각 항목의 "subcat" = 이름 ("" 또는 없음 = 미분류)
+#
+# '도구'는 프로그램이 가진 기능이라 하위 분류가 없다 (라이브러리 밖이므로
+# 여기서는 자연히 다룰 일이 없다).
+SUBCAT_UNSORTED = "미분류"      # 표시용 이름 — 저장은 "" 로 한다
+
+
+def normalize_subcat(name):
+    """하위 분류 이름 정리 — 앞뒤 공백 제거, '미분류' 는 빈 값과 같다."""
+    name = str(name or "").strip()
+    return "" if name == SUBCAT_UNSORTED else name
+
+
+def list_subcats(category):
+    """분류의 하위 분류 이름들 (미분류 제외, 만든 차례대로)."""
+    subs = load().get("subcats") or {}
+    got = subs.get(category)
+    return list(got) if isinstance(got, list) else []
+
+
+def _ensure_subcat(data, category, name):
+    """data 안에서 하위 분류 이름을 등록해 둔다 (이미 있으면 그대로)."""
+    name = normalize_subcat(name)
+    if not name or category not in CATEGORIES:
+        return ""
+    subs = data.setdefault("subcats", {})
+    lst = subs.setdefault(category, [])
+    if name not in lst:
+        lst.append(name)
+    return name
+
+
+def add_subcat(category, name):
+    """하위 분류를 만든다. 반환: 정리된 이름 (빈 값·'미분류' 면 None)."""
+    name = normalize_subcat(name)
+    if not name or category not in CATEGORIES:
+        return None
+    data = load()
+    _ensure_subcat(data, category, name)
+    save(data)
+    return name
+
+
+def rename_subcat(category, old, new):
+    """하위 분류 이름 바꾸기 — 그 안의 물감도 함께 옮긴다. 성공 여부 반환."""
+    old, new = normalize_subcat(old), normalize_subcat(new)
+    if not old or not new or old == new:
+        return False
+    data = load()
+    subs = (data.get("subcats") or {}).get(category)
+    if not isinstance(subs, list) or old not in subs:
+        return False
+    if new in subs:                     # 이미 있는 이름으로는 합치지 않는다 —
+        return False                    # 의도치 않은 병합은 되돌릴 수 없다
+    subs[subs.index(old)] = new
+    for it in data.get(category, []):
+        if normalize_subcat(it.get("subcat")) == old:
+            it["subcat"] = new
+    save(data)
+    return True
+
+
+def delete_subcat(category, name):
+    """하위 분류를 지운다 — **그 안의 물감은 미분류로** 돌아간다 (물감은
+    지워지지 않는다, 사용자 결정). 반환: 미분류로 옮긴 물감 수, 실패 시 -1."""
+    name = normalize_subcat(name)
+    data = load()
+    subs = (data.get("subcats") or {}).get(category)
+    if not name or not isinstance(subs, list) or name not in subs:
+        return -1
+    subs.remove(name)
+    moved = 0
+    for it in data.get(category, []):
+        if normalize_subcat(it.get("subcat")) == name:
+            it["subcat"] = ""
+            moved += 1
+    save(data)
+    return moved
+
+
+def set_subcat(category, item_id, name):
+    """항목의 하위 분류를 바꾼다 ("" = 미분류). 새 이름이면 목록에도 등록."""
+    data = load()
+    target = next((it for it in data.get(category, [])
+                   if it.get("id") == item_id), None)
+    if target is None:
+        return False
+    target["subcat"] = _ensure_subcat(data, category, name)
+    save(data)
+    return True
+
+
+def subcat_of(item):
+    """항목의 하위 분류 이름 ("" = 미분류). 표시·거르기가 이걸로 통일한다."""
+    return normalize_subcat((item or {}).get("subcat"))
+
+
 def list_tags():
     """지금 쓰이는 태그 목록 — 많이 쓴 순, 같으면 이름 순 (자동완성용)."""
     counts = {}
@@ -231,6 +336,21 @@ def load():
             return copy.deepcopy(_EMPTY)
     _load_failed = False
     out = copy.deepcopy(_EMPTY)
+    # 하위 분류 목록 — 물감이 하나도 없는 하위 분류도 살아남아야 하므로
+    # 항목과 별도로 최상위에 둔다. 모르는 모양이면 조용히 버린다.
+    subs_in = data.get("subcats") if isinstance(data, dict) else None
+    out["subcats"] = {}
+    if isinstance(subs_in, dict):
+        for cat in CATEGORIES:
+            got = subs_in.get(cat)
+            if isinstance(got, list):
+                seen = []
+                for s in got:
+                    s = normalize_subcat(s)
+                    if s and s not in seen:
+                        seen.append(s)
+                if seen:
+                    out["subcats"][cat] = seen
     migrated = False
     for cat in CATEGORIES:
         if isinstance(data.get(cat), list):
@@ -251,6 +371,7 @@ def load():
                     it["tags"] = [old]
                 migrated = True
             it["tags"] = normalize_tags(it.get("tags"))
+            it.setdefault("subcat", "")             # "" = 미분류
             # 이미 \라벨\ 로 저장돼 있던 항목도 알맹이로 교정 (조회 실패 방지)
             it["label"] = normalize_label(it.get("label")) or it.get("name", "")
             if cat in _FILE_CATEGORIES:
@@ -354,22 +475,24 @@ def _meta(name, label, tags=None):
             "tags": normalize_tags(tags)}
 
 
-def add_style(name, fields, label=None, tags=None):
+def add_style(name, fields, label=None, tags=None, subcat=None):
     """fields: {친화적필드명: 값} — 캡처 시 선택된 항목만 들어있는 델타.
     반환: 등록된 항목의 고유 id."""
     data = load()
     item = _meta(_unique_name(data["서식"], name), label, tags)
     item["fields"] = fields
+    item["subcat"] = _ensure_subcat(data, "서식", subcat)
     data["서식"].append(item)
     save(data)
     return item["id"]
 
 
-def add_char(name, text, label=None, tags=None):
+def add_char(name, text, label=None, tags=None, subcat=None):
     """반환: 등록된 항목의 고유 id."""
     data = load()
     item = _meta(_unique_name(data["문자"], name), label, tags)
     item["text"] = text
+    item["subcat"] = _ensure_subcat(data, "문자", subcat)
     data["문자"].append(item)
     save(data)
     return item["id"]
@@ -403,7 +526,7 @@ def get_preview(item):
 
 
 def add_template_from_capture(name, save_to, label=None, tags=None,
-                              slot_count=0):
+                              slot_count=0, subcat=None):
     r"""템플릿을 등록한다. 조각을 **최종 위치에 바로 저장**하는 방식.
 
     save_to: 함수. 목적지 경로(pathlib.Path)를 받아 그 자리에 조각을 저장한다.
@@ -435,13 +558,14 @@ def add_template_from_capture(name, save_to, label=None, tags=None,
     item["slot_count"] = count_slots(text) if text else int(slot_count or 0)
     item["slot_names"] = form_fill.token_list(text)
     item["preview"] = make_preview(preview)
+    item["subcat"] = _ensure_subcat(data, "템플릿", subcat)
     data["템플릿"].append(item)
     save(data)
     return item["id"]
 
 
 def add_form_from_file(name, src_path, label=None, tags=None,
-                       slot_count=0, slot_names=None):
+                       slot_count=0, slot_names=None, subcat=None):
     r"""양식(.hwp 파일 통째)을 등록한다.
 
     템플릿과의 차이:
@@ -459,12 +583,13 @@ def add_form_from_file(name, src_path, label=None, tags=None,
     item["slot_count"] = int(slot_count or 0)
     item["slot_names"] = list(slot_names or [])
     item["origin"] = str(src_path)      # 어디서 가져왔는지 (참고용)
+    item["subcat"] = _ensure_subcat(data, "양식", subcat)
     data["양식"].append(item)
     save(data)
     return item["id"]
 
 
-def add_mix(name, member_ids, label=None, tags=None):
+def add_mix(name, member_ids, label=None, tags=None, subcat=None):
     r"""꾸러미(섞은 물감) 등록 — 요소 템플릿들을 **차례대로 가리키는** 항목.
 
     왜 이런 물건이 필요한가 (사용자 기획 2026-07-31):
@@ -483,12 +608,13 @@ def add_mix(name, member_ids, label=None, tags=None):
     item["mix"] = [str(i) for i in member_ids]
     item["slot_count"] = sum(
         int(m.get("slot_count") or 0) for m in mix_members(item, data))
+    item["subcat"] = _ensure_subcat(data, "템플릿", subcat)
     data["템플릿"].append(item)
     save(data)
     return item["id"]
 
 
-def update_mix(item_id, name=None, member_ids=None):
+def update_mix(item_id, name=None, member_ids=None, subcat=None):
     """꾸러미의 이름·구성 바꾸기 (id 유지 → 팔레트 연결이 안 깨진다)."""
     data = load()
     for it in data.get("템플릿", []):
@@ -498,6 +624,8 @@ def update_mix(item_id, name=None, member_ids=None):
             it["name"] = name
         if member_ids is not None:
             it["mix"] = [str(i) for i in member_ids]
+        if subcat is not None:          # None = 안 건드림, "" = 미분류
+            it["subcat"] = _ensure_subcat(data, "템플릿", subcat)
         it["slot_count"] = sum(
             int(m.get("slot_count") or 0) for m in mix_members(it, data))
         save(data)
@@ -505,8 +633,9 @@ def update_mix(item_id, name=None, member_ids=None):
     return False
 
 
-def update_item(category, item_id, name=None, label=None, tags=None):
-    """등록된 항목의 이름·라벨·태그를 수정한다 (id는 유지 → 팔레트 연결 안 깨짐)."""
+def update_item(category, item_id, name=None, label=None, tags=None,
+                subcat=None):
+    """등록된 항목의 이름·라벨·태그·하위 분류를 수정한다 (id는 유지 → 팔레트 연결 안 깨짐)."""
     data = load()
     items = data.get(category, [])
     target = next((it for it in items if it.get("id") == item_id), None)
@@ -520,6 +649,8 @@ def update_item(category, item_id, name=None, label=None, tags=None):
     if tags is not None:
         # 빈 목록도 뜻이 있다 (태그를 다 뗀 것) — None 일 때만 안 건드린다
         target["tags"] = normalize_tags(tags)
+    if subcat is not None:              # "" = 미분류로 옮김, None = 안 건드림
+        target["subcat"] = _ensure_subcat(data, category, subcat)
     save(data)
     return True
 
@@ -901,8 +1032,9 @@ def export_items(pairs, dest_path):
     items = []
     # origin  = 양식을 등록할 때의 원본 파일 경로(내 PC 사정) — 안 보낸다
     # tags    = 내 정리 습관 — 안 보낸다
+    # subcat  = 하위 분류도 같은 이유 (받는 쪽 서랍에 남의 이름이 생기면 안 된다)
     # from_chip = 내가 받은 칩 이름 — 다시 보낼 때 남의 출처를 물려주지 않는다
-    _DROP = ("id", "origin", "tags", "from_chip", "origin_id")
+    _DROP = ("id", "origin", "tags", "subcat", "from_chip", "origin_id")
     with zipfile.ZipFile(dest_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for cat, it in pairs:
             rec = {k: v for k, v in it.items() if k not in _DROP}
@@ -986,10 +1118,11 @@ def import_archive(src_path, from_chip=None):
                 known[origin_id] = item["id"]
             if from_chip:
                 item["from_chip"] = str(from_chip)
-            # 받은 물감은 태그 없이 시작한다 (export_items 머리말 참조).
-            # 옛 꾸러미에 group/tags 가 들어 있어도 여기서 떨군다.
+            # 받은 물감은 태그·하위 분류 없이 시작한다 (export_items 머리말 참조).
+            # 옛 꾸러미에 group/tags/subcat 이 들어 있어도 여기서 떨군다.
             item.pop("group", None)
             item["tags"] = []
+            item["subcat"] = ""
 
             # 조각 파일 확인을 **이름·라벨을 정하기 전에** 한다. 건너뛸 항목이
             # 이름/라벨을 선점하면, 뒤따르는 멀쩡한 항목이 있지도 않은 충돌

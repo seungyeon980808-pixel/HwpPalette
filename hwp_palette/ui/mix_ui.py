@@ -59,7 +59,8 @@ def _btn(parent, text, command, primary=False, zone_bg=None):
 class MixDialog(tk.Toplevel):
     """섞기 창 — 요소 목록(차례 있음) + 이름 + 빈칸 합계."""
 
-    def __init__(self, master, member_ids=None, edit_id=None, on_saved=None):
+    def __init__(self, master, member_ids=None, edit_id=None, on_saved=None,
+                 subcat=""):
         super().__init__(master)
         self.on_saved = on_saved
         self.edit_id = edit_id
@@ -81,6 +82,7 @@ class MixDialog(tk.Toplevel):
             if cur:
                 name0 = cur.get("name", "")
                 member_ids = list(cur.get("mix") or [])
+                subcat = library.subcat_of(cur)
         self._ids = [i for i in (member_ids or []) if i in self._by_id]
 
         tk.Label(self, text=("꾸러미 고치기" if edit_id else "여러 물감을 섞어 하나로"),
@@ -104,6 +106,16 @@ class MixDialog(tk.Toplevel):
         tk.Label(namef, text=r"문서에서 \이름\ 으로 부릅니다",
                  font=(FONT, theme.fs(FS["caption"])), bg=BG, fg=MUTED
                  ).pack(side="left")
+
+        # 하위 분류 — 물감이 생기는 모든 창의 규칙 (시안 store-subcats K-2).
+        # 꾸러미도 템플릿 분류 안에 사니 템플릿의 하위 분류를 쓴다.
+        from hwp_palette.ui import library_ui          # 순환 참조 회피
+        subf = tk.Frame(self, bg=BG, padx=16)
+        subf.pack(fill="x", pady=(6, 0))
+        tk.Label(subf, text="분류", font=(FONT, theme.fs(FS["body"])),
+                 bg=BG, fg=TEXT).pack(side="left")
+        self._subcat = library_ui.SubcatPicker(subf, "템플릿", value=subcat)
+        self._subcat.pack(side="left", padx=(8, 0))
 
         foot = tk.Frame(self, bg=BG, padx=16, pady=12)
         foot.pack(fill="x")
@@ -197,9 +209,11 @@ class MixDialog(tk.Toplevel):
             return
         try:
             if self.edit_id:
-                library.update_mix(self.edit_id, name=name, member_ids=self._ids)
+                library.update_mix(self.edit_id, name=name,
+                                   member_ids=self._ids,
+                                   subcat=self._subcat.value())
             else:
-                library.add_mix(name, self._ids)
+                library.add_mix(name, self._ids, subcat=self._subcat.value())
         except Exception as e:
             applog.exc("물감 섞기 저장 실패", e)
             messagebox.showerror("저장 실패", "꾸러미를 저장하지 못했습니다.",
@@ -214,8 +228,9 @@ class MixDialog(tk.Toplevel):
                 applog.exc("섞기 뒤 창고 갱신 실패", e)
 
 
-def open_mix_dialog(master, member_ids=None, edit_id=None, on_saved=None):
+def open_mix_dialog(master, member_ids=None, edit_id=None, on_saved=None,
+                    subcat=""):
     dlg = MixDialog(master, member_ids=member_ids, edit_id=edit_id,
-                    on_saved=on_saved)
+                    on_saved=on_saved, subcat=subcat)
     master.wait_window(dlg)
     return dlg.saved

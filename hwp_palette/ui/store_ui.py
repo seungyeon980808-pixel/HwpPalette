@@ -53,7 +53,7 @@ r"""물감 창고 — 팔레트 설정 창 왼쪽에 붙는 서랍 (2026-07-27).
 """
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import simpledialog, ttk
 from hwp_palette.design import dialogs as messagebox   # 윈도우 기본 대화상자 대신 프로그램과 같은 얼굴 (2026-07-27)
 
 from hwp_palette.core import applog
@@ -114,6 +114,25 @@ PLACEABLE = {"템플릿", "양식", "문자"}
 PREVIEW_W, PREVIEW_H = 260, 150
 COLS = 2                      # 타일 열 수
 
+# ── 하위 분류 (2026-07-31, 시안 docs/mockups/store-subcats.html) ──
+#
+# 분류 탭 아래 **한 단 작은 탭** 줄이다 — 같은 생김새를 작게 써서 "그 아래
+# 단"임이 읽히게 한다 (사용자 결정: "둥근 버튼으로 되어서는 안됩니다").
+# '전체'는 없다(분류에서 없앤 것과 같은 이유) — 늘 하나가 켜져 있고 기본은
+# 미분류다. ＋ 로 그 자리에서 새 하위 분류를 만든다. '도구'에는 하위 분류가
+# 없다(프로그램 것이라).
+#
+# 분류 탭을 갈아타도 마지막에 켠 하위 분류를 **기억한다** (미정 2건 중 하나,
+# 제안값 채택 2026-07-31). 같은 실행 안에서는 창을 닫았다 열어도 유지되도록
+# 판이 아니라 모듈에 둔다. 파일에는 저장하지 않는다 — 켜 둔 탭은 정리 상태가
+# 아니라 보던 자리일 뿐이다.
+_SUB_MEMORY = {}                # {분류: 하위 분류 이름} ("" = 미분류)
+
+# 하위 분류 탭 한 줄의 칸 수 — 넘치면 다음 줄로 접는다 (미정 2건 중 둘째,
+# "두 줄까지 줄바꿈 허용" 제안값 채택). 폭이 고정(STORE_W)이라 칸 수도
+# 고정이다 — 이름이 길면 칸 안에서 말줄임된다.
+SUB_COLS = 4
+
 # 판 폭 고정 (사용자 결정 2026-07-31) — 내용에 따라 재계산하지 않는다.
 # 가득 찬 상태에서 두 열이 온전히 들어가는 폭이다.
 # 300 → 344 (사용자 지적 2026-07-31: "대칭이 안 맞게 지 맘대로 잘라버리면
@@ -157,6 +176,10 @@ class StorePanel(tk.Frame):
         self._states_dirty = False          # 배치가 바뀌어 다시 칠해야 하는가
         self._counts = {}                   # 분류별 개수 — 탭에 적는 숫자
         self._chip_w = {}                   # 분류 탭 위젯 — 한 번 만들고 색만 바꾼다
+        self._subcats = {}                  # {분류: [하위 분류 이름]} — refresh 가 채운다
+        self._sub_counts = {}               # {분류: {이름: 개수}} ("" = 미분류)
+        self._sub_frames = {}               # 분류마다 지어 둔 하위 분류 줄
+        self._sub_shown = None              # 지금 보이는 하위 분류 줄의 분류
         self._photo = None                  # ⚠ 참조를 붙들어야 그림이 안 사라진다
         self._name_font = None              # 카드 이름 재기용 Font — 만들기가 비싸 재사용
         self._states_job = None             # refresh_states 모아치기 예약 (after id)
@@ -202,6 +225,13 @@ class StorePanel(tk.Frame):
         self.chip_box = tk.Frame(self, bg=SUBBG, highlightbackground=BORDER,
                                  highlightthickness=1)
         self.chip_box.pack(fill="x", padx=8, pady=(4, 0))
+
+        # 하위 분류 탭 — 분류 탭 **바로 아래**, 같은 생김새를 한 단 작게
+        # (시안 K-1). 분류마다 줄을 지어 두고 갈아 끼운다 (_cat_cache 와
+        # 같은 이유 — 탭 전환 때 위젯을 다시 만들지 않는다).
+        self.sub_box = tk.Frame(self, bg=CARD)
+        self.sub_box.pack(fill="x", padx=8, pady=(3, 0))
+        self.sub_box.grid_columnconfigure(0, weight=1)
 
         # ＋ 줄 — 분류 **바로 아래** 고정 (사용자 결정 2026-07-31, 시안 안 3)
         self.new_btn = tk.Label(self, text="", cursor="hand2",
@@ -344,35 +374,69 @@ class StorePanel(tk.Frame):
         # 목록이 제각기 list_items 를 부르면(내부는 매번 전체 깊은 복사)
         # 한 번 그리는 데 여덟아홉 번을 읽었다. 여기서 읽어 둘이 나눠 쓴다.
         lib = library.load()
+        self._collect_subs(lib)
         self._draw_chips(lib)
-        # 만들어 둔 분류 판을 통째로 버린다 — 물감이 늘거나 줄었으므로
+        # 만들어 둔 분류 판·하위 분류 줄을 통째로 버린다 — 물감이 늘거나 줄었으므로
         for got in self._cat_cache.values():
             try:
                 got["frame"].destroy()
             except Exception:
                 pass
+        for fr in self._sub_frames.values():
+            try:
+                fr.destroy()
+            except Exception:
+                pass
         self._cat_cache = {}
         self._cat_shown = None
+        self._sub_frames = {}
+        self._sub_shown = None
         self._where_memo = None
         for w in self.body.winfo_children():
             w.destroy()
+        self._show_sub_row()
         self._show_cat(lib)
         # 나머지 분류는 **한가할 때 미리 지어 둔다** — 그래야 첫 전환도
         # 기다림 없이 넘어간다. 한 번에 하나씩 지어 화면이 멎지 않게 한다.
         self._prebuild_rest(lib)
 
+    def _collect_subs(self, lib):
+        """하위 분류 목록·개수를 세어 둔다 — refresh 때 한 번만."""
+        subs_all = lib.get("subcats") or {}
+        self._subcats = {}
+        self._sub_counts = {}
+        for _l, key in CATS:
+            if key == "도구":
+                continue                    # 도구에는 하위 분류가 없다
+            names = [s for s in (subs_all.get(key) or []) if s]
+            self._subcats[key] = names
+            counts = {"": 0}
+            counts.update({s: 0 for s in names})
+            known = set(names)
+            for it in lib.get(key, []):
+                sc = library.normalize_subcat(it.get("subcat"))
+                counts[sc if sc in known else ""] += 1
+            self._sub_counts[key] = counts
+
+    def active_sub(self, cat=None):
+        """분류의 지금 켜진 하위 분류 ("" = 미분류). 지워진 이름이면 미분류."""
+        cat = cat or self.filter
+        sub = _SUB_MEMORY.get(cat, "")
+        return sub if sub in (self._subcats.get(cat) or []) else ""
+
     def _prebuild_rest(self, lib=None):
-        rest = [k for _l, k in CATS if k not in self._cat_cache]
+        rest = [(k, self.active_sub(k)) for _l, k in CATS
+                if (k, self.active_sub(k)) not in self._cat_cache]
         if not rest:
             return
         def step(keys, lib_):
             if not keys or not self.winfo_exists():
                 return
-            k = keys[0]
-            if k not in self._cat_cache:
+            k, sub = keys[0]
+            if (k, sub) not in self._cat_cache:
                 try:
-                    got = self._build_cat(k, lib_)   # 지어만 두고 안 보인다
-                    self._cat_cache[k] = got
+                    got = self._build_cat(k, lib_, sub)   # 지어만 두고 안 보인다
+                    self._cat_cache[(k, sub)] = got
                 except Exception as e:
                     applog.exc(f"창고: '{k}' 미리 짓기 실패", e)
             self.after(30, lambda: step(keys[1:], lib_))
@@ -381,8 +445,8 @@ class StorePanel(tk.Frame):
         except Exception:
             pass
 
-    def _build_cat(self, key, lib=None):
-        """분류 하나의 판을 만든다 — 여기서만 타일을 새로 만든다."""
+    def _build_cat(self, key, lib=None, sub=""):
+        """분류 하나(의 하위 분류 하나)의 판을 만든다 — 여기서만 타일을 새로 만든다."""
         if lib is None:
             lib = library.load()
         frame = tk.Frame(self.body, bg=CARD)
@@ -398,6 +462,14 @@ class StorePanel(tk.Frame):
             self._where_memo = (self._placement(), self.tab_name_fn())
         where, here = self._where_memo
         items = self._items(lib, key)
+        # 켜진 하위 분류의 물감만 보인다 — '전체' 보기는 없다 (시안 K-3).
+        # 목록에 없는 이름이 적혀 있으면(지워진 분류 등) 미분류로 본다.
+        if key != "도구":
+            known = set(self._subcats.get(key) or [])
+            def _sub_of(it):
+                sc = library.normalize_subcat(it.get("subcat"))
+                return sc if sc in known else ""
+            items = [(c, it) for c, it in items if _sub_of(it) == sub]
         # 안 쓰는 물감이 늘 위에 온다 (사용자 결정) — 정렬은 여기서만 한다.
         # 고를 때마다 다시 정렬하면 눌렀던 것이 눈앞에서 도망간다.
         rank = {"free": 0, "here": 1, "away": 2, "plain": 3}
@@ -427,10 +499,14 @@ class StorePanel(tk.Frame):
         if not items:
             # 비었다고 판이 좁아지지는 않는다(폭 고정) — 대신 여기서 무엇을
             # 하면 되는지 말해 준다. 읽기 전용 분류에는 ＋ 가 없으므로 안내도 다르다.
-            msg = ("이 분류에 물감이 없습니다."
-                   if key in READONLY_CATS
-                   else f"아직 {_cat_label(key)}이(가) 없습니다.\n"
-                        "위의 ＋ 로 하나 만들어 보세요.")
+            if key in READONLY_CATS:
+                msg = "이 분류에 물감이 없습니다."
+            elif sub:
+                msg = (f"'{sub}' 분류가 비어 있습니다.\n"
+                       "물감을 우클릭해 옮기거나 위의 ＋ 로 만드세요.")
+            else:
+                msg = (f"아직 {_cat_label(key)}이(가) 없습니다.\n"
+                       "위의 ＋ 로 하나 만들어 보세요.")
             tk.Label(frame, text=msg, justify="center",
                      font=(FONT, theme.fs(FS["sub"])), bg=CARD, fg=MUTED).pack(pady=SP["xl"])
         return {"frame": frame, "tiles": tiles, "order": items,
@@ -523,20 +599,170 @@ class StorePanel(tk.Frame):
         번째부터는 새로 만드는 일이 없다. 물감 목록 자체가 바뀌면(등록·삭제)
         refresh() 가 이 저장분을 통째로 버린다.
         """
-        if key == self.filter and key in self._cat_cache:
+        if (key == self.filter
+                and (key, self.active_sub(key)) in self._cat_cache):
             return
         self.filter = key
         # 이미 지어 둔 분류면 **창고를 다시 읽지 않는다** — library.load() 는
         # 전체 깊은 복사라, 탭을 누를 때마다 부르면 캐시로 아낀 시간을 도로
         # 쓴다. 탭에 적힌 개수는 refresh() 가 세어 둔 것을 그대로 쓴다.
-        cached = key in self._cat_cache
+        cached = (key, self.active_sub(key)) in self._cat_cache
         lib = None if cached else library.load()
         self._draw_chips(lib)
+        self._show_sub_row()        # 분류를 갈아타면 그 분류의 하위 분류 줄로
         self._show_cat(lib)
         # 스크롤을 맨 위로 되돌린다 — 안 그러면 항목이 줄어든 만큼 위쪽이
         # 텅 빈 채로 남는다 (실측 2026-07-27: #양식 3개를 골랐는데 화면
         # 아래쪽에 붙어 보였다)
         self.canvas.yview_moveto(0)
+
+    # ── 하위 분류 줄 ──────────────────────────────
+    def _show_sub_row(self):
+        """지금 분류의 하위 분류 줄을 앞으로 — 없으면 그때 한 번 만든다."""
+        cur = self._sub_shown
+        if cur is not None and cur in self._sub_frames:
+            try:
+                self._sub_frames[cur].grid_remove()
+            except Exception:
+                pass
+        cat = self.filter
+        fr = self._sub_frames.get(cat)
+        if fr is None:
+            fr = self._build_sub_row(cat)
+            self._sub_frames[cat] = fr
+        fr.grid()
+        self._sub_shown = cat
+        self._paint_sub_row(cat)
+
+    def _build_sub_row(self, cat):
+        """분류 하나의 하위 분류 줄 — 미분류 · 만든 것들 · ＋. 넘치면 다음 줄로."""
+        fr = tk.Frame(self.sub_box, bg=SUBBG, highlightbackground=BORDER,
+                      highlightthickness=1)
+        fr.grid(row=0, column=0, sticky="ew")
+        fr.grid_remove()
+        if cat == "도구":
+            # 도구는 프로그램 것이라 하위 분류가 없다 (시안 K-3) — 줄 높이는
+            # 지키고(레이아웃이 출렁이지 않게) 이유만 적어 둔다.
+            tk.Label(fr, text="도구에는 하위 분류가 없습니다",
+                     font=(FONT, theme.fs(FS["caption"])), bg=SUBBG, fg=BORDER,
+                     pady=3).pack(fill="x")
+            fr._cells = {}
+            return fr
+        counts = self._sub_counts.get(cat) or {"": 0}
+        entries = [("", "미분류")] + [(s, s) for s in
+                                      (self._subcats.get(cat) or [])]
+        cells = {}
+        for n, (sub, label) in enumerate(entries):
+            cell = tk.Frame(fr, bg=SUBBG, cursor="hand2",
+                            highlightthickness=1, highlightbackground=SUBBG)
+            cell.grid(row=n // SUB_COLS, column=n % SUB_COLS,
+                      sticky="nsew", padx=1, pady=1)
+            txt = label if len(label) <= 6 else label[:6] + "…"
+            nm = tk.Label(cell, text=txt, font=(FONT, theme.fs(FS["caption"])),
+                          bg=SUBBG, fg=MUTED, pady=0)
+            nm.pack(fill="x", pady=(2, 0))
+            ct = tk.Label(cell, text=str(counts.get(sub, 0)),
+                          font=(FONT, max(6, theme.fs(FS["caption"]) - 1)),
+                          bg=SUBBG, fg=BORDER, pady=0)
+            ct.pack(fill="x", pady=(0, 2))
+            for w in (cell, nm, ct):
+                w.bind("<Button-1>", lambda e, s=sub: self._pick_sub(s))
+                if sub:                     # 미분류는 이름을 못 바꾸고 못 지운다
+                    w.bind("<Button-3>",
+                           lambda e, s=sub, c=cell: self._sub_menu(c, s))
+            cells[sub] = (cell, nm, ct)
+        # ＋ — 그 자리에서 새 하위 분류 만들기 (시안 K-1)
+        n = len(entries)
+        plus = tk.Label(fr, text="＋", cursor="hand2",
+                        font=(FONT, theme.fs(FS["caption"]), "bold"),
+                        bg=SUBBG, fg=ACCENT)
+        plus.grid(row=n // SUB_COLS, column=n % SUB_COLS,
+                  sticky="nsew", padx=1, pady=1)
+        plus.bind("<Button-1>", lambda e: self._new_sub())
+        for c in range(SUB_COLS):
+            fr.columnconfigure(c, weight=1, uniform="sub")
+        fr._cells = cells
+        return fr
+
+    def _paint_sub_row(self, cat):
+        """켜진 하위 분류만 흰 칸으로 — 위젯은 그대로 두고 색만 바꾼다."""
+        fr = self._sub_frames.get(cat)
+        if fr is None:
+            return
+        on_sub = self.active_sub(cat)
+        for sub, (cell, nm, ct) in getattr(fr, "_cells", {}).items():
+            on = (sub == on_sub)
+            bg = CARD if on else SUBBG
+            try:
+                cell.config(bg=bg, highlightbackground=BORDER if on else SUBBG)
+                nm.config(bg=bg, fg=TEXT if on else MUTED,
+                          font=(FONT, theme.fs(FS["caption"]),
+                                "bold" if on else "normal"))
+                ct.config(bg=bg, fg=MUTED if on else BORDER)
+            except tk.TclError:
+                pass
+
+    def _pick_sub(self, sub):
+        """하위 분류 탭 누르기 — 분류 탭과 같은 갈아 끼우기다."""
+        if sub == self.active_sub():
+            return
+        _SUB_MEMORY[self.filter] = sub
+        self._paint_sub_row(self.filter)
+        self._show_cat()
+        self.canvas.yview_moveto(0)
+
+    def _new_sub(self):
+        """＋ — 지금 분류에 새 하위 분류를 만들고 바로 켠다."""
+        if self.filter == "도구":
+            return
+        name = simpledialog.askstring(
+            "새 하위 분류", f"{_cat_label(self.filter)}의 새 분류 이름:",
+            parent=self.winfo_toplevel())
+        if not name:
+            return
+        made = library.add_subcat(self.filter, name)
+        if not made:
+            return
+        _SUB_MEMORY[self.filter] = made
+        self.refresh()
+
+    def _sub_menu(self, anchor, sub):
+        """하위 분류 탭 우클릭 — 이름 바꾸기 · 지우기 (시안 K-3)."""
+        from hwp_palette.design.popover import Popover
+        pop = Popover(self.winfo_toplevel(), anchor)
+        pop.add("이름 바꾸기", lambda: self._rename_sub(sub))
+        pop.add("지우기 (물감은 미분류로)", lambda: self._delete_sub(sub))
+        pop.show()
+
+    def _rename_sub(self, sub):
+        new = simpledialog.askstring("이름 바꾸기", "새 이름:",
+                                     initialvalue=sub,
+                                     parent=self.winfo_toplevel())
+        if not new or library.normalize_subcat(new) == sub:
+            return
+        if not library.rename_subcat(self.filter, sub, new):
+            messagebox.showwarning(
+                "이름을 바꾸지 못했습니다",
+                "이미 있는 이름이거나 쓸 수 없는 이름입니다.",
+                parent=self.winfo_toplevel())
+            return
+        if _SUB_MEMORY.get(self.filter) == sub:
+            _SUB_MEMORY[self.filter] = library.normalize_subcat(new)
+        self.refresh()
+
+    def _delete_sub(self, sub):
+        """하위 분류 지우기 — **물감은 지워지지 않는다**, 미분류로 돌아간다."""
+        n = (self._sub_counts.get(self.filter) or {}).get(sub, 0)
+        msg = f"'{sub}' 분류를 지울까요?"
+        if n:
+            msg += f"\n\n안의 물감 {n}개는 미분류로 돌아갑니다. (지워지지 않습니다)"
+        if not messagebox.askyesno("분류 지우기", msg,
+                                   parent=self.winfo_toplevel()):
+            return
+        library.delete_subcat(self.filter, sub)
+        if _SUB_MEMORY.get(self.filter) == sub:
+            _SUB_MEMORY[self.filter] = ""
+        self.refresh()
 
     def _show_cat(self, lib=None):
         r"""지금 분류의 판을 앞으로 — 없으면 그때 한 번 만든다.
@@ -556,10 +782,12 @@ class StorePanel(tk.Frame):
                 self._cat_cache[cur]["frame"].grid_remove()
             except Exception:
                 pass
-        key = self.filter
+        # 판은 (분류, 하위 분류) 짝마다 하나다 — 하위 분류를 갈아타는 것도
+        # 분류 전환과 같은 갈아 끼우기라, 두 번째부터는 새로 만들지 않는다.
+        key = (self.filter, self.active_sub())
         got = self._cat_cache.get(key)
         if got is None:
-            got = self._build_cat(key, lib)
+            got = self._build_cat(self.filter, lib, key[1])
             self._cat_cache[key] = got
         got["frame"].grid()
         self._cat_shown = key
@@ -663,8 +891,46 @@ class StorePanel(tk.Frame):
                    lambda e, c=cat, i=item: self._tile_press(e, c, i))
             w.bind("<B1-Motion>", self._tile_motion)
             w.bind("<ButtonRelease-1>", self._tile_release)
+            if cat != "도구":
+                w.bind("<Button-3>",
+                       lambda e, c=cat, i=item: self._move_menu(e, c, i))
         self._paint_tile(tile, state, selected=False)
         return tile
+
+    def _move_menu(self, e, cat, item):
+        r"""물감 우클릭 — '분류 옮기기' (시안 K-3). Ctrl 로 여러 개 담아 두고
+        그중 하나를 우클릭하면 담은 것이 **한 번에** 옮겨진다."""
+        from hwp_palette.design.popover import Popover
+        key = (cat, item.get("id"))
+        # 담은 것 중 하나를 우클릭했으면 같은 분류의 담은 것 전부가 대상
+        targets = ([iid for c, iid in sorted(self.multi) if c == cat]
+                   if key in self.multi else [item.get("id")])
+        cur = library.subcat_of(item)
+        many = len(targets) > 1
+
+        def move(subname):
+            for iid in targets:
+                library.set_subcat(cat, iid, subname)
+            self.refresh()
+
+        pop = Popover(self.winfo_toplevel(), e.widget)
+        prefix = f"담은 {len(targets)}개를 " if many else ""
+        for subname, label in ([("", "미분류")]
+                               + [(s, s) for s in self._subcats.get(cat) or []]):
+            mark = " ●" if (not many and subname == cur) else ""
+            pop.add(f"{prefix}{label} 로 옮기기{mark}",
+                    lambda s=subname: move(s))
+        pop.separator()
+        pop.add(f"{prefix}＋ 새 분류로 옮기기", lambda: self._move_new(cat, move))
+        pop.show()
+
+    def _move_new(self, cat, move):
+        name = simpledialog.askstring(
+            "새 분류", f"{_cat_label(cat)}의 새 분류 이름:",
+            parent=self.winfo_toplevel())
+        made = library.add_subcat(cat, name) if name else None
+        if made:
+            move(made)
 
     # ── 타일 끌어서 팔레트에 놓기 ─────────────────────
     def _tile_press(self, e, cat, item):
@@ -800,7 +1066,8 @@ class StorePanel(tk.Frame):
         """
         from hwp_palette.ui import mix_ui               # 순환 참조 회피
         mix_ui.open_mix_dialog(self.winfo_toplevel(), member_ids=member_ids,
-                               edit_id=edit_id, on_saved=self._after_mix)
+                               edit_id=edit_id, on_saved=self._after_mix,
+                               subcat=self.active_sub("템플릿"))
 
     def _after_mix(self):
         self.clear_multi()

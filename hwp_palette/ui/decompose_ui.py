@@ -90,6 +90,16 @@ class DecomposePanel(tk.Frame):
         _btn(acts, "빈칸 넣기", self._insert_slot, zone_bg=CARD).pack(side="left")
         _btn(acts, "다시 훑기", self.rescan, zone_bg=CARD).pack(side="left", padx=(4, 0))
         _btn(acts, "끝내기", self._finish, zone_bg=CARD).pack(side="right")
+        # 담는 분류 — 해체하며 담는 물감이 전부 이 하위 분류로 들어간다
+        # (시안 store-subcats K-3: "시험지 하나를 해체하며 '수능' 분류로
+        # 몰아넣는 식"). 기본은 미분류라 안 골라도 그냥 진행된다.
+        subrow = tk.Frame(head, bg=CARD)
+        subrow.pack(fill="x", pady=(SP["xs"], 0))
+        tk.Label(subrow, text="담는 분류", font=(FONT, theme.fs(FS["caption"])),
+                 bg=CARD, fg=MUTED).pack(side="left")
+        from hwp_palette.ui import library_ui           # 순환 참조 회피
+        self._subcat = library_ui.SubcatPicker(subrow, "템플릿", width=12)
+        self._subcat.pack(side="left", padx=(6, 0))
         tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
 
         # 바닥 줄을 **먼저** 붙인다 — 목록이 길어도 밀려나지 않는다
@@ -292,7 +302,8 @@ class DecomposePanel(tk.Frame):
         slots = library.count_slots(text or "")
         try:
             item_id = library.add_template_from_capture(
-                name, engine_library.capture_fragment, slot_count=slots)
+                name, engine_library.capture_fragment, slot_count=slots,
+                subcat=self._subcat.value())
             # 이름이 겹치면 라이브러리가 뒤에 번호를 붙인다 — 실제로 붙은
             # 이름을 적어 둬야 팔레트 탭이 엉뚱한 물감을 집지 않는다.
             saved = library.find_by_id("템플릿", item_id)

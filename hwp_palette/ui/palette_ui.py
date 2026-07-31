@@ -1155,7 +1155,8 @@ class SettingsWindow(tk.Toplevel):
         self.zoom_hint.config(text=item.get("name", ""))
         form = library_ui.MetaForm(
             self._zoom_body, name=item["name"], exclude_id=item["id"],
-            bg=CARD, on_submit=lambda: self._save_edit_form(cat, item))
+            bg=CARD, on_submit=lambda: self._save_edit_form(cat, item),
+            category=cat, subcat=library.subcat_of(item))
         try:
             form.tags_var.set(" ".join(item.get("tags") or []))
         except Exception:
@@ -1203,7 +1204,8 @@ class SettingsWindow(tk.Toplevel):
         name, label, tags = got
         label = library.resolve_edited_label(
             item["name"], item.get("label", ""), name, label)
-        library.update_item(cat, item["id"], name=name, label=label, tags=tags)
+        library.update_item(cat, item["id"], name=name, label=label, tags=tags,
+                            subcat=form.subcat())
         self._notify(items_changed=True)   # 이름·태그가 바뀜 — 창고 통째 갱신
         fresh = library.find_by_id(cat, item["id"]) or item
         self._show_detail(cat, fresh)
@@ -2090,15 +2092,18 @@ class SettingsWindow(tk.Toplevel):
         """
         if cat in store_ui.READONLY_CATS:
             return                          # 도구 — 사용자가 만드는 물감이 아니다
+        # 창고에 켜 놓은 하위 분류가 등록 창의 기본값이 된다 (시안 K-1:
+        # "＋ 줄로 만들면 지금 켜 놓은 하위 분류로 들어갑니다")
+        sub = self.store.active_sub(cat)
         try:
             if cat == "템플릿":
                 # 한글에서 지금 고른 것을 그 자리에서 등록 (라이브러리 창과 같은 코드)
-                if library_ui.capture_template_dialog(self) is None:
+                if library_ui.capture_template_dialog(self, subcat=sub) is None:
                     return
             else:
                 # 나머지 분류는 라이브러리 창의 해당 탭이 만들기 화면이다
                 library_ui.open_manager(self, on_saved=self._after_new_paint,
-                                        cat=cat)
+                                        cat=cat, subcat=sub)
                 return
         except Exception as e:
             applog.exc("창고: 새 물감 만들기 실패", e)
