@@ -306,8 +306,8 @@ def _running_hwp_com():
     """
     import pythoncom
     import win32com.client as win32
+    pythoncom.CoInitialize()            # COM 사용 선언이 먼저다 — 다른 COM 호출보다 앞에
     ctx = pythoncom.CreateBindCtx(0)
-    pythoncom.CoInitialize()
     rot = pythoncom.GetRunningObjectTable()
     hidden = None
     for moniker in rot.EnumRunning():
@@ -429,14 +429,6 @@ def new_document():
     hwp.HAction.Run("FileNew")
 
 
-def open_document(path):
-    hwp.open(path)
-
-
-def save_document():
-    hwp.save()
-
-
 def has_selection():
     r"""지금 한글에 블록(선택)이 잡혀 있는가.
 
@@ -459,18 +451,46 @@ def copy_selection():
     hwp.HAction.Run("Copy")
 
 
+# 이름 엔티티 — 숫자형과 함께 한 번의 패스로 푼다 (아래 _unescape_entities 참조)
+_NAMED_ENTITIES = {"lt": "<", "gt": ">", "quot": "\"", "apos": "'", "amp": "&"}
+
+_ENTITY_RE = re.compile(r"&(#[xX][0-9A-Fa-f]+|#[0-9]+|lt|gt|quot|apos|amp);")
+
+
+def _entity_char(m):
+    """엔티티 하나 → 글자. 범위를 벗어난 숫자 코드는 원문 그대로 둔다."""
+    body = m.group(1)
+    if body[:2] in ("#x", "#X"):
+        try:
+            return chr(int(body[2:], 16))
+        except (ValueError, OverflowError):
+            return m.group(0)
+    if body[0] == "#":
+        try:
+            return chr(int(body[1:], 10))
+        except (ValueError, OverflowError):
+            return m.group(0)
+    return _NAMED_ENTITIES[body]
+
+
 def _unescape_entities(text):
-    r"""한글 TEXT 내보내기가 남긴 &#8212; 꼴 숫자 엔티티를 글자로 되돌린다.
+    r"""한글 TEXT 내보내기가 남긴 &#8212; 꼴 엔티티를 글자로 되돌린다.
 
     실측 (2026-07-26): GetTextFile("TEXT", ...) 은 줄표(—) 같은 일부 문자를
     `&#8212;` 로 바꿔서 준다 (클립보드 경유는 원문 그대로). 그대로 두면
     — 가 든 줄을 변환할 때 엉뚱한 글자가 문서에 들어가고, 제자리 치환은
     바꿀 자리를 못 찾는다. 사용자가 문서에 진짜로 `&#8212;` 라고 칠 가능성은
     사실상 없으므로 일괄 복원한다.
+
+    범위 (2026-07-31 안전 감사에서 확장): 십진(&#8212;)만 다루던 것을
+    십육진(&#x2014;)과 이름 다섯 개(&lt; &gt; &quot; &apos; &amp;)까지 다룬다.
+    **한 번의 정규식 패스**로 푼다 — 단계별로 풀면 이미 푼 결과가 다음
+    단계에 다시 걸려 `&#38;lt;` 가 `&lt;` 를 거쳐 `<` 까지 두 번 풀린다.
+    한 패스에서는 치환된 출력이 재검사되지 않으므로 이중 해석이 없다.
     """
-    if "&#" not in text:
+    if "&" not in text:
         return text
-    return re.sub(r"&#(\d+);", lambda m: chr(int(m.group(1))), text)
+    return _ENTITY_RE.sub(_entity_char, text)
 
 
 def read_selection_direct():
@@ -509,6 +529,12 @@ def read_selection_text(retries=10, delay=0.08):
     Copy 는 선택이 없으면 아무 일도 안 하는데 그 뒤 클립보드를 읽으면
     **직전에 복사해 둔 남의 글**이 선택 내용으로 둔갑했다(실측 로그의
     "바꿀 자리를 찾지 못해 건너뜀" 반복).
+
+    Copy 성공의 증명 (2026-07-31 안전 감사): SelectionMode 관문만으로는
+    부족하다 — Copy 가 실제로 클립보드를 채웠다는 보장이 없으면, 예전에
+    복사해 둔 낡은 내용이 '선택'으로 둔갑해 진짜 선택이 그 내용으로 바뀐다.
+    그래서 Copy 전에 클립보드 **순번**을 재 두고, 순번이 움직였을 때만
+    클립보드를 읽는다. 순번을 못 재거나 안 움직였으면 선택 없음으로 본다.
     """
     direct = read_selection_direct()
     if direct:
@@ -521,7 +547,25 @@ def read_selection_text(retries=10, delay=0.08):
     except Exception as e:
         applog.exc("선택 상태 조회 실패", e)
         return ""
+    seq_before = clipboard.sequence_number()
+    if seq_before is None:
+        # Copy 가 실제로 담겼는지 증명할 길이 없다 — 낡은 클립보드 내용을
+        # 선택으로 둔갑시키느니 선택 없음으로 처리한다.
+        applog.warn("클립보드 순번을 읽지 못해 클립보드 경유 읽기를 건너뜁니다")
+        return ""
     copy_selection()
+    advanced = False
+    for _ in range(20):                 # Copy 반영 대기 — 최대 약 1초
+        seq_now = clipboard.sequence_number()
+        if seq_now is not None and seq_now != seq_before:
+            advanced = True
+            break
+        time.sleep(0.05)
+    if not advanced:
+        # Copy 가 클립보드를 채우지 못했다(선택이 없거나 실패) — 지금
+        # 클립보드에 있는 것은 예전 내용이므로 읽지 않는다.
+        applog.warn("Copy 후 클립보드 순번이 그대로라 선택 없음으로 봅니다")
+        return ""
     text = clipboard.get_text(retries=retries, delay=delay)
     if text:
         applog.warn("한글이 선택 내용을 직접 주지 않아 클립보드로 읽었습니다 "
@@ -537,22 +581,50 @@ def read_selection_text(retries=10, delay=0.08):
     return ""
 
 
-# ── 되돌리기 (2026-07-28) ─────────────────────────────
+# ── 되돌리기 (2026-07-28, 안전판 2026-07-31) ──────────
 # 왜 필요한가: 변환 한 번, 템플릿 삽입 한 번은 한글 입장에서 **동작 수십 개**다.
 # 사용자가 Ctrl+Z 를 누르면 그중 하나만 돌아가고, 몇 번을 더 눌러야 원래대로
 # 오는지 아무도 모른다 (도움말에 "여러 번 눌러야 합니다"라고 적어 둘 정도였다).
 #
-# 어떻게 안전하게 하나: **되돌릴 지점을 지문으로 찍어 두고, 그 지문이 나올
-# 때까지만** Undo 한다. 못 찾으면 되돌린 만큼 Redo 로 도로 감아 원상복구한다 —
-# 사용자가 그 전에 손으로 쓴 글까지 먹어치우는 일이 구조적으로 불가능하다.
+# 어떻게 안전하게 하나 (2026-07-31 안전 감사에서 개편):
+#   record_undo_point()  작업 **직전** 지문 + 문서 식별자를 토큰으로 찍는다
+#   seal_undo_point()    작업 **직후** 지문을 토큰에 봉인한다
+#   undo_to(token)       누르기 전에 먼저 거절 검사부터 한다 —
+#     · 다른 탭/문서로 바뀌었으면 거절 ("other_doc") — 예전 방식은 엉뚱한
+#       문서에 Undo 를 60번까지 퍼부을 수 있었다
+#     · 작업 뒤 사용자가 손으로 고쳤으면 거절 ("edited_after") — 예전 방식은
+#       그 손글부터 먼저 지워 버렸다
+#   거절 검사를 다 통과해야 Undo 를 누르고, 지문이 나올 때까지만 누른다.
+#   못 찾으면 누른 만큼 Redo 로 도로 감아 원상복구한다.
 UNDO_CAP = 60           # 이만큼 눌러도 못 찾으면 포기 (한 동작이 이보다 크진 않다)
 
 
-def doc_fingerprint():
-    """문서 상태 지문 — 본문 글자 전체. 못 읽으면 None.
+def doc_fingerprint_strict():
+    """문서 상태 지문 — 본문 글자 전체. **못 읽으면 None** (빈 문서는 "").
 
     글자 수만 세지 않는 이유: 같은 길이로 바뀌는 편집(글자 교체)이 있으면
     "돌아왔다"고 오판한다. 문서 하나는 대개 수 KB 라 통째로 비교해도 싸다.
+
+    왜 strict 인가 (2026-07-31): 예전 버전은 `... or ""` 로 읽기 실패(None)를
+    빈 문자열로 뭉갰다 — 그러면 **읽기 실패가 '빈 문서'와 구별되지 않아**,
+    COM 이 잠깐 끊긴 순간을 "문서가 비었다"로 오판하고 되돌리기가 빈 문서를
+    향해 Undo 를 퍼부을 수 있다. 실패는 None 으로 정직하게 돌려준다.
+    """
+    try:
+        text = hwp.GetTextFile("TEXT", "")
+    except Exception as e:
+        applog.exc("문서 지문 읽기 실패 — 되돌리기 불가", e)
+        return None
+    if text is None:
+        return None                     # 한글이 빈손을 줌 — 실패로 본다
+    return text
+
+
+def doc_fingerprint():
+    """(구식 이름) 문서 지문 — 예전 배선(app.py) 호환용. 새 코드는 strict 를 쓴다.
+
+    예전 동작 그대로: COM 예외면 None, 한글이 None 을 주면 "" (이 뭉개기가
+    strict 를 새로 만든 이유다 — doc_fingerprint_strict 설명 참조).
     """
     try:
         return hwp.GetTextFile("TEXT", "") or ""
@@ -561,18 +633,103 @@ def doc_fingerprint():
         return None
 
 
-def undo_to(mark, cap=UNDO_CAP):
-    """지문이 mark 와 같아질 때까지 Undo. (성공?, 누른 횟수)
+def doc_identity():
+    """활성 문서의 안정 식별자 문자열. 못 읽으면 None.
 
-    실패하면 누른 만큼 Redo 로 되감고 (False, 0) 을 준다 — **반쯤 되돌린
-    상태로 두지 않는다.** 그 상태가 제일 나쁘다: 사용자는 무엇이 없어졌는지
-    모르고, 한글의 Ctrl+Z 로도 어디까지 왔는지 알 수 없다.
+    무엇으로 구분하나 (선택 근거):
+      Active_XHwpDocument 의 **DocumentID 와 FullName 의 조합**을 쓴다.
+      · FullName 만으로는 부족하다 — 저장 안 한 문서(새 탭)는 FullName 이
+        빈 문자열이라, 빈 탭 두 개가 같은 식별자가 된다.
+      · DocumentID 는 한글이 문서(탭)마다 붙이는 값이라 빈 탭끼리도 갈린다.
+      · 조합해 두면 어느 한쪽이 재활용돼도 다른 쪽이 구분해 준다.
+    DocumentID 속성이 없는 버전이면 FullName 만으로 대신하되, **저장 안 한
+    문서는 구분 불가이므로 None** 을 준다 — 되돌리기가 "같은 문서"라고
+    잘못 확신하는 것보다 못 쓰는 쪽이 안전하다. DocumentID 가 있어도
+    빈 문자열이면 같은 이유로 없는 것으로 취급한다 (FullName 이 빈 탭에서
+    "" 인 것과 같은 꼴일 수 있다 — 빈 탭 두 개가 같은 식별자가 되면 안 된다).
     """
-    if mark is None:
-        return False, 0
-    if doc_fingerprint() == mark:
-        return True, 0                      # 이미 그 자리 — 누를 것이 없다
+    if hwp is None:
+        return None
+    try:
+        doc = hwp.hwp.XHwpDocuments.Active_XHwpDocument
+        full = str(doc.FullName or "")
+    except Exception as e:
+        applog.exc("활성 문서 조회 실패 — 문서 식별 불가", e)
+        return None
+    try:
+        marker = doc.DocumentID
+    except Exception:
+        marker = None
+    if marker not in (None, ""):
+        return "%s|%s" % (marker, full)
+    if full:
+        return "path|%s" % full         # 저장된 문서는 경로만으로도 유일하다
+    return None                          # 저장 안 한 문서 + ID 없음 — 구분 불가
+
+
+def record_undo_point():
+    """작업 **직전**에 부른다 — 되돌릴 지점 토큰을 찍는다. 못 찍으면 None.
+
+    토큰: {"doc": 문서 식별자, "before": 직전 지문}. 작업이 성공하면
+    seal_undo_point() 로 직후 지문을 봉인해야 undo_to() 가 받아 준다.
+    """
+    ident = doc_identity()
+    if ident is None:
+        return None
+    before = doc_fingerprint_strict()
+    if before is None:
+        return None
+    return {"doc": ident, "before": before}
+
+
+def seal_undo_point(token):
+    """작업이 **성공한 직후**에 부른다 — 직후 지문을 토큰에 봉인. 성공 여부.
+
+    지문을 못 읽으면 token["after"] 를 None 으로 남겨 토큰을 못 쓰게 만들고
+    False 를 준다 — 봉인 안 된 토큰으로는 undo_to() 가 Undo 를 누르지 않는다.
+    """
+    if not token:
+        return False
+    after = doc_fingerprint_strict()
+    if after is None:
+        token["after"] = None
+        return False
+    token["after"] = after
+    return True
+
+
+def undo_to(token, cap=UNDO_CAP):
+    """토큰의 '직전 지문'까지 Undo. (성공?, 누른 횟수, 거절/실패 사유)
+
+    사유는 성공이면 "", 아니면 다음 중 하나다:
+      no_token      토큰이 없거나 모양이 아니다
+      unsealed      seal_undo_point 가 안 됐다 (작업 직후 지문이 없다)
+      other_doc     그 사이 다른 문서/탭으로 바뀌었다 — **누르지 않는다**
+      edited_after  작업 뒤 사용자가 문서를 고쳤다 — **누르지 않는다**
+      fp_failed     지문을 읽지 못했다 (검사 불가 → 누르지 않거나 되감음)
+      not_reached   한도까지 눌러도 못 찾음 → 누른 만큼 Redo 로 원상복구했다
+      redo_broken   그 되감기 도중 Redo 가 실패 — 문서가 반쯤 되돌아간 채다
+                    (호출부가 사용자에게 정직하게 알려야 한다)
+
+    거절 검사(위 넷)는 **Undo 를 한 번도 누르기 전에** 끝낸다 — 예전 방식은
+    탭이 바뀌었든 손글이 있든 일단 누르고 봤고, 그게 남의 글을 지웠다.
+    """
+    if (not token or not isinstance(token, dict)
+            or "doc" not in token or "before" not in token):
+        return False, 0, "no_token"
+    if token.get("after") is None:
+        return False, 0, "unsealed"
+    if doc_identity() != token["doc"]:
+        return False, 0, "other_doc"
+    cur = doc_fingerprint_strict()
+    if cur is None:
+        return False, 0, "fp_failed"
+    if cur != token["after"]:
+        return False, 0, "edited_after"
+    if cur == token["before"]:
+        return True, 0, ""                  # 이미 그 자리 — 누를 것이 없다
     pressed = 0
+    fp_broke = False
     while pressed < cap:
         try:
             hwp.HAction.Run("Undo")
@@ -580,15 +737,19 @@ def undo_to(mark, cap=UNDO_CAP):
             applog.exc("되돌리기 실행 실패", e)
             break
         pressed += 1
-        if doc_fingerprint() == mark:
-            return True, pressed
+        fp = doc_fingerprint_strict()
+        if fp is None:                      # 도중에 지문을 못 읽음 — 즉시 되감기
+            fp_broke = True
+            break
+        if fp == token["before"]:
+            return True, pressed, ""
     for _ in range(pressed):                # 못 찾았다 — 건드린 만큼 도로
         try:
             hwp.HAction.Run("Redo")
         except Exception as e:
             applog.exc("되감기(Redo) 실패 — 문서가 반쯤 되돌아간 채 남았습니다", e)
-            break
-    return False, 0
+            return False, pressed, "redo_broken"
+    return False, 0, ("fp_failed" if fp_broke else "not_reached")
 
 
 def delete_selection():
@@ -695,24 +856,42 @@ _MAX_NEST_DEPTH = 8
 
 
 def _exit_table(act):
-    """표 편집 상태에서 확실히 본문으로 빠져나온다.
+    """표 편집 상태에서 확실히 본문으로 빠져나온다. **본문 도달을 확인하면 True.**
 
     주의: 셀 병합(TableMergeCell) 직후처럼 '셀 선택' 상태에서 CloseEx는 표 밖으로
     나가지 않고 선택만 해제한다(실측 2026-07-05 — 이때 다음 표가 셀 안에 중첩되던
     버그의 원인). Cancel로 선택을 먼저 풀고, 본문(list 0)에 도달할 때까지 CloseEx.
+
+    실패하면 False 를 주고 **MoveRight 를 누르지 않는다** (2026-07-31 안전 감사):
+    본문에 못 나온 채 MoveRight 를 누르면 셀 안에서 글자 하나만 건너뛰고,
+    다음에 만드는 표/문항이 **그 표 안에** 중첩돼 들어간다. 탈출 실패를
+    숨기고 한 발 더 걷는 것보다, 그 자리에 멈춰 실패를 알리는 쪽이 안전하다.
     """
     act.Run("Cancel")               # 셀 선택 상태 해제
+    reached = False
     for _ in range(_MAX_NEST_DEPTH):
         try:
             if hwp.GetPos()[0] == 0:   # list 0 = 본문
+                reached = True
                 break
         except Exception as e:
             applog.exc("표 탈출 중 위치 조회 실패 — 탈출 중단", e)
-            break
+            return False
         act.Run("CloseEx")
+    if not reached:
+        try:                            # 마지막 CloseEx 뒤 상태도 한 번 본다
+            reached = hwp.GetPos()[0] == 0
+        except Exception as e:
+            applog.exc("표 탈출 중 위치 조회 실패 — 탈출 중단", e)
+            return False
+    if not reached:
+        applog.warn("표 탈출 실패 — 중첩 한도(%d)까지 CloseEx 해도 본문에 "
+                    "도달하지 못했습니다" % _MAX_NEST_DEPTH)
+        return False
     # 본문 도달 시 커서는 표 앵커 앞 — MoveDown은 표 '첫 셀로 들어가는' 키라
     # 쓰면 안 되고(실측), MoveRight로 앵커 글자를 건너뛰어 표 뒤로 나온다.
     act.Run("MoveRight")
+    return True
 
 
 # 표 생성 시 열마다 붙는 셀 좌우 안여백(1.8mm×2) — 실측 보정값(2026-07-05)
@@ -772,8 +951,8 @@ def create_table_autofit(rows, cols):
 
 
 def exit_table():
-    """표 편집 상태에서 본문으로 빠져나온다 (_exit_table 의 공개 이름)."""
-    _exit_table(hwp.HAction)
+    """표 편집 상태에서 본문으로 빠져나온다 (_exit_table 의 공개 이름). 성공 여부."""
+    return _exit_table(hwp.HAction)
 
 
 # ── 찾기 ──────────────────────────────────────────────

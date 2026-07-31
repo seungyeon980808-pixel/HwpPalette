@@ -96,15 +96,24 @@ class SelectionReadTest(unittest.TestCase):
         self.assertEqual(hwp_engine.hwp.copied, 0)
 
     def test_직접_읽기가_빈손이면_클립보드로_넘어간다(self):
-        """표처럼 saveblock 이 빈손인 선택 — 이때만 Copy 를 쓴다."""
+        """표처럼 saveblock 이 빈손인 선택 — 이때만 Copy 를 쓴다.
+
+        단, Copy 가 실제로 담겼다는 증거(클립보드 순번 전진)가 있어야
+        읽는다 — 순번 관문 자체의 시험은 tests/test_safety_engine.py 에 있다.
+        """
         self._use(FakeHwp(block="", mode=1))
-        with mock.patch.object(clipboard, "get_text", return_value="1\t2\t3"):
+        with mock.patch.object(clipboard, "sequence_number",
+                               side_effect=[10, 11]), \
+                mock.patch.object(clipboard, "get_text",
+                                  return_value="1\t2\t3"):
             self.assertEqual(hwp_engine.read_selection_text(), "1\t2\t3")
         self.assertEqual(hwp_engine.hwp.copied, 1)
 
     def test_두_길이_다_막히면_빈손이되_기록을_남긴다(self):
         self._use(FakeHwp(block="", mode=1))
-        with mock.patch.object(clipboard, "get_text", return_value=""), \
+        with mock.patch.object(clipboard, "sequence_number",
+                               side_effect=[10, 11]), \
+                mock.patch.object(clipboard, "get_text", return_value=""), \
                 mock.patch("hwp_palette.hwp.hwp_engine.applog.warn") as warned:
             self.assertEqual(hwp_engine.read_selection_text(), "")
         self.assertTrue(warned.called)      # 원인을 찾을 수 있게 남긴다

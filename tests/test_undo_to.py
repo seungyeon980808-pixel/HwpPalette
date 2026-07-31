@@ -5,16 +5,21 @@ r"""되돌리기(↺) 테스트 — **반쯤 되돌린 상태로 두지 않는�
     변환 한 번은 한글 입장에서 동작 수십 개다. 사용자가 Ctrl+Z 를 몇 번
     눌러야 하는지 알 수 없어서, 프로그램이 대신 눌러 주기로 했다
     (hwp_engine.undo_to). 그런데 이 기능은 **남의 글을 지울 수 있는 쪽**에
-    있다 — 지문을 못 찾았는데도 계속 누르면 사용자가 손으로 쓴 글까지
-    사라진다. 그래서 지키는 규칙:
+    있다 — 그래서 지키는 규칙 (2026-07-31 안전 감사로 토큰 방식으로 개편):
 
+      · record_undo_point(작업 전) → seal_undo_point(작업 후) 로 봉인된
+        토큰이 있어야만 Undo 를 누른다
       · 지문이 나오면 거기서 **즉시 멈춘다** (한 번도 더 누르지 않는다)
       · 한도 안에 못 찾으면 누른 만큼 Redo 로 **원상복구**하고 실패를 알린다
       · 이미 그 자리면 아무것도 누르지 않는다
+
+    거절 사유별(other_doc / edited_after / unsealed / fp_failed) 검사는
+    tests/test_safety_engine.py 의 거절 행렬이 다룬다.
 """
 
 import pathlib
 import sys
+import types
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -35,13 +40,19 @@ class FakeDoc:
 
     states[0] 이 가장 오래된 상태이고 index 가 지금 자리다. Undo 는 하나
     뒤로, Redo 는 하나 앞으로. 실제 한글도 이렇게 움직인다.
+    doc_identity() 가 보는 COM 구조(hwp.XHwpDocuments.Active_XHwpDocument)도
+    흉내 내어, 토큰의 문서 식별 검사까지 통과할 수 있게 한다.
     """
 
-    def __init__(self, states, index=None):
+    def __init__(self, states, index=None, doc_id=7,
+                 full_name=r"C:\문서\시험지.hwp"):
         self.states = states
         self.index = len(states) - 1 if index is None else index
         self.log = []
         self.HAction = FakeAction(self)
+        active = types.SimpleNamespace(FullName=full_name, DocumentID=doc_id)
+        self.hwp = types.SimpleNamespace(
+            XHwpDocuments=types.SimpleNamespace(Active_XHwpDocument=active))
 
     def run(self, name):
         self.log.append(name)
@@ -52,6 +63,11 @@ class FakeDoc:
 
     def GetTextFile(self, _kind, _opt):
         return self.states[self.index]
+
+
+def _token(doc, before, after):
+    """검사를 통과하는 봉인된 토큰을 손으로 만든다 (지문만 다르게 줄 때)."""
+    return {"doc": hwp_engine.doc_identity(), "before": before, "after": after}
 
 
 class UndoToTest(unittest.TestCase):
@@ -66,42 +82,57 @@ class UndoToTest(unittest.TestCase):
         hwp_engine.hwp = doc
         return doc
 
-    def test_찾으면_거기서_멈춘다(self):
-        # 지문 'A' 로 돌아가려면 Undo 세 번이면 된다
-        doc = self.use(FakeDoc(["A", "AB", "ABC", "ABCD"]))
-        ok, pressed = hwp_engine.undo_to("A")
+    def test_record와_seal로_봉인한_토큰이면_찾을_때까지만_누른다(self):
+        # 지문 'A' 에서 작업 시작 → 'ABCD' 가 됨 → Undo 세 번이면 돌아간다
+        doc = self.use(FakeDoc(["A", "AB", "ABC", "ABCD"], index=0))
+        token = hwp_engine.record_undo_point()
+        self.assertEqual(token, {"doc": hwp_engine.doc_identity(),
+                                 "before": "A"})
+        doc.index = 3                       # 작업(변환 등)이 일어났다
+        self.assertTrue(hwp_engine.seal_undo_point(token))
+        self.assertEqual(token["after"], "ABCD")
+
+        ok, steps, reason = hwp_engine.undo_to(token)
         self.assertTrue(ok)
-        self.assertEqual(pressed, 3)
+        self.assertEqual(steps, 3)
+        self.assertEqual(reason, "")
         self.assertEqual(doc.GetTextFile("TEXT", ""), "A")
         self.assertEqual(doc.log, ["Undo"] * 3)      # 한 번도 더 안 눌렀다
 
     def test_이미_그_자리면_안_누른다(self):
         doc = self.use(FakeDoc(["A", "AB"], index=0))
-        ok, pressed = hwp_engine.undo_to("A")
+        token = _token(doc, before="A", after="A")   # 작업이 아무것도 안 바꿈
+        ok, steps, reason = hwp_engine.undo_to(token)
         self.assertTrue(ok)
-        self.assertEqual(pressed, 0)
+        self.assertEqual(steps, 0)
+        self.assertEqual(reason, "")
         self.assertEqual(doc.log, [])
 
     def test_못_찾으면_원래대로_되감는다(self):
         # 'Z' 라는 지문은 이 문서 어디에도 없다 — 되돌린 만큼 도로 감아야 한다
         doc = self.use(FakeDoc(["A", "AB", "ABC"]))
-        ok, pressed = hwp_engine.undo_to("Z")
+        token = _token(doc, before="Z", after="ABC")
+        ok, steps, reason = hwp_engine.undo_to(token, cap=5)
         self.assertFalse(ok)
-        self.assertEqual(pressed, 0)
+        self.assertEqual(steps, 0)
+        self.assertEqual(reason, "not_reached")
         self.assertEqual(doc.GetTextFile("TEXT", ""), "ABC")   # 그대로다
         self.assertEqual(doc.log.count("Undo"), doc.log.count("Redo"))
 
     def test_한도를_넘겨_누르지_않는다(self):
         doc = self.use(FakeDoc([str(i) for i in range(200)]))
-        ok, _pressed = hwp_engine.undo_to("0", cap=5)
+        token = _token(doc, before="없는 지문", after="199")
+        ok, _steps, reason = hwp_engine.undo_to(token, cap=5)
         self.assertFalse(ok)
+        self.assertEqual(reason, "not_reached")
         self.assertEqual(doc.log.count("Undo"), 5)
 
     def test_지점이_없으면_아무것도_안_한다(self):
         doc = self.use(FakeDoc(["A", "AB"]))
-        ok, pressed = hwp_engine.undo_to(None)
+        ok, steps, reason = hwp_engine.undo_to(None)
         self.assertFalse(ok)
-        self.assertEqual(pressed, 0)
+        self.assertEqual(steps, 0)
+        self.assertEqual(reason, "no_token")
         self.assertEqual(doc.log, [])
 
 
