@@ -50,9 +50,24 @@ RELEASE_DATE = appinfo.RELEASE_DATE
 CONVERT_HOTKEY = "ctrl+alt+t"
 CONVERT_HOTKEY_LABEL = "Ctrl+Alt+T"
 
+import sys
+import time
+import ctypes
 import pathlib
+import traceback
 import tkinter as tk
 from tkinter import filedialog
+
+# ── 한 개만 실행 (2026-07-31 안전 점검) ─────────────────
+# 두 개를 띄우면 둘 다 config.json 을 쓰다 서로가 저장한 것을 덮어쓴다.
+# 창(tk.Tk)을 만들기 전, 다른 모듈이 일을 시작하기 전에 막아야 하므로 맨 위에 둔다.
+_single_mutex = ctypes.windll.kernel32.CreateMutexW(    # 참조를 놓으면 뮤텍스도 사라진다
+    None, False, "Local\\HwpPalette_SingleInstance")
+if ctypes.windll.kernel32.GetLastError() == 183:        # ERROR_ALREADY_EXISTS
+    ctypes.windll.user32.MessageBoxW(
+        0, "한글 팔레트가 이미 실행 중입니다.", "한글 팔레트", 0x10)
+    sys.exit(0)
+
 from hwp_palette.design import dialogs as messagebox   # 윈도우 기본 대화상자 대신 프로그램과 같은 얼굴 (2026-07-27)
 
 from hwp_palette.core import applog
@@ -87,6 +102,26 @@ from hwp_palette.design.popover import Popover          # 앱과 같은 얼굴�
 # 설정 파일 입출력은 settings 모듈로 통합
 load_config = settings.load_config
 save_config = settings.save_config
+
+
+# ── 잡히지 않은 예외를 기록한다 (2026-07-31 안전 점검) ──
+# 창 없는 exe(console=False)에서는 stderr 가 버려진다 — 여기서 안 받으면
+# 어떤 예외든 **아무 흔적 없이** 사라진다. Tk 콜백 안의 예외는 따로
+# report_callback_exception 이 받는다 (root 를 만든 직후에 단다).
+def _log_uncaught(context, etype, value, tb):
+    """예외를 스택까지 app.log 에 남긴다 — 기록 실패가 앱을 죽이면 안 된다."""
+    try:
+        applog.exc(context, value)
+        applog.exc("".join(traceback.format_exception(etype, value, tb)).strip())
+    except Exception:
+        pass
+
+
+def _sys_excepthook(etype, value, tb):
+    _log_uncaught("잡히지 않은 예외 (excepthook)", etype, value, tb)
+
+
+sys.excepthook = _sys_excepthook
 
 
 print(f"{'='*45}")
@@ -320,7 +355,39 @@ def _rescue_selection(text, touched_document):
         notify("error", "원래 글을 되살리지 못했습니다 — 한글의 되돌리기(Ctrl+Z)를 쓰세요")
 
 
+# ── 재진입 잠금 (2026-07-31 안전 점검) ─────────────────
+# 확인 창 같은 모달 대화상자는 떠 있는 동안에도 이벤트를 퍼올린다(wait_window).
+# 그 틈에 전역 단축키 펌프·Ctrl+T·버튼이 fn_convert 를 **다시** 부르면 변환이
+# 두 번 돌고, 되돌리기 지점이 덮어써지고, 구조(rescue) 상태가 엉킨다.
+# 일이 진행 중이면 새 요청은 **조용히 무시**한다 (누른 것이 씹히는 쪽이
+# 문서가 두 번 바뀌는 쪽보다 싸다).
+_op_busy = [False]
+
+
+def _same_doc(ident):
+    """선택을 읽었던 문서가 아직 활성인가 — 식별을 못 하면 True(기존 동작 유지)."""
+    if ident is None:
+        return True
+    try:
+        now = hwp_engine.doc_identity()
+    except Exception as e:
+        applog.exc("문서 식별 실패 (바뀜 감지만 못 씀)", e)
+        return True
+    return now is None or now == ident
+
+
 def fn_convert():
+    """선택 영역 마크다운 변환 — 재진입을 막는 겉옷 (본체는 _fn_convert)."""
+    if _op_busy[0]:
+        return                  # 진행 중 — 조용히 무시
+    _op_busy[0] = True
+    try:
+        _fn_convert()
+    finally:
+        _op_busy[0] = False
+
+
+def _fn_convert():
     """선택 영역 마크다운 변환 — 시험문제 문법 또는 라이브러리 \\라벨\\ 문법"""
     hwp_engine._diag("fn_convert: 버튼 눌린 직후")
     if not ensure_hwp(): return
@@ -333,6 +400,13 @@ def fn_convert():
     try:
         selected = read_selected_text()
         hwp_engine._diag("fn_convert: read_selected_text(Copy) 후")
+        # 어느 문서에서 읽었는지 기억한다 — 지우기 직전에 같은 문서인지 확인
+        # (그 사이 다른 탭·문서로 옮겨 갔으면 남의 문서를 지우게 된다).
+        try:
+            ident = hwp_engine.doc_identity()
+        except Exception as e:
+            applog.exc("문서 식별 실패 (바뀜 감지만 못 씀)", e)
+            ident = None
         if not selected or not selected.strip():
             # 문서가 여러 개 열려 있으면 '내가 보는 문서'와 '한글이 활성으로
             # 아는 문서'가 어긋날 수 있다 (2026-07-26 실측: 프로그램이 양식을
@@ -352,11 +426,26 @@ def fn_convert():
         data = md_parser.parse(selected)
         if md_parser.has_recognized_content(data):
             # 시험문제 변환 (기존 동작)
+            # 표 안에서는 문항 표가 셀 안에 중첩돼 이웃 셀까지 망가진다 —
+            # 아무것도 지우기 전에 막는다 (2026-07-31 안전 점검).
+            if hwp_engine.in_table():
+                messagebox.showwarning("표 안에서는 변환할 수 없습니다",
+                    "표 안에서는 문항을 만들 수 없습니다 — "
+                    "표 밖에 커서를 두고 다시 시도해 주세요.")
+                notify("warn", "표 안에서는 문항을 만들 수 없습니다")
+                return
+            if not _same_doc(ident):
+                messagebox.showwarning("변환 중단",
+                    "작업 중에 다른 문서로 바뀌어 중단했습니다 — "
+                    "아무것도 고치지 않았습니다.")
+                notify("warn", "작업 중에 다른 문서로 바뀌어 중단했습니다")
+                return
             hwp_engine.delete_selection()
             erased = True
             touched = True      # insert_question 은 곧바로 문서를 쓰기 시작한다
             should_increment = exam_engine.insert_question(data, num_var.get(), num_use.get())
             hwp_engine._diag("fn_convert: insert_question(시험문제 변환) 후")
+            _seal_undo()        # 성공 — 되돌리기 지점에 '작업 후' 지문을 찍는다
             if should_increment:
                 num_var.set(num_var.get() + 1)
             notify("ok", "변환 완료!")
@@ -376,6 +465,14 @@ def fn_convert():
             if not _confirm_plan(ops, warns):
                 notify("info", "변환을 취소했습니다")
                 return
+            # 확인 창(모달)이 떠 있는 동안 다른 문서로 옮겨 갔을 수 있다 —
+            # 지우기 전에 같은 문서인지 확인한다 (2026-07-31 안전 점검).
+            if not _same_doc(ident):
+                messagebox.showwarning("변환 중단",
+                    "작업 중에 다른 문서로 바뀌어 중단했습니다 — "
+                    "아무것도 고치지 않았습니다.")
+                notify("warn", "작업 중에 다른 문서로 바뀌어 중단했습니다")
+                return
             # 표 안에서는 '선택을 통째로 지우고 한 곳에 다시 쓰기'를 하면 안 된다.
             # 셀마다 리스트가 따로라 경계가 사라져, 여러 셀의 내용이 한 셀에 쌓인다
             # (셀마다 사진 하나씩 넣었을 때 한 칸에 몰리던 버그). 제자리 변환으로 간다.
@@ -388,6 +485,7 @@ def fn_convert():
                 changed = engine_library.convert_units_in_place(
                     units, lambda u: md_parser.build_library_plan(u, lookup), anchor)
                 hwp_engine._diag("fn_convert: convert_units_in_place(표 안) 후")
+                _seal_undo()    # 성공 — 되돌리기 지점에 '작업 후' 지문을 찍는다
                 msg = f"✅ 라이브러리 변환: 셀 {changed}곳"
                 if warns:
                     notify("warn", f"{msg}  (주의 {len(warns)}건 — 눌러서 보기)",
@@ -411,6 +509,7 @@ def fn_convert():
                 messagebox.showerror("변환 실패", result["error"])
                 notify("warn", f"{result['error']}")
                 return
+            _seal_undo()        # 성공 — 되돌리기 지점에 '작업 후' 지문을 찍는다
             # 빈칸을 다 못 채우고 멈추는 일이 있다(사진 뒤에서 멈추던 문제).
             # 조용히 넘기면 인쇄물을 보고서야 알게 되므로 눈에 띄게 알린다.
             short = result.get("slots_wanted", 0) - result["slots_filled"]
@@ -460,7 +559,11 @@ def fn_reset_format():
                 "선택 내용을 읽지 못했어요. 영역을 다시 드래그한 뒤 시도해주세요.")
             return
         cleaned = md_parser.strip_circled_markers(selected)
+        # 문서를 바꾸기 직전에 지점을 찍는다 (2026-07-31) — 이 작업은 대화상자
+        # 없이 곧장 끝나는 동기 작업이라, 여기서 찍고 바로 봉인하면 된다.
+        _mark_undo("기본 서식 변환")
         engine_library.apply_default_format(palette.get_default_format(), text=cleaned)
+        _seal_undo()            # 성공 — 되돌리기 지점에 '작업 후' 지문을 찍는다
         notify("ok", "기본 서식으로 변환")
     except Exception as e:
         report_error("기본 서식 변환 실패", e)
@@ -519,7 +622,12 @@ def _insert_photo_path(path):
     if not path:
         return
     try:
+        # 파일 대화상자가 **닫힌 뒤**, 넣기 직전에 지점을 찍는다 (2026-07-31) —
+        # 대화상자가 떠 있는 동안 사용자가 한글에서 글을 고칠 수 있어서,
+        # 미리 찍어 두면 그 수정까지 '작업 전'에 묻어 버린다.
+        _mark_undo("사진 삽입")
         hwp_engine.insert_picture_to_cell(path)
+        _seal_undo()            # 성공 — 되돌리기 지점에 '작업 후' 지문을 찍는다
         notify("ok", f"사진 삽입: {pathlib.Path(path).name}")
     except Exception as e:
         report_error(f"사진 삽입 실패: {pathlib.Path(path).name}", e)
@@ -585,28 +693,54 @@ def _unbusy():
         pass
 
 
-# ── 되돌리기 지점 (2026-07-28, 상단 ↺) ─────────────────
-# 무엇을 기억하나: **문서를 건드리기 직전의 지문**과 그 일의 이름.
+# ── 되돌리기 지점 (2026-07-28, 상단 ↺ · 2026-07-31 토큰 방식) ──
+# 무엇을 기억하나: **작업 전에 받은 토큰**(문서 식별 + 작업 전 지문)과 그 일의
+# 이름. 작업이 성공하면 '작업 후' 지문을 봉인(_seal_undo)해야 비로소 쓸 수 있다.
 # 팔레트 블럭 한 번·변환 한 번이 한글에서는 동작 수십 개라, 사용자가 셀 수
 # 없는 것을 프로그램이 대신 센다 (hwp_engine.undo_to 머리말).
-_undo_point = {"mark": None, "what": ""}
+_undo_point = {"token": None, "what": ""}
 
 
 def _mark_undo(what):
     """문서를 바꾸기 직전에 부른다 — 실패해도 하던 일은 그대로 진행한다."""
     try:
-        _undo_point["mark"] = hwp_engine.doc_fingerprint()
+        _undo_point["token"] = hwp_engine.record_undo_point()
         _undo_point["what"] = what
     except Exception as e:
         applog.exc("되돌리기 지점 기록 실패 (되돌리기만 못 씀)", e)
-        _undo_point["mark"] = None
+        _undo_point["token"] = None
+    _sync_undo_btn()
+
+
+def _seal_undo():
+    """작업이 **성공한 뒤** 부른다 — '작업 후' 지문을 찍어야 되돌릴 수 있다.
+
+    봉인에 실패하면 이번 작업의 되돌리기는 포기한다(토큰을 버린다) —
+    지문 없이 되돌리면 사용자가 그 뒤에 고친 것까지 물릴 수 있다.
+    """
+    token = _undo_point["token"]
+    if not token:
+        return
+    try:
+        sealed = hwp_engine.seal_undo_point(token)
+    except Exception as e:
+        applog.exc("되돌리기 지점 봉인 실패 (이번 되돌리기만 못 씀)", e)
+        sealed = False
+    if not sealed:
+        _undo_point["token"] = None
+    _sync_undo_btn()
+
+
+def _clear_undo():
+    """되돌리기 지점을 버린다 (되돌렸거나, 더 못 쓰게 됐을 때)."""
+    _undo_point["token"] = None
     _sync_undo_btn()
 
 
 def _sync_undo_btn():
     """↺ 는 되돌릴 것이 있을 때만 진하다 — 눌러 봐야 아는 버튼이 되지 않게."""
     try:
-        on = _undo_point["mark"] is not None
+        on = bool(_undo_point["token"])
         _undo_btn.retint(fg=TEXT if on else FAINT)
         _tip(_undo_btn, (f"되돌리기 — {_undo_point['what']}" if on
                          else "되돌릴 것이 없습니다"))
@@ -616,37 +750,84 @@ def _sync_undo_btn():
 
 def fn_undo_last():
     r"""↺ — 이 프로그램이 마지막으로 한 일을 통째로 되돌린다."""
-    if _undo_point["mark"] is None:
+    if _op_busy[0]:
+        return                  # 다른 일이 진행 중 — 조용히 무시
+    token = _undo_point["token"]
+    if not token:
         notify("info", "되돌릴 것이 없습니다 — 이 프로그램으로 한 일이 아직 없습니다")
         return
     if not ensure_hwp():
         return
     what = _undo_point["what"]
+    _op_busy[0] = True
     _busy(f"되돌리는 중 — {what}")
     try:
-        ok, pressed = hwp_engine.undo_to(_undo_point["mark"])
+        ok, steps, reason = hwp_engine.undo_to(token)
     except Exception as e:
         report_error("되돌리기 실패", e)
         return
     finally:
+        _op_busy[0] = False
         _unbusy()
     if ok:
-        _undo_point["mark"] = None      # 한 번 되돌린 지점은 다시 못 쓴다
-        _sync_undo_btn()
-        notify("ok", f"'{what}' 을(를) 되돌렸습니다 (되돌리기 {pressed}번)")
-    else:
+        _clear_undo()                   # 한 번 되돌린 지점은 다시 못 쓴다
+        notify("ok", f"'{what}' 을(를) 되돌렸습니다 (되돌리기 {steps}번)")
+    elif reason == "other_doc":
+        # 토큰은 남긴다 — 작업했던 탭으로 돌아가 다시 누르면 된다
+        notify("warn", "다른 문서가 활성화되어 있어 되돌리지 않았습니다 — "
+                       "작업했던 탭으로 이동해 다시 눌러 주세요.")
+    elif reason == "edited_after":
+        # 토큰은 남긴다 — 한글 Ctrl+Z 로 직접 고친 것을 물리면 다시 시도할 수 있다
+        notify("warn", "변환 뒤에 직접 고친 내용이 있어 자동 되돌리기를 멈췄습니다 — "
+                       "한글의 Ctrl+Z 를 써 주세요.")
+    elif reason == "redo_broken":
+        _clear_undo()
+        notify("warn", "일부만 되돌려졌을 수 있습니다 — "
+                       "한글에서 Ctrl+Z/Ctrl+Y 로 문서 상태를 확인해 주세요.")
+    elif reason == "not_reached":
+        _clear_undo()
         notify("warn", f"'{what}' 을(를) 되돌리지 못했습니다 — "
                        "그 뒤로 문서를 많이 고치셨다면 한글의 Ctrl+Z 를 쓰세요")
+    else:                               # "no_token" / "unsealed" / "fp_failed"
+        _clear_undo()
+        notify("warn", "되돌릴 상태를 확인하지 못했습니다 — "
+                       "한글의 Ctrl+Z 를 써 주세요.")
 
 
 def run_palette_block(block):
     """팔레트 블럭 클릭 — 종류에 따라 삽입/적용."""
     name = _block_label(block).replace("\n", " ")
+    if block.get("type") == "builtin":
+        # 도구 블럭은 여기서 잠그지 않는다 — fn_convert 등이 스스로 잠근다
+        # (여기서 잠그면 안의 함수가 '이미 진행 중'으로 보고 그냥 돌아간다).
+        # 대신 **확인만** 한다 (2026-07-31): 변환 확인 창이 떠 있는 동안에도
+        # 이벤트는 돌아서(wait_window), 문서를 고치는 도구(기본 서식·사진)가
+        # 선택 읽기와 지우기 사이에 끼어들 수 있다 — 진행 중이면 조용히 무시.
+        # 잠그지 않고 보기만 하므로, 한가할 때 fn_convert 가 제 잠금을 거는
+        # 것은 그대로 된다.
+        # 되돌리기 지점도 안 찍는다: 창을 여는 도구가 대부분이고, 문서를
+        # 고치는 도구(변환·기본 서식·사진)는 제 손으로 지점을 찍는다.
+        if _op_busy[0]:
+            return              # 진행 중 — 조용히 무시
+        _busy(name)
+        try:
+            _run_palette_block(block)
+        finally:
+            _unbusy()
+        return
+    if _op_busy[0]:
+        return                  # 진행 중 — 조용히 무시 (재진입 잠금)
+    _op_busy[0] = True
     _busy(name)
-    _mark_undo(name)
+    # 되돌리기 지점은 여기서 찍지 않는다 (2026-07-31) — 갈래마다 다르다.
+    # '채우기 표' 창만 여는 블럭(자리 있는 양식·이름 붙은 템플릿)은 문서를
+    # 아직 안 고치므로, 여기서 찍고 봉인하면 '작업 전=작업 후' 지문이 박혀
+    # 표가 나중에 넣은 순간 ↺ 가 "직접 고친 내용이 있다"는 엉뚱한 거절만
+    # 되풀이한다. 문서를 실제로 고치는 갈래가 _run_palette_block 안에서 찍는다.
     try:
         _run_palette_block(block)
     finally:
+        _op_busy[0] = False
         _unbusy()
 
 
@@ -687,6 +868,10 @@ def _run_palette_block(block):
         return
     # 채울 자리가 있는 양식은 그냥 열지 않고 '채우기 표'를 먼저 띄운다
     # (2026-07-27). 자리가 없는 양식은 지금까지처럼 바로 열린다.
+    # 표 창을 여는 두 갈래는 되돌리기 지점을 찍지 않는다 (2026-07-31):
+    # 창은 비모달이라 여는 즉시 돌아오고, 문서는 사용자가 표에서 '넣기'를
+    # 누른 뒤에야 바뀐다. 이전 작업의 지점도 건드리지 않는다 (도구 블럭과
+    # 같은 취급).
     if block.get("type") == "form" and _form_has_slots(block):
         if not ensure_hwp(): return
         path = _form_path_by_ref(block)
@@ -704,6 +889,8 @@ def _run_palette_block(block):
             form_table_ui.open_template_table(root, it)
             return
     if not ensure_hwp(): return
+    # 여기부터가 문서를 실제로 고치는 갈래 — 지점은 이 갈래에서만 찍는다.
+    _mark_undo(_block_label(block).replace("\n", " "))
     try:
         ok, msg = engine_library.run_block(
             block, template_path_fn=_template_path_by_ref,
@@ -714,6 +901,7 @@ def _run_palette_block(block):
         notify("ok" if ok else "warn", msg)
     except Exception as e:
         report_error("팔레트 블럭 실행 실패", e, detail=True)
+    _seal_undo()    # 예외가 났어도 봉인 — 일부만 들어갔어도 통째로 물릴 수 있게
 
 
 # ── UI 색 ─────────────────────────────────────
@@ -749,6 +937,33 @@ root = tk.Tk()
 root.title(appinfo.WINDOW_TITLE)
 root.configure(bg=BG)
 root.resizable(False, False)
+
+# ── Tk 콜백 안에서 터진 예외 (2026-07-31 안전 점검) ─────
+# 버튼·타이머 콜백에서 예외가 나면 Tk 는 stderr 에만 찍고 넘어간다 — 창 없는
+# exe 에서는 그 stderr 가 버려져 "눌렀는데 아무 일도 없다"가 된다.
+# 기록하고, 같은 예외가 반복돼 창이 쏟아지지 않게 10초에 한 번만 알린다.
+_cb_error_last = [0.0]
+
+
+def _report_callback_exception(etype, value, tb):
+    _log_uncaught("Tk 콜백에서 잡히지 않은 예외", etype, value, tb)
+    now = time.monotonic()
+    if now - _cb_error_last[0] < 10.0:
+        return
+    _cb_error_last[0] = now
+    text = (f"작업이 중간에 멈췄습니다 — {getattr(etype, '__name__', etype)}: {value}\n\n"
+            "자세한 내용은 '내 물감' 폴더의 app.log 에 있습니다.")
+    try:
+        messagebox.showerror("문제가 생겼습니다", text)
+    except Exception:
+        try:                            # 자체 대화상자마저 못 뜨면 기본 것으로라도
+            import tkinter.messagebox as _tk_mb
+            _tk_mb.showerror("문제가 생겼습니다", text)
+        except Exception:
+            pass
+
+
+root.report_callback_exception = _report_callback_exception
 # '항상 위'는 이제 사용자가 끌 수 있다 (상단 ⇧ — _toggle_top). 기본은 켬.
 root.attributes("-topmost",
                 bool(settings.get_config_value("always_on_top", True)))
@@ -1288,12 +1503,26 @@ GUIDE_TEXT = (
 tk.Label(guide_body, text=GUIDE_TEXT, font=("Consolas", theme.fs(9)),
          fg=TEXT, bg=SUBBG, justify="left").pack(anchor="w", padx=14, pady=12)
 
+# 도킹 상태 그릇 — 본체(감싸기·떼기)는 아래 '한글과 도킹' 절에 있다.
+# 여기서 미리 만드는 이유 (2026-07-31 안전 점검): _toggle_guide·_glide_to_height·
+# _fit_window 가 "지금 도킹 중인가"를 봐야 한다 — 도킹 중에 창 크기를 만지면
+# 감싸인 한글 창까지 따라 쪼그라든다(추적 스레드가 우리 창 크기를 그대로 옮긴다).
+_dock = {"dock": None, "bar": None, "host": None, "job": None,
+         "packs": None, "geo": None, "hwnd": None, "recheck": 0.0}
+
+
 def _toggle_guide():
     """사용법 펼치기/접기 — 구역3의 '사용법' 버튼이 부른다.
 
     예전에는 본문 위에 '마크다운 입력 형식 보기' 링크가 늘 한 줄을 차지했다.
     가끔 보는 것이라 구역3(설정·기타)으로 옮겼다.
     """
+    # 도킹 중에는 기준 위젯(common_zone)이 접혀 있어 before= 가 TclError 를
+    # 던진다 (2026-07-31 안전 점검). 상태를 안 바꾸고 이유만 말한다.
+    if not common_zone.winfo_manager():
+        notify("info", "도킹 중에는 문법 요약을 펼 수 없습니다 — 도킹을 뗀 뒤 이용해 주세요")
+        _bar_active(_help_btn, _guide_open[0])      # 버튼 켜짐 상태를 실제와 맞춘다
+        return
     if _guide_open[0]:
         guide_body.pack_forget()
         _guide_open[0] = False
@@ -1315,6 +1544,8 @@ _glide_job = [None]
 
 def _glide_to_height(target):
     """창 높이를 ease-out 으로 target 까지. 끝나면 자연 크기로 복귀."""
+    if _dock["dock"] is not None:
+        return              # 도킹 중 — 창 크기는 감싸기 배치가 갖는다 (2026-07-31)
     if _glide_job[0] is not None:
         try:
             root.after_cancel(_glide_job[0])
@@ -1497,6 +1728,8 @@ def _fit_window():
     geometry("") 는 매번 창을 다시 배치해, 탭만 바꿔도 창 전체가 한 번
     번쩍였다 (2026-07-25). 크기가 실제로 달라질 때만 부른다.
     """
+    if _dock["dock"] is not None:
+        return              # 도킹 중 — 창 크기는 감싸기 배치가 갖는다 (2026-07-31)
     try:
         need = (root.winfo_reqwidth(), root.winfo_reqheight())
         if need != (root.winfo_width(), root.winfo_height()):
@@ -2103,7 +2336,16 @@ def _insert_text(text):
 
 
 def _open_search():
-    """Ctrl+K — 블럭·라이브러리를 한 창에서 찾아 Enter 로 실행."""
+    """Ctrl+K — 찾기 창. 이미 떠 있으면 그 창을 앞으로 (2026-07-31 안전 점검).
+
+    예전에는 누를 때마다 '항상 위' 창이 한 장씩 더 쌓였다 — 다른 홑창들과
+    같은 _single 로 통일한다.
+    """
+    return _single("search", _build_search)
+
+
+def _build_search():
+    """찾기 창을 실제로 만든다 — _open_search(_single)가 부른다."""
     win = tk.Toplevel(root)
     win.title("찾기")
     win.configure(bg=BG)
@@ -2257,8 +2499,8 @@ for _i in range(1, 10):
 # 한글을 우리 판 자리로 데려오는 일은 hwp_dock 이, 위쪽 물감 도구줄은
 # dock_bar 가 하고, 여기서는 **모드 전환**만 맡는다 — 평소 화면을 접었다 펴는 일.
 # ══════════════════════════════════════════════════════
-_dock = {"dock": None, "bar": None, "host": None, "job": None,
-         "packs": None, "geo": None}
+# 도킹 상태 그릇(_dock)은 위쪽(_toggle_guide 앞)에서 만든다 — _fit_window·
+# _glide_to_height 가 도킹 중 no-op 판정에 먼저 쓰기 때문 (2026-07-31).
 _WRAP_PAD = 12             # 감싼 띠의 두께 — 이 여백이 곧 '감싸고 있다'는 표시
 _DOCK_ALIVE_MS = 500       # 한글이 살아 있는지만 보는 느린 확인 (자리 추적은 스레드가)
 # 감쌌을 때의 창 크기 — 화면을 다 먹지 않으면서 한글 한 쪽이 통째로 보이는 선.
@@ -2307,14 +2549,38 @@ def _enter_dock(hwnd):
     미끄러지듯 따라온다 — 사용자 결정: "버벅거리더라도 따라오는 느낌이 낫다".
     최대화·최소화는 우리 창의 제목줄이 그대로 하고 한글이 뒤따른다.
     """
-    _dock["packs"] = [(w, w.pack_info()) for w in root.pack_slaves()]
+    packs = [(w, w.pack_info()) for w in root.pack_slaves()]
+    # 비어 있지 않은 저장본을 빈 목록으로 덮지 않는다 (2026-07-31 안전 점검) —
+    # 앞선 시도가 실패해 화면이 접힌 채라면, 지금 캡처는 거의 빈 목록이라
+    # 그걸로 덮으면 평소 화면을 되살릴 방법이 영영 없어진다.
+    if packs or not _dock["packs"]:
+        _dock["packs"] = packs
     _dock["geo"] = root.geometry()
     # 위 도구줄(⚙ ? ↺ ⌕ ⇧ · 도킹)은 **남긴다** — 사용자 결정 2026-07-29:
     # "버튼은 싹 다 위쪽으로". 물감판·창고·푸터만 접고 그 자리에 한글이 든다.
-    for w, _info in _dock["packs"]:
+    for w, _info in packs:
         if w is not misc_row:
             w.pack_forget()
 
+    # 여기부터는 실패할 수 있는 일(도구줄 생성·좌표 계산·창 끌어오기)이다.
+    # 화면을 이미 접어 둔 뒤라, 예외가 새어 나가면 **빈 창만 남는다** —
+    # 반드시 받아서 평소 화면으로 되돌린다 (2026-07-31 안전 점검).
+    try:
+        _enter_dock_risky(hwnd)
+    except Exception as e:
+        applog.exc("도킹 준비 실패 — 평소 화면으로 되돌린다", e, detail=True)
+        try:
+            _restore_normal_layout()
+        except Exception as e2:
+            applog.exc("도킹 실패 후 화면 복구 실패", e2, detail=True)
+        messagebox.showerror("도킹 실패",
+            "한글 창을 감싸지 못해 평소 화면으로 되돌렸습니다.\n"
+            "자세한 내용은 '내 물감' 폴더의 app.log 에 있습니다.")
+        notify("error", "한글 창을 감싸지 못했습니다 — 도킹을 취소합니다")
+
+
+def _enter_dock_risky(hwnd):
+    """_enter_dock 의 실패할 수 있는 몸통 — 예외는 _enter_dock 이 받는다."""
     _dock["bar"] = dock_bar.DockBar(
         root, scale=SCALE, font_fn=_font, run_block=run_palette_block,
         label_fn=_block_label, block_color_fn=theme.block_color,
@@ -2364,6 +2630,8 @@ def _enter_dock(hwnd):
         notify("error", "한글 창을 감싸지 못했습니다 — 도킹을 취소합니다")
         return
     _dock["dock"] = dock
+    _dock["hwnd"] = hwnd            # _dock_watch 가 COM 없이 살아 있는지 본다
+    _dock["recheck"] = 0.0
     _show_dock_buttons(True)
     _dock["job"] = root.after(_DOCK_ALIVE_MS, _dock_watch)
     notify("ok", "한글과 도킹했습니다")
@@ -2405,13 +2673,31 @@ def _dock_watch():
 
     자리 추적은 hwp_dock 의 스레드가 한다 — 여기서 좌표를 만지면 두 곳이
     같은 창을 밀어 첫 판 같은 버벅임이 돌아온다.
+
+    매 틱 COM 을 부르지 않는다 (2026-07-31 안전 점검): connected_hwnd 는
+    COM 왕복 두 번이라, 한글이 제 모달을 띄우거나 바쁠 때 그 왕복이 멈춰
+    **우리 화면까지 같이 얼었다.** 평소에는 캐시한 hwnd 를 IsWindow(순수
+    Win32, 즉시 반환)로만 보고, 캐시가 죽었을 때만 — 그것도 2초에 한 번만 —
+    COM 으로 다시 찾는다.
     """
     if _dock["dock"] is None:
         return
-    if not hwp_engine.connected_hwnd():
-        notify("warn", "한글 창이 닫혀 도킹을 풉니다")
-        _exit_dock()
-        return
+    hwnd = _dock["hwnd"]
+    if not (hwnd and ctypes.windll.user32.IsWindow(hwnd)):
+        now = time.monotonic()
+        if now - _dock["recheck"] >= 2.0:
+            _dock["recheck"] = now
+            try:
+                hwnd = hwp_engine.connected_hwnd()
+            except Exception as e:
+                applog.exc("도킹 감시: 한글 창 재탐색 실패", e)
+                hwnd = None
+            _dock["hwnd"] = hwnd
+            if not hwnd:
+                notify("warn", "한글 창이 닫혀 도킹을 풉니다")
+                _exit_dock()
+                return
+        # 재탐색 시점이 아직이면 다음 틱까지 그냥 기다린다 (0.5초 뒤 재확인)
     _dock["job"] = root.after(_DOCK_ALIVE_MS, _dock_watch)
 
 
@@ -2491,15 +2777,35 @@ def _remember_pos(quit_after=True):
 
     도킹 중이면 **먼저 뗀다** (2026-07-29): 띠일 때의 좌표를 저장하면 다음
     실행에서 창이 한글 옆구리 자리에 뜨고, 한글도 밀린 채로 남는다.
+
+    무슨 일이 있어도 root.destroy() 까지는 간다 (2026-07-31 안전 점검) —
+    이 함수가 X 버튼의 **유일한** 닫기 경로라, 도킹 해제나 위치 저장이
+    터지면 창이 영영 안 닫히는 프로그램이 됐다.
     """
-    if _dock["dock"] is not None:
-        _exit_dock()
     try:
-        settings.set_window_pos(root.winfo_x(), root.winfo_y())
-    except Exception as e:
-        applog.exc("창 위치 저장 실패", e)
-    if quit_after:
-        root.destroy()
+        if _dock["dock"] is not None:
+            try:
+                _exit_dock()
+            except Exception as e:
+                applog.exc("종료 중 도킹 해제 실패 — 창은 그대로 닫는다", e)
+                dock, _dock["dock"] = _dock["dock"], None
+                if dock is not None:
+                    try:
+                        dock.stop()             # 추적 스레드만이라도 세운다
+                    except Exception as e2:
+                        applog.exc("종료 중 도킹 추적 중지 실패", e2)
+        try:
+            settings.set_window_pos(root.winfo_x(), root.winfo_y())
+        except Exception as e:
+            applog.exc("창 위치 저장 실패", e)
+        if quit_after:
+            try:
+                _convert_hotkey.stop()          # 전역 단축키 등록을 걷는다
+            except Exception as e:
+                applog.exc("전역 단축키 중지 실패 (무해)", e)
+    finally:
+        if quit_after:
+            root.destroy()
 
 
 root.protocol("WM_DELETE_WINDOW", _remember_pos)
@@ -2510,5 +2816,36 @@ root.after_idle(lambda: onboarding.maybe_show(root, _font))
 # 3초마다 돌던 상태 표시줄 갱신(_status_tick)은 없앴다 (2026-07-28) —
 # 푸터가 저작권 한 줄로 돌아가 **보여줄 자리가 없어졌다.** 아무도 안 보는
 # 값을 3초마다 계산하는 것은 그 자체가 낭비다.
+
+
+# ── 설정 저장 실패 알림 (2026-07-31 안전 점검) ──────────
+# save_config 가 조용히 실패하면(디스크 가득·권한) 사용자는 다 저장된 줄
+# 알고 일하다가 다음 실행에서 몽땅 잃는다. settings 가 실패를 알려 오면
+# 한 세션에 한 번만 창으로 말한다. settings 는 다른 스레드에서 부를 수도
+# 있으므로 root.after 로 Tk 스레드에 넘겨서 띄운다.
+_save_error_shown = [False]
+
+
+def _on_save_config_error(msg):
+    def show():
+        if _save_error_shown[0]:
+            return
+        _save_error_shown[0] = True
+        try:
+            messagebox.showwarning("설정 저장 실패",
+                "설정을 저장하지 못했습니다 — 디스크 공간이나 권한을 확인해 주세요. "
+                "자세한 내용은 '내 물감' 폴더의 app.log 에 있습니다.")
+        except Exception as e:
+            applog.exc("설정 저장 실패 알림 표시 실패", e)
+    try:
+        root.after(0, show)
+    except Exception as e:
+        applog.exc("설정 저장 실패 알림 예약 실패", e)
+
+
+try:
+    settings.set_save_error_notifier(_on_save_config_error)
+except Exception as e:
+    applog.exc("설정 저장 실패 알림 연결 실패", e)
 
 root.mainloop()
