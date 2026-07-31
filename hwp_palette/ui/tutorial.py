@@ -339,12 +339,15 @@ class Tutorial:
                 x, y, w, h = self._dim_geo[i]
                 self._dim_geo[i] = (x + dx, y + dy, w, h)
                 d.geometry(f"{w}x{h}+{x + dx}+{y + dy}")
-                d.update_idletasks()        # 위와 같은 이유 (위치 즉시 반영)
             if self._coach is not None and self._coach_geo is not None:
                 x, y = self._coach_geo
                 self._coach_geo = (x + dx, y + dy)
                 self._coach.geometry(f"+{x + dx}+{y + dy}")
-                self._coach.update_idletasks()
+            # update_idletasks 는 창 하나가 아니라 **앱 전체**의 밀린 일을
+            # 비운다 — 예전처럼 판마다 부르면 끌기 이벤트 한 번에 강제
+            # 리페인트가 다섯 번이었다 (실측 2026-07-31). 자리를 다 잡은 뒤
+            # 한 번만 밀어내면 네 판과 안내창이 같은 프레임에 함께 움직인다.
+            self.root.update_idletasks()
         except Exception:
             pass            # 창이 사라지는 중 — 다음 갱신에서 정리된다
         finally:

@@ -56,6 +56,9 @@ ROW_H = 30
 class FormTableWindow(tk.Toplevel):
     def __init__(self, master, src_path, title=None):
         super().__init__(master)
+        # 다 만들 때까지 숨긴다 (2026-07-31, SettingsWindow 와 같은 이유) —
+        # 기본 자리에 깜빡 그려졌다가 place_beside 로 건너오는 것이 보였다.
+        self.withdraw()
         self.title(appinfo.WINDOW_TITLE)
         self.configure(bg=BG)
         self.attributes("-topmost", True)
@@ -128,12 +131,17 @@ class FormTableWindow(tk.Toplevel):
         tk.Label(self, textvariable=self.status, font=(FONT, theme.fs(FS["sub"])),
                  bg=BG, fg=MUTED, anchor="w").pack(fill="x", padx=SP["l"], pady=(0, SP["s"]))
 
-        screens.place_beside(self, master)
         ui_fx.attach_all(self)
+        ui_fx.reveal(self, place=lambda: screens.place_beside(self, master))
         self.after(60, self._load)      # 창을 먼저 띄우고 읽는다 (한글 변환은 느리다)
 
     # ── 준비 ──────────────────────────────────────
     def _load(self):
+        # 한글 COM 연결·HWPX 변환은 몇 초씩 걸린다 — 시작 전에 '변환 중'을
+        # 먼저 그려 둔다 (2026-07-31). 안 그리면 그 몇 초 동안 창이 멈춘
+        # 것처럼 보인다 — 같은 기다림도 글 한 줄이 있으면 '일하는 중'으로 읽힌다.
+        self.status.set("한글에서 변환 중입니다…")
+        self.update_idletasks()
         self._show_preview()
         if not self._ensure_hwpx():
             self.destroy()
@@ -176,6 +184,7 @@ class FormTableWindow(tk.Toplevel):
         self.sub.config(text=(f"채울 자리 {len(self.slots)}개"
                               + (f" (이름표 {named}개)" if named else
                                  " — 이름표가 없어 순서대로 나열했습니다")))
+        self.status.set("")             # '변환 중' 안내를 거둔다 — 이제 채울 차례
 
     def _show_preview(self):
         try:
@@ -345,6 +354,8 @@ class TemplateTableWindow(tk.Toplevel):
 
     def __init__(self, master, item, src_path):
         super().__init__(master)
+        # 다 만들 때까지 숨긴다 (2026-07-31) — 양식 표 창과 같은 이유.
+        self.withdraw()
         self.title(appinfo.WINDOW_TITLE)
         self.configure(bg=BG)
         self.attributes("-topmost", True)
@@ -424,8 +435,8 @@ class TemplateTableWindow(tk.Toplevel):
         tk.Label(self, textvariable=self.status, font=(FONT, theme.fs(FS["sub"])),
                  bg=BG, fg=MUTED, anchor="w").pack(fill="x", padx=16,
                                                    pady=(0, 10))
-        screens.place_beside(self, master)
         ui_fx.attach_all(self)
+        ui_fx.reveal(self, place=lambda: screens.place_beside(self, master))
 
     def _apply(self):
         values = {k: v.get().strip() for k, v in self.vars.items()}

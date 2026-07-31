@@ -102,6 +102,11 @@ class ModeTest(unittest.TestCase):
 
     def setUp(self):
         self.store = {}
+        # settings 를 목으로 갈아끼우는 동안 theme 의 모드 캐시가 진짜
+        # config.json 의 세대 표식을 물고 있으면 목이 안 보인다 — 시작할 때
+        # 비우고, 끝날 때도 비워 목으로 캐시된 값이 뒤 테스트로 새지 않게 한다.
+        theme._drop_mode_cache()
+        self.addCleanup(theme._drop_mode_cache)
         for name, fn in (("get_config_value",
                           lambda k, d=None: self.store.get(k, d)),
                          ("set_config_value",

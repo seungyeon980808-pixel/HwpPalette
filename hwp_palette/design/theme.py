@@ -368,14 +368,39 @@ NOTICE_DARK = {
 
 
 # ── 지금 모드 ──────────────────────────────────────────
+# 모드 캐시 (2026-07-31, 성능): colors()·block_colors()·block_edge() 가 전부
+# 여기(get_mode)를 지나는데, settings.get_config_value 는 매번 설정 **전체를
+# 깊은 복사**한다 — 블럭 하나 그릴 때 이 길을 세 번쯤 지나 약 2ms 가 들었다
+# (실측). 모드는 config.json 이 안 바뀌면 안 바뀌므로, 파일의 세대 표식
+# (settings.config_token: mtime+크기)을 열쇠로 값을 들고 있는다. 다른
+# 프로세스가 파일을 고쳐도 표식이 달라져 다음 호출이 새로 읽는다.
+_mode_cache = {"tok": None, "mode": None}
+
+
+def _drop_mode_cache():
+    """모드 캐시 무효화 — set_mode 와 테스트(설정을 목으로 갈아끼움)가 부른다."""
+    _mode_cache["tok"] = None
+    _mode_cache["mode"] = None
+
+
 def get_mode():
     """"light" 또는 "dark". 저장된 값이 깨져 있으면 밝게."""
+    tok = settings.config_token()
+    if (tok is not None and _mode_cache["mode"] is not None
+            and _mode_cache["tok"] == tok):
+        return _mode_cache["mode"]
     v = settings.get_config_value(MODE_KEY, "light")
-    return "dark" if v == "dark" else "light"
+    mode = "dark" if v == "dark" else "light"
+    if tok is not None:     # 파일이 없으면(첫 실행) 읽기가 원래 싸다 — 캐시 안 함
+        _mode_cache["tok"] = tok
+        _mode_cache["mode"] = mode
+    return mode
 
 
 def set_mode(mode):
     settings.set_config_value(MODE_KEY, "dark" if mode == "dark" else "light")
+    # 저장이 실패했어도 무효화는 안전하다 — 다음 읽기가 파일을 다시 볼 뿐이다.
+    _drop_mode_cache()
 
 
 def is_dark():

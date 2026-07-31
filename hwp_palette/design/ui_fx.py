@@ -150,6 +150,45 @@ def fade_close(win, ms=120):
     fade(win, 0.0, ms=ms, on_done=done)
 
 
+def reveal(win, place=None, ms=120):
+    r"""숨긴 창을 애플식 '빠르게 떠서 부드럽게 정착'으로 보여준다.
+
+    창이 '탁' 나타나는 대신 0.12초 ease-out 페이드다. withdraw 된 Toplevel 을
+    (1) place() 로 먼저 자리 잡고 (2) 알파 0 으로 내린 채 deiconify + lift,
+    (3) fade 로 1.0 까지 올린다 — 자리 잡는 재배치 과정이 화면에 안 보인다.
+    -alpha 를 못 쓰는 환경이면 전환 없이 그냥 deiconify 한다 (전환은 장식이라
+    없다고 동작이 막히면 안 된다 — fade 와 같은 원칙).
+
+    이미 보이는 창에 불러도 안전하다: 알파를 0 으로 떨어뜨리지 않고 앞으로
+    올리기만 한다 — 멀쩡히 떠 있는 창이 깜빡이면 그게 또 '탁'이다.
+    """
+    try:
+        if place is not None:
+            place()                     # 알파를 내리기 전에 — 자리부터 잡는다
+    except Exception as e:
+        applog.exc("reveal: 자리 잡기 실패 — 지금 자리에서 띄운다", e)
+    try:
+        shown = win.state() == "normal"
+    except Exception:
+        shown = False
+    if not shown and not _set_alpha(win, 0.0):
+        # -alpha 미지원 (TclError) — 전환 없이 즉시 보여준다
+        try:
+            win.deiconify()
+            win.lift()
+        except Exception:
+            pass
+        return
+    try:
+        win.deiconify()
+        win.lift()
+    except Exception:
+        pass
+    # 이미 알파 1.0 이면 fade 는 곧바로 끝난다 (멱등) — 반투명으로 남아
+    # 있었다면 마저 올린다.
+    fade(win, 1.0, ms=ms)
+
+
 def veil(win, work, dim=0.0, out_ms=110, in_ms=160):
     r"""**옮기는 동안 가린다** — 흐려짐 → work() → 다시 진해짐.
 

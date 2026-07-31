@@ -39,6 +39,9 @@ MONO = "Consolas"
 class FormFillWindow(tk.Toplevel):
     def __init__(self, master):
         super().__init__(master)
+        # 다 만들 때까지 숨긴다 (2026-07-31, SettingsWindow 와 같은 이유) —
+        # 기본 자리에 깜빡 그려졌다가 geometry 로 건너오는 것이 보였다.
+        self.withdraw()
         self.title("양식 채우기")
         self.configure(bg=BG)
         self.attributes("-topmost", True)
@@ -98,9 +101,10 @@ class FormFillWindow(tk.Toplevel):
         tk.Label(self, textvariable=self.status, font=(FONT, theme.fs(8)),
                  bg=BG, fg=MUTED, anchor="w").pack(fill="x", padx=16, pady=(0, 10))
 
-        self.update_idletasks()
-        self.geometry(f"+{master.winfo_rootx() - 620}+{master.winfo_rooty() + 40}")
+        self.update_idletasks()          # 자리 계산 전에 요청 크기를 굳힌다
         ui_fx.attach_all(self)         # 창 안 모든 버튼에 호버 보간
+        ui_fx.reveal(self, place=lambda: self.geometry(
+            f"+{master.winfo_rootx() - 620}+{master.winfo_rooty() + 40}"))
 
     # ── 동작 ──
     def _pick(self):

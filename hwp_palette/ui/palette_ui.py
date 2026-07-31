@@ -359,6 +359,14 @@ TILE_TEXT_PAD = 8
 _TILE_ICON_SIZES = (16, 20, 24, 32, 48)
 _tile_icon_images = {}
 
+# 타일 이름 글자 크기 캐시 (2026-07-31) — 렌더마다 타일 수십 개가 각자
+# tkfont.Font 를 새로 만들고 한 단계씩 줄여 가며 폭을 재는 것이 격자 다시
+# 그리기의 큰 비용이었다. 같은 (글, 칸수, 칸px, 시작 크기)면 답도 같으므로
+# 한 번 잰 결과를 기억하고, 재는 글꼴도 하나를 만들어 크기만 바꿔 돌려쓴다.
+_label_fit_cache = {}
+_LABEL_FIT_CACHE_MAX = 512      # 무한히 안 크게 — 넘치면 통째로 비운다
+_measure_font = None            # 재는 데만 쓰는 공용 tkfont.Font (게으른 생성)
+
 
 def _tile_icon_image(asset, target_px):
     size = min(_TILE_ICON_SIZES, key=lambda s: abs(s - target_px))
@@ -405,6 +413,8 @@ class SettingsWindow(tk.Toplevel):
         self.sel_block = None
         self._drag_from = None
         self._drop_hint = None
+        self._drag_tile_hint = None   # 드래그 중 초록 테두리를 칠한 타일 index
+        self._drag_cell_hint = None   # 드래그 중 파랗게 칠한 빈칸 (row, col)
         self._tile_map = {}
         self._empty_map = {}
         self._used_cells = set()
@@ -688,7 +698,9 @@ class SettingsWindow(tk.Toplevel):
         except Exception:
             pass
         self.geometry(f"+{x}+{y}")
-        self.deiconify()                 # 제자리에서 한 번에 나타난다
+        # 제자리에서 한 번에, 살짝 번지며 나타난다 (2026-07-31) — 자리는 위에서
+        # 이미 잡았으므로 reveal 에 place 를 따로 주지 않는다.
+        ui_fx.reveal(self)
 
     # ── 물감 창고 ──
     def _cur_tab_name(self):
@@ -1485,6 +1497,9 @@ class SettingsWindow(tk.Toplevel):
 
         # ② 빈칸 — 여기를 끌면 가로·세로 크기를 함께 정할 수 있다
         self._empty_map = {}
+        # 위젯을 새로 만들었으니 드래그 강조 기억도 지운다 — 옛 위젯을 가리키면 안 된다
+        self._drag_tile_hint = None
+        self._drag_cell_hint = None
         total_rows = max(palette.grid_extent(blocks), 0) + self._extra_rows
         total_rows = max(total_rows, 1)     # 블럭이 없어도 놓을 자리는 있어야 한다
         for rr in range(total_rows):
@@ -1585,8 +1600,13 @@ class SettingsWindow(tk.Toplevel):
         geometry("") + update_idletasks 두 번은 강제 재배치라, 렌더마다
         무조건 돌면 편집할 때마다 창이 미세하게 들썩였다. 덤으로 사용자가
         창을 늘려 둔 것도 내용이 안 바뀌었으면 더는 되돌리지 않는다.
+
+        앞머리의 update_idletasks 는 뺐다 (2026-07-31, 버벅임 2단계) —
+        호출부가 전부 after_idle 로 미루므로 여기 올 때는 레이아웃이 이미
+        정리돼 있어, 렌더마다 강제 재배치 한 번을 공짜로 아낀다. geometry("")
+        뒤의 것만 남긴다 — 그게 없으면 새 크기 적용이 다음 idle 로 밀려
+        '줄 추가' 직후 창이 한 박자 늦게 커지던 옛 증상이 되살아난다.
         """
-        self.update_idletasks()
         req = (self.winfo_reqwidth(), self.winfo_reqheight())
         if req == self._last_req:
             return
@@ -1610,7 +1630,10 @@ class SettingsWindow(tk.Toplevel):
         f.pack_propagate(False)
         f.grid(row=r + HEADER_ROWS, column=c + HEADER_COLS,
                padx=CELL_GAP // 2, pady=CELL_GAP // 2)
-        self._empty_map[str(f)] = (r, c)
+        # (줄, 칸) → 위젯 (2026-07-31). 예전에는 위젯 이름(str) → (줄, 칸) 이라
+        # 특정 칸 하나를 칠하려 해도 전부 돌며 nametowidget 을 불러야 했다 —
+        # 드래그 중 칸을 넘을 때마다 빈칸 110여 개를 다 만지던 원인.
+        self._empty_map[(r, c)] = f
         f.bind("<ButtonPress-1>", lambda e, rc=(r, c): self._empty_press(rc))
         f.bind("<B1-Motion>", self._empty_motion)
         f.bind("<ButtonRelease-1>", self._empty_release)
@@ -1692,9 +1715,9 @@ class SettingsWindow(tk.Toplevel):
         self._pick_tool(row, col, span, rows)
 
     def _clear_range_paint(self):
-        for key in self._empty_map:
+        for w in self._empty_map.values():
             try:
-                self.nametowidget(key).config(bg=EMPTY_BG)
+                w.config(bg=EMPTY_BG)
             except Exception:
                 pass
 
@@ -1704,13 +1727,12 @@ class SettingsWindow(tk.Toplevel):
         # 지금 몇 칸을 잡았는지 **창 제목**으로 (UI 제안 12).
         # 화면에 고정 라벨을 두면 평소에도 자리를 먹는다 — 끄는 동안만 보인다.
         self._say(f"{span}×{rows}칸 · {r0 + 1}번째 줄, {c0 + 1}번째 칸부터")
-        for key, (rr, cc) in self._empty_map.items():
-            try:
-                w = self.nametowidget(key)
-            except Exception:
-                continue
+        for (rr, cc), w in self._empty_map.items():
             inside = (r0 <= rr < r0 + rows and c0 <= cc < c0 + span)
-            w.config(bg=RANGE_BG if inside else EMPTY_BG)
+            try:
+                w.config(bg=RANGE_BG if inside else EMPTY_BG)
+            except Exception:
+                pass
 
     def _pick_tool(self, row, col, span, rows):
         """자리와 크기를 정한 뒤 '무엇을 넣을지' 고른다.
@@ -1801,15 +1823,29 @@ class SettingsWindow(tk.Toplevel):
         # 무엇인지 알 수 없지만, 한 단계 작은 이름은 그대로 읽힌다.
         # _tile_text 는 최소 크기(6)로도 안 들어가는 아주 긴 이름만 자른다.
         try:
-            import tkinter.font as tkfont
             cell = self._cell_px(self._cur_cols())
-            avail = cell * span + CELL_GAP * (span - 1) - 8
-            lf = tkfont.Font(family=FONT, size=theme.fs(label_size),
-                             weight="bold")     # 이름은 굵게 그린다 — 같은 굵기로 재야 맞는다
-            while (label_size > 6
-                   and max(lf.measure(ln) for ln in text.split("\n")) > avail):
-                label_size -= 1
-                lf.configure(size=theme.fs(label_size))
+            key = (text, span, cell, label_size)
+            hit = _label_fit_cache.get(key)
+            if hit is not None:
+                label_size = hit        # 전에 잰 그대로 — 측정 생략 (2026-07-31)
+            else:
+                global _measure_font
+                import tkinter.font as tkfont
+                avail = cell * span + CELL_GAP * (span - 1) - 8
+                if _measure_font is None:
+                    _measure_font = tkfont.Font(
+                        family=FONT, size=theme.fs(label_size),
+                        weight="bold")  # 이름은 굵게 그린다 — 같은 굵기로 재야 맞는다
+                else:
+                    _measure_font.configure(size=theme.fs(label_size))
+                lf = _measure_font
+                while (label_size > 6
+                       and max(lf.measure(ln) for ln in text.split("\n")) > avail):
+                    label_size -= 1
+                    lf.configure(size=theme.fs(label_size))
+                if len(_label_fit_cache) > _LABEL_FIT_CACHE_MAX:
+                    _label_fit_cache.clear()
+                _label_fit_cache[key] = label_size
         except Exception:
             pass
         parts = []
@@ -1899,13 +1935,12 @@ class SettingsWindow(tk.Toplevel):
     def _grip_paint(self, g):
         """조절 중인 새 크기를 빈칸 위에 미리 칠한다 — 놓기 전에 결과가 보인다."""
         r0, c0 = g["row"], g["col"]
-        for key, (rr, cc) in self._empty_map.items():
-            try:
-                w = self.nametowidget(key)
-            except Exception:
-                continue
+        for (rr, cc), w in self._empty_map.items():
             inside = (r0 <= rr < r0 + g["rows"] and c0 <= cc < c0 + g["span"])
-            w.config(bg=RANGE_BG if inside else EMPTY_BG)
+            try:
+                w.config(bg=RANGE_BG if inside else EMPTY_BG)
+            except Exception:
+                pass
 
     def _show_size_tip(self, x_root, y_root, text):
         """커서 오른쪽 아래에 붙어 다니는 크기 안내 (툴팁과 같은 기법)."""
@@ -2273,30 +2308,55 @@ class SettingsWindow(tk.Toplevel):
         if hint == self._drop_hint:
             return                       # 같은 칸이면 다시 그리지 않는다 (버벅임 방지)
         self._drop_hint = hint
-        # 타일 강조
-        for i, tile in getattr(self, "_tiles", {}).items():
-            try:
-                if i == target and i != self._drag_from:
-                    tile.config(highlightbackground="#34c759", highlightthickness=3)
-                elif i == self.sel_block:
-                    tile.config(highlightbackground=ACCENT, highlightthickness=2)
-                else:
-                    tile.config(highlightbackground=BORDER, highlightthickness=1)
-            except Exception:
-                pass
-        # 빈칸 강조 — 놓일 자리를 칠해 보여준다
-        for key, cell_rc in self._empty_map.items():
-            try:
-                w = self.nametowidget(key)
-                w.config(bg=RANGE_BG if (target is None and cell_rc == rc)
-                         else EMPTY_BG)
-            except Exception:
-                pass
+        # **바뀐 것만** 다시 칠한다 (2026-07-31). 예전에는 칸을 넘을 때마다
+        # 타일 전부(RoundTile.configure 는 폴리곤을 통째로 다시 그림)와 빈칸
+        # 110여 개를 매번 만졌다 — 드래그가 무거웠던 원인. 강조는 어차피
+        # 한 번에 한 곳뿐이니, 직전 것을 되돌리고 새 것 하나만 칠하면 끝이다.
+        # 타일 강조 — 놓으면 자리를 맞바꿀 상대만 초록 테두리
+        new_tile = (target if (target is not None and target != self._drag_from)
+                    else None)
+        if new_tile != self._drag_tile_hint:
+            if self._drag_tile_hint is not None:
+                self._tile_border_normal(self._drag_tile_hint)
+            if new_tile is not None:
+                try:
+                    self._tiles[new_tile].config(
+                        highlightbackground="#34c759", highlightthickness=3)
+                except Exception:
+                    pass
+            self._drag_tile_hint = new_tile
+        # 빈칸 강조 — 놓일 자리 하나만 칠하고, 직전 자리 하나만 되돌린다
+        new_cell = rc if target is None else None
+        if new_cell != self._drag_cell_hint:
+            for cell, bg in ((self._drag_cell_hint, EMPTY_BG),
+                             (new_cell, RANGE_BG)):
+                w = self._empty_map.get(cell) if cell is not None else None
+                if w is not None:
+                    try:
+                        w.config(bg=bg)
+                    except Exception:
+                        pass
+            self._drag_cell_hint = new_cell
+
+    def _tile_border_normal(self, i):
+        """타일 테두리를 평상시 모습(선택이면 파랑, 아니면 회색)으로 되돌린다."""
+        tile = getattr(self, "_tiles", {}).get(i)
+        if tile is None:
+            return
+        try:
+            if i == self.sel_block:
+                tile.config(highlightbackground=ACCENT, highlightthickness=2)
+            else:
+                tile.config(highlightbackground=BORDER, highlightthickness=1)
+        except Exception:
+            pass
 
     def _on_release(self, e):
         src = self._drag_from
         self._drag_from = None
         self._drop_hint = None
+        self._drag_tile_hint = None     # 강조 자국은 아래 경로들이 지운다
+        self._drag_cell_hint = None
         self._grab_xy = None
         self._drop_tile()               # 들어 올렸던 타일을 제자리로
         if src is None:
@@ -2336,9 +2396,9 @@ class SettingsWindow(tk.Toplevel):
         """
         for i, tile in getattr(self, "_tiles", {}).items():
             self._paint_sel_tile(tile, i == self.sel_block)
-        for key in getattr(self, "_empty_map", {}):
+        for w in getattr(self, "_empty_map", {}).values():
             try:
-                self.nametowidget(key).config(bg=EMPTY_BG)
+                w.config(bg=EMPTY_BG)
             except Exception:
                 pass
 

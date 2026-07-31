@@ -39,6 +39,9 @@ class ExcelWindow(tk.Toplevel):
 
     def __init__(self, master):
         super().__init__(master)
+        # 다 만들 때까지 숨긴다 (2026-07-31, SettingsWindow 와 같은 이유) —
+        # 기본 자리에 깜빡 그려졌다가 place_beside 로 건너오는 것이 보였다.
+        self.withdraw()
         self.title("문항 엑셀")
         self.configure(bg=BG)
         self.attributes("-topmost", True)
@@ -74,9 +77,9 @@ class ExcelWindow(tk.Toplevel):
         tk.Label(self, textvariable=self.status, font=(FONT, theme.fs(8)),
                  bg=BG, fg=MUTED, anchor="w").pack(fill="x", padx=16, pady=(0, 10))
 
-        self.update_idletasks()
-        screens.place_beside(self, master)
+        self.update_idletasks()          # 자리 계산 전에 요청 크기를 굳힌다
         ui_fx.attach_all(self)
+        ui_fx.reveal(self, place=lambda: screens.place_beside(self, master))
 
     # ── ① 양식 만들기 ────────────────────────────────────
     def _build_make(self):

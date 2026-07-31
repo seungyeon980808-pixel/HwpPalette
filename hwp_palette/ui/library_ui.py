@@ -359,7 +359,14 @@ class MetaForm(tk.Frame):
         """
         lab = library.normalize_label(
             self._live_value(self.name_var, getattr(self, "name_entry", None)))
-        self._preview.config(text=f"문서에 이렇게 쓰세요:  \\{lab}\\" if lab else "")
+        text = f"문서에 이렇게 쓰세요:  \\{lab}\\" if lab else ""
+        # 같은 글이면 다시 안 그린다 (2026-07-31) — _poll_preview 가 초당
+        # 예닐곱 번 부르는데, 안 바뀐 라벨을 매번 .config 하는 것 자체가
+        # 배경 소음이었다.
+        if text == getattr(self, "_preview_last", None):
+            return
+        self._preview_last = text
+        self._preview.config(text=text)
 
     def _poll_preview(self):
         """조합 상태는 이벤트만으로 다 못 잡아서(마우스로 후보 선택 등) 주기적으로도 그린다.
@@ -608,6 +615,11 @@ class TextInputDialog(tk.Toplevel):
 class LibraryManager(tk.Toplevel):
     def __init__(self, master, on_saved=None, cat=None):
         super().__init__(master)
+        # 다 만들 때까지 숨긴다 (2026-07-31, SettingsWindow 와 같은 이유) —
+        # Tk 는 창을 기본 자리에 먼저 그린 뒤 place_beside 가 옮겨서,
+        # 화면 어딘가에서 깜빡 나타났다 건너오는 것처럼 보였다.
+        # 제자리에서 ui_fx.reveal 로 한 번에, 살짝 번지며 나타난다.
+        self.withdraw()
         self.on_saved = on_saved
         self.title(appinfo.WINDOW_TITLE)
         self.configure(bg=BG)
@@ -743,8 +755,8 @@ class LibraryManager(tk.Toplevel):
         self.bind("<Return>", lambda e: self._act_selected())
 
         self._switch_tab(self.current_cat)
-        self.update_idletasks()
-        screens.place_beside(self, master)
+        self.update_idletasks()          # 자리 계산 전에 요청 크기를 굳힌다
+        ui_fx.reveal(self, place=lambda: screens.place_beside(self, master))
 
     # ── 키보드로 목록 이동 ───────────────────────────
     def _move_sel(self, delta, horizontal=False):
@@ -931,8 +943,26 @@ class LibraryManager(tk.Toplevel):
         if not items:
             self._empty_note("해당하는 항목이 없습니다.")
             return
-        for item in items:
-            self._render_row(cat, item)
+        # 행도 나눠 그린다 (2026-07-31) — 특수기호 격자(_render_char_grid)와
+        # 같은 방식. 서식·템플릿·양식이 수백 개면 한 번에 다 그리는 동안
+        # 창이 몇 초씩 얼었다. 눈에 보일 만큼(열댓 줄)만 즉시 그리고,
+        # 나머지는 after(1) 로 스무 줄씩 이어 그린다. 진행 중 취소는
+        # 위의 _grid_job 정리(탭·검색 전환)가 똑같이 맡는다.
+        def _build(start):
+            self._grid_job = None
+            if not self.list_area.winfo_exists():
+                return              # 그 사이 창이 닫혔다
+            end = min(len(items), start + 20)
+            for i in range(start, end):
+                self._render_row(cat, items[i])
+            if end < len(items):
+                self._grid_job = self.after(1, lambda: _build(end))
+
+        first = min(len(items), 15)     # 눈에 보일 줄은 바로
+        for i in range(first):
+            self._render_row(cat, items[i])
+        if first < len(items):
+            self._grid_job = self.after(1, lambda: _build(first))
 
     def _empty_note(self, text):
         tk.Label(self.list_area, text=text, font=(FONT, theme.fs(FS["body"])),

@@ -105,6 +105,8 @@ class StorePanel(tk.Frame):
         self._free_hint = ""                # 담은 게 없을 때 머리말에 쓸 말
         self._tiles = {}
         self._photo = None                  # ⚠ 참조를 붙들어야 그림이 안 사라진다
+        self._name_font = None              # 카드 이름 재기용 Font — 만들기가 비싸 재사용
+        self._states_job = None             # refresh_states 모아치기 예약 (after id)
 
         head = tk.Frame(self, bg=CARD)
         head.pack(fill="x", padx=8, pady=(6, 2))
@@ -188,13 +190,20 @@ class StorePanel(tk.Frame):
             pass
 
     # ── 데이터 ────────────────────────────────────
-    def _items(self):
-        """[(분류, 항목)] — 지금 고른 칩에 맞는 것만, 분류 순서대로."""
+    def _items(self, lib=None):
+        """[(분류, 항목)] — 지금 고른 칩에 맞는 것만, 분류 순서대로.
+
+        lib 는 refresh 가 한 번 읽어 건네주는 library.load() 결과다 —
+        분류마다 list_items 를 부르면 그때마다 창고 전체를 다시 읽는다(깊은
+        복사 포함). 안 주면 여기서 읽는다 (단독 호출 대비).
+        """
+        if lib is None:
+            lib = library.load()
         out = []
         for _label, key in CATS[1:]:
             if self.filter and key != self.filter:
                 continue
-            for it in library.list_items(key):
+            for it in lib.get(key, []):
                 out.append((key, it))
         return out
 
@@ -232,13 +241,17 @@ class StorePanel(tk.Frame):
         "누를 때마다 깜빡거리면서 위치가 이동한다"). 고르기는 _select 가
         타일 색만 바꾸므로 화면이 흔들리지 않는다.
         """
-        self._draw_chips()
+        # 창고 데이터는 **한 번만** 읽는다 (2026-07-31, 성능): 칩 개수와
+        # 목록이 제각기 list_items 를 부르면(내부는 매번 전체 깊은 복사)
+        # 한 번 그리는 데 여덟아홉 번을 읽었다. 여기서 읽어 둘이 나눠 쓴다.
+        lib = library.load()
+        self._draw_chips(lib)
         for w in self.body.winfo_children():
             w.destroy()
         self._tiles = {}
         where = self._placement()
         here = self.tab_name_fn()
-        items = self._items()
+        items = self._items(lib)
         # 안 쓰는 물감이 늘 위에 온다 (사용자 결정) — 정렬은 여기서만 한다.
         # 고를 때마다 다시 정렬하면 눌렀던 것이 눈앞에서 도망간다.
         rank = {"free": 0, "here": 1, "away": 2, "plain": 3}
@@ -257,13 +270,21 @@ class StorePanel(tk.Frame):
         # 잘렸다. 가장 긴 이름(잘림 처리 후)을 실측해 두 열이 온전히 들어갈
         # 폭으로 판을 늘린다 — 창은 _fit_window 가 따라 커진다.
         try:
-            import tkinter.font as tkfont
-            f = tkfont.Font(family=FONT, size=theme.fs(FS["sub"]),
-                            weight="bold")
+            # Font 는 한 번만 만들어 재사용한다 (2026-07-31, 성능) — 생성이
+            # Tcl 폰트 등록이라 비싸다. 판이 사는 동안 스펙(글꼴·크기)이 안
+            # 바뀌므로 값이 어긋날 일이 없다.
+            f = self._name_font
+            if f is None:
+                import tkinter.font as tkfont
+                f = self._name_font = tkfont.Font(
+                    family=FONT, size=theme.fs(FS["sub"]), weight="bold")
             def shown(name):
                 return name if len(name) <= 12 else name[:12] + "…"
-            widest = max((f.measure(shown(it.get("name", "")))
-                          for _c, it in items), default=120)
+            # 같은 이름은 한 번만 잰다 — 잘림 처리 후 이름은 13자 이하라
+            # 겹치는 것이 많다.
+            widest = max((f.measure(n)
+                          for n in {shown(it.get("name", ""))
+                                    for _c, it in items}), default=120)
             # 카드 안쪽 여백(6*2) + 카드 사이(3*2*2) + 스크롤바(≈16) + 판 여백
             need = 2 * (widest + 12 + 6) + 16 + 12
             self.config(width=max(326, min(560, need)))
@@ -286,10 +307,12 @@ class StorePanel(tk.Frame):
                      font=(FONT, theme.fs(FS["sub"])), bg=CARD, fg=MUTED).pack(pady=SP["xl"])
         self._paint_selection()
 
-    def _draw_chips(self):
+    def _draw_chips(self, lib=None):
         for w in self.chip_box.winfo_children():
             w.destroy()
-        counts = {key: len(library.list_items(key))
+        if lib is None:                     # refresh 가 읽어 둔 것을 나눠 쓴다
+            lib = library.load()
+        counts = {key: len(lib.get(key, []))
                   for _l, key in CATS[1:]}
         counts[None] = sum(counts.values())
         # 칩은 세 개씩 줄바꿈한다 — 한 줄로 늘어놓으면 창고 폭을 넘어
@@ -496,6 +519,25 @@ class StorePanel(tk.Frame):
         pop.show()
 
     def refresh_states(self):
+        r"""배치 색 다시 칠하기 — **잦은 호출을 모아친다** (2026-07-31, 성능).
+
+        설정을 편집할 때마다 이게 동기로 불리는데, 스핀·드래그처럼 값이
+        연달아 바뀌는 동안 매번 타일 전부를 다시 칠하면 끌기가 버벅인다.
+        180ms 안에 또 오면 앞 예약을 물리고 다시 재므로 손을 멈춘 뒤 한 번만
+        칠한다 — 마지막 예약은 취소되지 않으니 최종 상태는 반드시 반영된다.
+        """
+        if self._states_job is not None:
+            try:
+                self.after_cancel(self._states_job)
+            except Exception:
+                pass
+            self._states_job = None
+        try:
+            self._states_job = self.after(180, self._paint_states_now)
+        except Exception:
+            self._paint_states_now()        # after 를 못 거는 상황 — 즉시 칠한다
+
+    def _paint_states_now(self):
         r"""배치 색(안 씀/이 팔레트에 있음)만 다시 칠한다 — 위젯 재생성 없음.
 
         블럭 하나를 옮길 때마다 창고를 통째로 파괴·재생성하던 것이 버벅임의
@@ -506,6 +548,12 @@ class StorePanel(tk.Frame):
         타일이 눈앞에서 자리를 옮겨 다니면 안 된다는 규칙(_select 머리말)과
         같은 이유로, 여기서는 일부러 재정렬하지 않는다.
         """
+        self._states_job = None
+        try:
+            if not self.winfo_exists():     # 예약이 창 파괴보다 늦게 왔다
+                return
+        except Exception:
+            return
         where = self._placement()
         here = self.tab_name_fn()
         free_n = 0

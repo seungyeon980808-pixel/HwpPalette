@@ -11,6 +11,7 @@ from hwp_palette.core import appinfo
 from hwp_palette.ui import help_content
 from hwp_palette.core import screens                     # 창 자리 규칙 (메인 창 옆)
 from hwp_palette.design import theme
+from hwp_palette.design import ui_fx                     # 제자리에서 번지며 나타나기 (reveal)
 from hwp_palette.design.roundbtn import RoundButton
 
 _C = theme.colors()
@@ -32,6 +33,9 @@ class HelpWindow(tk.Toplevel):
 
     def __init__(self, master):
         super().__init__(master)
+        # 다 만들 때까지 숨긴다 (2026-07-31, SettingsWindow 와 같은 이유) —
+        # 기본 자리에 깜빡 그려졌다가 place_beside 로 건너오는 것이 보였다.
+        self.withdraw()
         self.title(appinfo.WINDOW_TITLE)
         self.configure(bg=BG)
         self.resizable(False, False)
@@ -72,8 +76,8 @@ class HelpWindow(tk.Toplevel):
             self._btns.append(b)
 
         self._show(0)
-        self.update_idletasks()
-        screens.place_beside(self, master)
+        self.update_idletasks()          # 자리 계산 전에 요청 크기를 굳힌다
+        ui_fx.reveal(self, place=lambda: screens.place_beside(self, master))
 
     def _show(self, idx):
         self._cur = idx

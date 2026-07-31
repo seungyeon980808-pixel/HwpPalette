@@ -26,6 +26,33 @@ from hwp_palette.design import ui_fx
 # 3 이상이면 좁은 칸(42px)에서 아래 이름이 잘린다.
 ICON_GAP = 1
 
+# ── 글꼴 재기 캐시 (2026-07-31, 성능) ───────────────────
+# fit()·_text_metrics() 가 부를 때마다 tkfont.Font 를 새로 만들었다 —
+# Font 생성은 Tcl 에 이름 있는 폰트를 등록하는 일이라 호출당 ~1ms 씩 들었고
+# (실측: fit 1.15ms), 블럭 수십 개를 그릴 때 그대로 쌓였다. 같은 스펙이면
+# 같은 Font 를 돌려 쓴다.
+#
+# 열쇠는 스펙 문자열뿐이라 Tk 루트가 여럿일 때(테스트가 루트를 만들었다
+# 부수는 경우) 죽은 루트에 묶인 Font 가 남을 수 있다. 그래서 쓰기 전에
+# 싼 호출 한 번으로 살아 있는지 확인하고, 죽었으면 통째로 버리고 다시 만든다.
+_font_cache = {}
+
+
+def _shared_font(spec):
+    """spec(글꼴 튜플·문자열·None) → 공유 tkfont.Font."""
+    import tkinter.font as tkfont
+    key = str(spec)
+    f = _font_cache.get(key)
+    if f is not None:
+        try:
+            f.metrics("linespace")      # 루트 생존 확인 — Font 생성보다 훨씬 싸다
+            return f
+        except tk.TclError:
+            _font_cache.clear()         # 그 루트의 Font 는 전부 죽었다
+    f = tkfont.Font(font=spec) if spec else tkfont.Font()
+    _font_cache[key] = f
+    return f
+
 
 class RoundButton(tk.Canvas):
 
@@ -99,8 +126,9 @@ class RoundButton(tk.Canvas):
         self._focused = False
         self._pressed = False
         self._metrics = None      # 글꼴 높이 캐시 (_text_metrics)
+        self._drawn_size = None   # 마지막으로 그린 (폭, 높이) — _on_configure 가 본다
 
-        self.bind("<Configure>", lambda e: self._redraw())
+        self.bind("<Configure>", self._on_configure)
         self.bind("<Enter>", lambda e: self._to(self._hover))
         self.bind("<Leave>", lambda e: self._to(self._base))
         self.bind("<ButtonPress-1>", self._on_press)
@@ -118,9 +146,8 @@ class RoundButton(tk.Canvas):
         tk.Button 을 바꿔 끼울 때마다 크기를 손으로 재는 대신 여기서 잰다.
         줄바꿈이 있으면 가장 긴 줄을 재고 줄 수만큼 높이를 잡는다.
         """
-        import tkinter.font as tkfont
         try:
-            f = tkfont.Font(font=self._font) if self._font else tkfont.Font()
+            f = _shared_font(self._font)    # 매번 새 Font 를 만들지 않는다
             lines = (self._text or " ").split("\n")
             w = max((f.measure(ln) for ln in lines), default=0) + pad_x * 2
             if self._trailing:      # 오른쪽 기호가 글자를 침범하지 않게
@@ -142,22 +169,23 @@ class RoundButton(tk.Canvas):
         — 값이 바뀌는 일이 거의 없으므로(글꼴·줄 수가 그대로면 같다) 한 번 재서
         들고 있는다. set_text·retint 가 무효로 만든다.
         """
+        # 열쇠에 PhotoImage **객체**를 넣지 않는다 (2026-07-31, 성능): 객체
+        # 정체성이 열쇠에 섞이면 그림이 같아도 캐시가 어긋나 매번 다시 쟀다.
+        # 그림의 유무만 적는다 — 그림 높이는 버튼이 사는 동안 안 바뀐다
+        # (아이콘 그림을 갈아끼우는 경로가 없고, set_text 는 _metrics 를 비운다).
         key = (str(self._font), str(self._icon_font), self._icon,
-               self._icon_image, (self._text or "").count("\n"))
+               self._icon_image is not None, (self._text or "").count("\n"))
         if self._metrics and self._metrics[0] == key:
             return self._metrics[1]
-        import tkinter.font as tkfont
         try:
-            lf = tkfont.Font(font=self._font) if self._font else tkfont.Font()
+            lf = _shared_font(self._font)
             label_h = (lf.metrics("linespace")
                        * len((self._text or " ").split("\n")))
             icon_h = 0
             if self._icon_image is not None:
                 icon_h = self._icon_image.height()
             elif self._icon:
-                icf = (tkfont.Font(font=self._icon_font)
-                       if self._icon_font else tkfont.Font())
-                icon_h = icf.metrics("linespace")
+                icon_h = _shared_font(self._icon_font).metrics("linespace")
         except Exception:
             return 0, 0
         self._metrics = (key, (icon_h, label_h))
@@ -182,6 +210,17 @@ class RoundButton(tk.Canvas):
                 int(top + icon_h / 2.0))
 
     # ── 그리기 ──────────────────────────────────────
+    def _on_configure(self, _e):
+        """<Configure> — 크기가 그대로면(자리만 옮긴 이벤트) 다시 그리지 않는다.
+
+        격자 재배치 때 버튼마다 자리 이동 Configure 가 쏟아지는데, 그림 좌표는
+        캔버스 안 상대값이라 자리만 바뀌면 그릴 것이 없다 (2026-07-31, 성능).
+        누름·초점처럼 **내용**이 바뀌는 갱신은 _redraw 를 직접 부르므로 안 걸린다.
+        """
+        if (self.winfo_width(), self.winfo_height()) == self._drawn_size:
+            return
+        self._redraw()
+
     @staticmethod
     def _round_points(x1, y1, x2, y2, r):
         """둥근 사각형의 꼭짓점 목록 — smooth=True 로 그리면 모서리가 깎인다."""
@@ -200,6 +239,7 @@ class RoundButton(tk.Canvas):
         w, h = self.winfo_width(), self.winfo_height()
         if w <= 2 or h <= 2:
             return
+        self._drawn_size = (w, h)           # _on_configure 의 건너뛰기 기준
         r = min(self._radius, w // 2, h // 2)
         pts = self._round_points(1, 1, w - 2, h - 2, r)
         edge = (self._focus_color if self._focused else self._outline)
@@ -389,12 +429,21 @@ class RoundTile(tk.Canvas):
         kw.pop("highlightcolor", None)
         super().__init__(parent, highlightthickness=0, bd=0,
                          bg=zone_bg or parent.cget("bg"), **kw)
-        self.bind("<Configure>", lambda e: self._redraw(), add="+")
+        self._drawn_size = None
+        self.bind("<Configure>", self._on_configure, add="+")
+
+    def _on_configure(self, _e):
+        # 크기가 그대로면 자리만 옮긴 이벤트 — 그릴 것이 없다 (RoundButton 과
+        # 같은 이유). 색 갱신(configure)은 _redraw 를 직접 부르므로 안 걸린다.
+        if (self.winfo_width(), self.winfo_height()) == self._drawn_size:
+            return
+        self._redraw()
 
     def _redraw(self):
         w, h = self.winfo_width(), self.winfo_height()
         if w <= 2 or h <= 2:
             return
+        self._drawn_size = (w, h)
         r = min(self._radius, w // 2, h // 2)
         pts = RoundButton._round_points(1, 1, w - 2, h - 2, r)
         if not self.find_withtag("body"):
