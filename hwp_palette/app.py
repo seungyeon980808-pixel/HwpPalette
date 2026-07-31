@@ -97,6 +97,7 @@ from hwp_palette.ui import help_ui                       # 도움말 창 (기능
 from hwp_palette.ui import tutorial                      # 따라하기 (화면 위 안내)
 from hwp_palette.ui import tutorials                     # 튜토리얼 커리큘럼 (주제별 코스)
 from hwp_palette.design.roundbtn import RoundButton     # 둥근 모서리 버튼
+from hwp_palette.design import popover as popover_mod   # 판이 열릴 때 도킹 순서 재조정 갈고리
 from hwp_palette.design.popover import Popover          # 앱과 같은 얼굴의 팝업 메뉴
 
 # 설정 파일 입출력은 settings 모듈로 통합
@@ -1453,6 +1454,12 @@ def _toggle_top():
     끌 수 있게 하되 **기본은 켬**이다: 이 창은 한글 옆에 두고 쓰는 물건이라,
     한글을 누를 때마다 뒤로 숨으면 도구로서 쓸모가 없다.
     """
+    # 도킹 중에는 순서의 주인이 keep_order 하나여야 한다 (2026-08-01, 피드백 036).
+    # 우리 창이 '항상 위'가 되면 최상위 띠로 올라가, 그 아래에 평범한 창(한글)을
+    # 넣을 수 없어 도킹 판이 하얗게 빈다.
+    if _is_docked():
+        notify("info", "도킹 중에는 '항상 위'를 바꿀 수 없습니다 — 도킹을 뗀 뒤 바꿔 주세요")
+        return
     on = not bool(settings.get_config_value(_TOP_KEY, True))
     settings.set_config_value(_TOP_KEY, on)
     try:
@@ -1612,7 +1619,19 @@ tk.Label(guide_body, text=GUIDE_TEXT, font=("Consolas", theme.fs(9)),
 # _fit_window 가 "지금 도킹 중인가"를 봐야 한다 — 도킹 중에 창 크기를 만지면
 # 감싸인 한글 창까지 따라 쪼그라든다(추적 스레드가 우리 창 크기를 그대로 옮긴다).
 _dock = {"dock": None, "bar": None, "host": None, "job": None,
-         "packs": None, "geo": None, "hwnd": None, "recheck": 0.0}
+         "packs": None, "geo": None, "hwnd": None, "recheck": 0.0,
+         "was_topmost": None}
+
+
+def _is_docked():
+    """지금 메인 창이 한글을 감싸고 있는가 (도킹 중 규칙들이 이걸 본다)."""
+    return _dock["dock"] is not None
+
+
+# 팝오버가 뜨는 순간 도킹의 창 순서를 다시 잡는다 (2026-08-01, 피드백 035).
+# 판은 자체 창이라 우리 메인 창에 <Activate> 를 주지 않는다 — 순서를 다시
+# 잡을 계기가 없어 도킹 자리가 하얗게 비었다. 도킹 중이 아니면 아무 일도 없다.
+popover_mod.on_shown(hwp_dock.reorder_now)
 
 
 def _toggle_guide():
@@ -2750,6 +2769,13 @@ def fn_dock_hwp():
     한글이 아예 안 떠 있으면 연결 과정에서 한글이 실행된다(그때만 한글이 자기
     빈 문서를 만든다). 우리가 문서를 만드는 경로는 이제 없다.
     """
+    # 양식 수정이 한글을 쓰고 있으면 **뺏지도, 떼지도 않는다** (2026-08-01,
+    # 피드백 032). 도킹 주인이 둘이 되면 한글이 두 자리를 왕복하며 버벅인다.
+    # 떼기까지 막는 이유: 여기서 떼면 dock.stop() 의 원복이 지금 따라가고 있는
+    # 편집 세션과 같은 창을 서로 끈다.
+    if hwp_dock.owner_priority() > hwp_dock.PRIORITY_MAIN:
+        notify("warn", "양식 수정이 한글을 쓰고 있습니다 — 저장하거나 취소한 뒤 도킹하세요")
+        return
     if _dock["dock"] is not None:
         _exit_dock()
         return
@@ -2863,7 +2889,13 @@ def _enter_dock_risky(hwnd):
     # 우리 창이 항상 위면 한글이 활성화되는 순간 우리 빈 판이 한글을 덮어
     # 마우스·키보드를 가로챈다 — "한글 안이 클릭이 안 된다"의 정체다.
     # 감싸고 있을 때는 한글이 우리 창 안에 있으므로 항상 위가 필요 없다.
+    #
+    # (2026-08-01, 피드백 036) 끈 값을 **기억했다가 뗄 때 되돌린다.** 여태는
+    # 끄기만 해서, 도킹 중 PageUp 으로 다시 켜지면 우리 창이 최상위 띠로 올라가
+    # "한글이 맨 위 · 우리 창은 그 바로 아래"라는 도킹 계약을 매 틱 뒤집었다.
+    # 도킹 중 순서의 주인은 keep_order 하나뿐이어야 한다.
     try:
+        _dock["was_topmost"] = bool(root.attributes("-topmost"))
         root.attributes("-topmost", False)
     except Exception as e:
         applog.exc("도킹 중 '항상 위' 끄기 실패 — 클릭이 막힐 수 있음", e)
@@ -2883,7 +2915,16 @@ def _enter_dock_risky(hwnd):
         # 리본까지 날아가 편집을 못 했다. 화면이 잘 보이고 부드럽게 따라오는
         # 것이 먼저다.
         dock = hwp_dock.Dock(root, _dock["host"], hwnd)
+    # 대장에 먼저 이름을 올린다 — 잡지 못하면 시작조차 하지 않는다 (032).
+    # on_resume 은 양식 수정이 끝나 이 도킹이 깨어날 때 불린다: 그새 한글이
+    # 숨겨졌을 수 있으므로 COM 으로 먼저 켠다.
+    if not hwp_dock.claim(dock, hwp_dock.PRIORITY_MAIN,
+                          on_resume=hwp_engine.ensure_visible):
+        _restore_normal_layout()
+        notify("warn", "양식 수정이 한글을 쓰고 있습니다 — 저장하거나 취소한 뒤 도킹하세요")
+        return
     if not dock.start():
+        hwp_dock.release(dock)
         _restore_normal_layout()
         notify("error", "한글 창을 감싸지 못했습니다 — 도킹을 취소합니다")
         return
@@ -2969,6 +3010,7 @@ def _exit_dock():
         _dock["job"] = None
     dock, _dock["dock"] = _dock["dock"], None
     if dock is not None:
+        hwp_dock.release(dock)      # 대장에서 먼저 뺀다 — 스스로를 되살리지 않게
         dock.stop()
     _restore_normal_layout()
     _show_dock_buttons(False)
@@ -3005,6 +3047,15 @@ def _restore_normal_layout():
         _dock["geo"] = None
     root.update_idletasks()
     root.resizable(False, False)
+    # 도킹에 들어가며 내려 둔 '항상 위'를 되돌린다 (2026-08-01, 피드백 036).
+    was, _dock["was_topmost"] = _dock["was_topmost"], None
+    if was is None:
+        was = bool(settings.get_config_value(_TOP_KEY, True))
+    try:
+        root.attributes("-topmost", was)
+    except Exception as e:
+        applog.exc("도킹을 떼며 '항상 위' 되돌리기 실패", e)
+    _bar_active(_top_btn, was)
     # 감쌀 때 껐던 '항상 위'를 사용자 설정대로 되돌린다 (_enter_dock 참고).
     try:
         root.attributes("-topmost",

@@ -1447,14 +1447,25 @@ class SettingsWindow(tk.Toplevel):
         # 높이를 20% 줄였다 (사용자 결정 2026-07-28: "도킹된 창이 너무 높다").
         edit_h = max(480, int(min(1050, avail) * 0.8))
         self.zoom_pane.configure(width=hwp_dock.EDIT_PANE_W, height=edit_h)
-        self._fit_window()
+        self._fit_window(settle=True)   # 접은 뒤의 크기로 재야 한다 (031-a)
         self.update_idletasks()         # 판이 최종 자리를 잡아야 미리 배치가 맞는다
 
     def _start_dock(self):
+        r"""편집 세션이 한글 창의 주인이 된다 (2026-08-01, 피드백 032).
+
+        메인 창이 이미 도킹 중일 수 있다 — 그때 둘이 같은 한글 창을 각자
+        제 판 자리로 끌면 한글이 두 자리를 왕복하며 버벅인다. 대장에 더 높은
+        우선순위로 이름을 올리면 메인 도킹은 잠들고, 여기서 놓는 순간
+        저절로 깨어난다.
+        """
         hwnd = hwp_engine.connected_hwnd()
         if hwnd:
-            self._dock = hwp_dock.Dock(self, self._zoom_canvas, hwnd)
-            if not self._dock.start():
+            dock = hwp_dock.Dock(self, self._zoom_canvas, hwnd)
+            hwp_dock.claim(dock, hwp_dock.PRIORITY_EDIT,
+                           on_resume=hwp_engine.ensure_visible)
+            self._dock = dock
+            if not dock.start():
+                hwp_dock.release(dock)
                 self._dock = None       # 도킹 실패 — 한글은 제자리에 그냥 뜬다
 
     def _exit_dock_layout(self, pre_restore=None):
@@ -1463,12 +1474,24 @@ class SettingsWindow(tk.Toplevel):
         안 보인다 (사용자 지적 2026-07-28: "저장하면 깜빡거린다")."""
         if self._dock is not None:
             self._dock.stop_follow()
+            # 오려 낸 판 자리를 **반드시 메운다** (2026-08-01, 사용자 지적:
+            # "왜 잘려버리는거야 심지어 강제로 창 닫기도 안되네").
+            #
+            # 메인 도킹은 Dock.stop() 이 이 일을 하는데 이 경로만 빠져 있었다.
+            # 여태 안 드러난 이유는 구멍 뚫기 자체가 죽어 있어서다(dpi_scale
+            # 정의가 지워져 매번 NameError) — 되살리는 순간 잠자던 버그가 났다.
+            # 안 메우면 창의 그 자리에 창이 아예 없는 상태로 남아, 그리지도
+            # 눌리지도 않는다. 제목줄 ✕ 까지 그 안에 들면 창을 닫을 수도 없다.
+            self._dock.clear_hole()
             if pre_restore:
                 try:
                     pre_restore()
                 except Exception as e:
                     applog.exc("한글 창 정리 실패 (빈 창이 남을 수 있음)", e)
             self._dock.restore()
+            # 자리를 되돌린 **뒤에** 주인 자리를 내려놓는다 — 순서를 바꾸면
+            # 깨어난 메인 도킹과 우리 restore 가 같은 창을 서로 끈다 (032).
+            hwp_dock.release(self._dock)
             self._dock = None
         elif pre_restore:
             try:
@@ -1486,7 +1509,9 @@ class SettingsWindow(tk.Toplevel):
         self._paint_div.pack(side="left", fill="y", before=self.zoom_pane)
         if not saved.get("group_packed", True):
             self._paint_group.pack_forget()     # 접어 뒀던 상태를 그대로 돌려준다
-        self._fit_window()
+        # 편 뒤의 크기로 재야 한다 — 미루면 편집 때의 큰 값이 minsize 에
+        # 박혀 창이 커진 채 굳는다 (031-a).
+        self._fit_window(settle=True)
 
     def _finish_content_edit(self, save):
         """저장이든 취소든 '고치는 중'을 끝내고 판·창·topmost 를 되돌린다."""
@@ -1936,7 +1961,7 @@ class SettingsWindow(tk.Toplevel):
         self._render_blocks()
         self._notify()
 
-    def _fit_window(self):
+    def _fit_window(self, settle=False):
         """내용에 맞춰 창 높이를 다시 잡는다 — 줄이 늘면 창도 커진다.
 
         주의 (실측 2026-07-19): 격자에 줄을 더한 직후의 winfo_reqheight() 는 한
@@ -1956,9 +1981,19 @@ class SettingsWindow(tk.Toplevel):
         정리돼 있어, 렌더마다 강제 재배치 한 번을 공짜로 아낀다. geometry("")
         뒤의 것만 남긴다 — 그게 없으면 새 크기 적용이 다음 idle 로 밀려
         '줄 추가' 직후 창이 한 박자 늦게 커지던 옛 증상이 되살아난다.
+
+        settle=True 는 그 전제가 깨지는 두 자리 — 판을 통째로 접었다 펴는
+        도킹 진입·이탈 — 전용이다 (2026-08-01, 피드백 031-a). 거기서는
+        호출부가 after_idle 로 미룰 수가 없다(다음 줄이 바로 창 크기에
+        기대므로). 미루지 않으면 재는 값이 **접기 전 레이아웃**이라, 편집
+        때의 큰 높이가 minsize 에 박혀 그 뒤로는 창을 줄일 수도 없었다.
+        여기서 직접 레이아웃을 정리하고, 이른 반환도 건너뛴다 — 요청 크기가
+        우연히 같아도 minsize 는 반드시 다시 잡아야 한다.
         """
+        if settle:
+            self.update_idletasks()
         req = (self.winfo_reqwidth(), self.winfo_reqheight())
-        if req == self._last_req:
+        if req == self._last_req and not settle:
             return
         self._last_req = req
         # 최소 크기도 내용에 맞춰 갱신한다 — 안 하면 한 번 커진 뒤로는 minsize 가

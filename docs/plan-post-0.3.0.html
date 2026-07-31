@@ -62,10 +62,13 @@
 
 <h1>HwpPalette 수정 기획서 — v0.3.0 이후</h1>
 <div class="meta">
-  기준 판 <code>v0.3.0</code> (릴리즈 게시 완료 · 실행파일 배포 없음) ·
-  브랜치 <code>feedback/post-0.3.0</code> ·
-  근거 <code>docs/FEEDBACK_post_0.3.0.md</code> (피드백 001~018) ·
-  시안 <code>docs/mockups/store-reform-2026-07-31.html</code> (B·F·G·H 절)
+  기준 판 <code>v0.4.0-beta</code> ·
+  브랜치 <code>feat/post-0.3.0</code> ·
+  근거 <code>docs/FEEDBACK_post_0.3.0.md</code> (피드백 <b>001~040</b>) ·
+  시안 <code>docs/mockups/store-reform-2026-07-31.html</code> (B·F·G·H 절) ·
+  <code>docs/mockups/store-subcats.html</code> (하위 분류)<br>
+  <b>지금 상태</b> — 1차(001~018)와 2차(019~026) 반영 완료. <b>027~040 은 미착수</b>
+  (5·6·7 절 참고).
 </div>
 <div class="stamp">2026-07-31 사용자 승인 — 확정</div>
 <div class="card" style="border-left:3px solid #0a6b2e;margin-top:14px">
@@ -82,8 +85,25 @@
     <tr><td>7</td><td>문항 엑셀 (014)</td><td class="ok">열 지도·바로 넣기 완료 / 마법사 UI 는 남김</td></tr>
     <tr><td>탐</td><td>자간 보정 스파이크 (016)</td><td class="ok">완료 — 방식 A 구현 가능 판정</td></tr>
   </table>
-  <p style="margin-bottom:0">테스트 677개 통과. 자세한 것은 각 커밋 메시지와
+  <p>테스트 677개 통과. 자세한 것은 각 커밋 메시지와
     <code>docs/SPIKE_자간보정.md</code>.</p>
+
+  <h3>그 뒤 — 2026-07-31 ~ 08-01</h3>
+  <table>
+    <tr><th>차수</th><th>내용</th><th>상태</th></tr>
+    <tr><td>하위분류</td><td>물감 창고 하위 분류 (시안 store-subcats.html)</td>
+        <td class="ok">완료 · main 병합</td></tr>
+    <tr><td>2차</td><td>피드백 019~026 — 우클릭 위치 · 미리보기 잔상 ·
+        ‘기본 서식’ 폐지 · 만들기 입구 통일 · <b>자간 맞춤 구현</b> ·
+        수치 스핀 · 서식 통일</td>
+        <td class="ok">완료 · main 병합 (<code>18ca3bb</code>)</td></tr>
+    <tr><td>3차</td><td>피드백 <b>027~040</b> — 접수·원인 분석·계획까지<br>
+        <span class="ref">사용자 지시: “명시적으로 고치라고 하기 전까지 코드 수정 금지”</span></td>
+        <td><b>미착수</b> (5·6·7 절)</td></tr>
+  </table>
+  <p style="margin-bottom:0">테스트 728개 통과 (2차 반영 시점).
+    <b>자간 맞춤은 한글 실기 확인이 남아 있다</b> — 스파이크는 실측했으나
+    구현 자체는 한글 없이 작성했다.</p>
 </div>
 
 
@@ -254,10 +274,16 @@
     <tr><td>도구 분류 화면</td><td>읽기 전용, ＋ 없음</td></tr>
     <tr><td>PageUp</td><td>입력칸 포커스 시 비켜줌</td></tr>
     <tr><td>겹친 칸 + Ctrl+1~9</td><td>팝오버 열기</td></tr>
-    <tr><td>겹친 칸 겉면</td><td>그룹 이름만</td></tr>
+    <tr><td>겹친 칸 겉면</td>
+        <td><s>그룹 이름만</s> → <b>2026-08-01 뒤집힘</b>: 여러 물감이 든 칸은
+            <b>오른쪽 세로 띠</b>로 겉에서 알 수 있어야 한다 (피드백 037).
+            <span class="ref">이 잔결정이 018 의 “겹친 종이 + 개수 배지”를 덮었던 자리다</span></td></tr>
     <tr><td>도킹 칩의 겹침</td><td>이번 라운드 미적용</td></tr>
     <tr><td>섞기 이름 겹침</td><td>나온 순서대로 배분</td></tr>
-    <tr><td>채워서 꽂기 입구</td><td>우클릭 메뉴 (기존 양식 채우기 창 재사용)</td></tr>
+    <tr><td>채워서 꽂기 입구</td>
+        <td><s>우클릭 메뉴 (기존 양식 채우기 창 재사용)</s> → <b>2026-08-01 재검토 중</b>:
+            누르면 <b>옵션을 고르게</b> 하는 안이 유력 (피드백 040 · 권함 A).
+            <span class="ref">우클릭은 038-d 에서 ‘삭제 전용’으로 정리 중이라 자리가 겹친다</span></td></tr>
     <tr><td>카드 ‘빈칸 N’</td><td>서식=수치 요약 · 특수기호=문자 미리보기 · 도구=한 줄 설명</td></tr>
     <tr><td>실측 실패 시</td><td>그 묶음은 조사 보고서만 남기고 다음으로 진행</td></tr>
     <tr><td>버전</td><td><b>올리지 않는다</b> — 사용자가 결정</td></tr>
@@ -282,9 +308,331 @@
   </ul>
 </div>
 
+<h2>5. 2·3차 피드백 <small>027~040 — 접수 현황 (2026-07-31 ~ 08-01)</small></h2>
+<p class="lead">
+  1차(001~018)를 반영한 뒤 나온 것들이다. 019~026 은 이미 반영해 main 에 들어갔고
+  (커밋 <code>18ca3bb</code>), 아래 여덟 건은 <b>접수·분석까지만</b> 되어 있다.
+  세부 근거·원인 분석·수정 계획은 전부 <code>docs/FEEDBACK_post_0.3.0.md</code> 의
+  같은 번호 항목에 있다 — 이 표는 <b>무엇이 남았는지</b>만 말한다.
+</p>
+<table>
+  <tr><th class="num">번호</th><th>갈래</th><th>내용</th><th>상태</th></tr>
+  <tr><td class="num">027</td><td>아이디어</td>
+      <td>도구 판의 빈자리를 <b>사용법</b>으로 채우기</td><td>접수 · 설계 전</td></tr>
+  <tr><td class="num">028</td><td><b>회귀</b></td>
+      <td>특수기호 창에서 <b>종류별 분류</b>와 <b>내가 등록한 기호</b>가 사라짐<br>
+          <span class="ref">022 를 반영하며 기능이 적은 창으로 합친 것이 원인 — Claude 잘못</span></td>
+      <td>원인 확정 · 대기</td></tr>
+  <tr><td class="num">029</td><td>기능</td>
+      <td>사진 도구의 <b>폴더 연결을 판 안에서</b> (지금은 [설정]이 다섯 탭짜리 창을 통째로 연다)</td>
+      <td>검토 완료 · 대기</td></tr>
+  <tr><td class="num">030</td><td>디자인</td>
+      <td>서식 만들기 창이 프로그램의 다른 창과 <b>컨셉이 안 맞음</b> (기본 위젯 노출)</td>
+      <td>범위 결정 대기</td></tr>
+  <tr><td class="num">031</td><td><b>버그</b></td>
+      <td>양식 수정 — 버벅임 · 끝난 뒤 창이 커짐 · 빈 문서가 남음</td>
+      <td class="ok">파트 1 완료 (b·c 실기 확인)</td></tr>
+  <tr><td class="num">032</td><td><b>버그</b></td>
+      <td>도킹 소유권 위계 — 한글 창의 주인이 둘이 되어 왕복하며 버벅임</td>
+      <td class="ok">파트 1 완료</td></tr>
+  <tr><td class="num">033</td><td><b>버그</b></td>
+      <td>양식 빈칸 판독기 불일치(등록 2 vs 채우기 1) · 우클릭 ‘채워서 꽂기’ 미구현</td>
+      <td class="ok">다음 라운드</td></tr>
+  <tr><td class="num">034</td><td>기능</td>
+      <td>자간 맞춤이 <b>표 안</b>에서도 동작해야 함</td>
+      <td class="ok">다음 라운드</td></tr>
+  <tr><td class="num">035</td><td><b>버그</b></td>
+      <td>도킹 중 <b>팔레트 드롭다운</b>을 열면 도킹 화면이 안 보임</td>
+      <td class="ok">파트 1 완료</td></tr>
+  <tr><td class="num">036</td><td><b>버그</b></td>
+      <td>도킹 중 한글 미클릭 상태에서 <b>키를 누르면</b> 도킹 화면이 사라짐</td>
+      <td class="ok">파트 1 완료</td></tr>
+  <tr><td class="num">037</td><td>표시</td>
+      <td>한 칸에 여러 물감이 든 것을 <b>세로 띠</b>로 겉에서 알 수 있게<br>
+          <span class="ref">아래 <b>3-1 잔결정 갱신</b> 참고 — 규약이 표시를 없앴던 자리다</span></td>
+      <td>표기 안 결정 대기</td></tr>
+  <tr><td class="num">038</td><td>버그·기능</td>
+      <td>창고 우클릭에 <b>삭제</b> 추가 · <b>지금 분류는 목록에서 빼기</b> ·
+          옮기기는 <b>끌어놓기</b>로 · <b>팝오버가 창의 ✕ 를 먹는다</b></td>
+      <td><b>b 는 파트 1 완료</b> · a·c·d 는 파트 2</td></tr>
+  <tr><td class="num">039</td><td>삭제</td>
+      <td>도구 <b>‘라이브러리’</b> 폐지 — 창고가 같은 일을 더 잘한다</td>
+      <td>계획 완료 · 대기</td></tr>
+  <tr><td class="num">040</td><td>결정</td>
+      <td><code>\\</code> 와 <code>\이름\</code> 이 다르게 취급된다 —
+          누르면 <b>옵션을 고르게</b> 할지 결정<br>
+          <span class="ref">서로 어긋나는 결정이 셋 (2026-07-27 / 07-31 / 08-01)</span></td>
+      <td>동작 안 결정 대기</td></tr>
+</table>
+
+
+<h2>5-1. 작업 분할 <small>네 파트 — 나누는 기준은 ‘무엇을 만지는가’다</small></h2>
+<p class="lead">
+  열네 건(027~040)을 <b>네 파트</b>로 나눈다. 기준은 갈래(버그/기능)가 아니라
+  <b>같은 파일·같은 개념을 만지는가</b>다 — 그래야 같은 자리를 두 번 안 만지고,
+  <b>실기 검증(한글을 띄워 확인)도 한 파트에 한 번</b>으로 끝난다.
+</p>
+<table>
+  <tr><th class="num">파트</th><th>이름</th><th>담는 것</th><th>왜 한 묶음인가</th><th>한글 실기</th></tr>
+  <tr><td class="num"><b>1</b></td><td><b>창과 창의 관계</b></td>
+      <td>031 · 032 · 035 · 036 · <b>038-b</b>(팝오버 ✕)</td>
+      <td>전부 <code>hwp_dock</code>·<code>popover</code> 의 <b>z 순서와 소유권</b>.
+          035·036 은 <code>keep_order</code> 의 <b>같은 판정 한 줄</b>을 고친다</td>
+      <td>필요</td></tr>
+  <tr><td class="num"><b>2</b></td><td><b>창고에서 하는 일</b></td>
+      <td>028(회귀) · 038-a·c·d · 039</td>
+      <td><code>store_ui</code>·도구 목록. <b>한글이 필요 없어</b> 테스트로 끝난다 —
+          파트 1 과 검증 성격이 아예 다르다</td>
+      <td>불필요</td></tr>
+  <tr><td class="num"><b>3</b></td><td><b>누르면 무슨 일이 일어나는가</b></td>
+      <td>033 · 034 · 040</td>
+      <td>물감 실행·빈칸 판독·자간 — 전부 <b>한글 엔진</b>.
+          <b>스파이크가 먼저</b> 필요한 것도 이 셋뿐이다</td>
+      <td>필요</td></tr>
+  <tr><td class="num"><b>4</b></td><td><b>보이는 것</b></td>
+      <td>027 · 029 · 030 · 037</td>
+      <td>전부 <b>같은 판·같은 부품</b>. 디자인을 <b>맨 뒤에</b> 둬야
+          앞 셋이 바꾼 화면 위에 한 번만 얹는다</td>
+      <td>불필요</td></tr>
+</table>
+
+<h3>왜 이 순서인가</h3>
+<div class="card">
+  <ul>
+    <li><b>1 이 먼저다</b> — 사용자 방침이 “기능 수정은 그만, 버그를 잡자”이고,
+        도킹은 <b>매일 쓰는 길목이 막힌</b> 상태다. 035·036 은 재현이 쉬워 검증도 빠르다.
+        <b>팝오버(038-b)를 여기 붙이는 이유</b>: 잡기(grab) 구조를 바꾸면 035 의
+        z 순서에도 영향이 간다 — 따로 하면 같은 파일을 두 번 만진다.</li>
+    <li><b>2 를 3 보다 앞에</b> — 028 은 <b>내가 만든 회귀</b>(기능이 사라졌다)라 급하고,
+        한글이 필요 없어 가장 빨리 끝난다. 파트 1 에서 고친 팝오버 위에 우클릭 메뉴를 얹는다.</li>
+    <li><b>3 은 스파이크가 있어 길다</b> — 실측 결과에 따라 구현이 갈리므로
+        (033-a 는 재주입 실측, 034 는 셀 좌표 실측 3건) 시간을 따로 잡는다.</li>
+    <li><b>4 가 마지막</b> — 부품(체크·수치칸·세로 띠)을 만들어 세 화면에 얹는 일이라,
+        앞 셋이 화면을 다 바꾼 뒤에 해야 재작업이 없다.</li>
+  </ul>
+</div>
+
+<h3>이번에 <b>안 할 것</b> <small>범위를 지키려고 미리 못박는다</small></h3>
+<div class="later">
+  <ul style="margin:0;padding-left:20px">
+    <li><b>물감 설정 창(LibraryManager) 자체를 없애는 것</b> — 028·029·039 를 하고 나면
+        부를 자리가 거의 없어지지만, 그 판단은 네 파트가 끝난 뒤에 한 번에.</li>
+    <li><b>034 의 여러 셀에 걸친 선택</b> — 셀 하나씩만. 셀 순회는 후속.</li>
+    <li><b>030 의 ③(프로그램 전체 훑기)</b> — ②(창 + 자체 부품)까지만.</li>
+    <li><b>040 의 안 B(우클릭 채워서 꽂기)</b> — 안 A(옵션 고르기)로 가면 필요 없어진다.</li>
+    <li><b>036 의 후속</b> — 도킹 중 키 포커스를 한글로 넘기는 것. 별도 검토.</li>
+    <li><b>037 의 도킹 칩 겹침 표시</b> — 기존 규약대로 이번 라운드 미적용 유지.</li>
+    <li><b>버전 범프</b> — 파트마다 사용자가 정한다 (기존 규약).</li>
+  </ul>
+</div>
+
+<h3>파트 시작 전에 정해야 하는 것</h3>
+<table>
+  <tr><th class="num">파트</th><th>정할 것</th><th>Claude 권함</th></tr>
+  <tr><td class="num">1</td><td>—</td><td>결정 없이 바로 착수 가능</td></tr>
+  <tr><td class="num">2</td><td>—</td><td>결정 없이 바로 착수 가능
+      <span class="ref">(038-d 의 “우클릭은 삭제 전용” 해석만 확인)</span></td></tr>
+  <tr><td class="num">3</td><td>040 — 누를 때 동작</td><td><b>A</b> 옵션 고르기
+      <span class="ref">(033-b 가 여기 종속)</span></td></tr>
+  <tr><td class="num">4</td><td>037 — 세로 띠 표기<br>030 — 디자인 범위</td>
+      <td><b>B</b> 겹침=개수 · 섞기=MIX<br><b>②</b> 창 + 자체 부품</td></tr>
+</table>
+
+
+<h2>6. 파트 1 상세 <small>창과 창의 관계 (031·032·035·036·038-b)</small></h2>
+
+<div class="card" style="border-left:3px solid #0969da">
+  <h3 style="margin-top:0">작업 지시 <span class="ref">사용자, 2026-08-01</span></h3>
+  <p style="margin-bottom:0">
+    <code>docs/FEEDBACK_post_0.3.0.md</code> 의 <b>031·032·035·036·038-b</b> 를
+    읽고 <b>한 라운드로</b> 고쳐라. 각 항목에 원인 분석과 수정 계획이 이미
+    적혀 있다 — 그 계획을 따른다. 032 는 <b>“양식 수정 &gt; 메인 도킹” 위계</b>가
+    핵심이다. 끝나면 <b>테스트 전체 실행과 실기 검증</b>까지 하고
+    <b>main 에 병합·푸시</b>하라. <b>버전은 올리지 마라.</b>
+  </p>
+</div>
+
+<div class="card" style="border-left:3px solid #0a6b2e">
+  <h3 style="margin-top:0">진행 결과 — 2026-08-01</h3>
+  <table>
+    <tr><th>번호</th><th>고친 것</th><th>상태</th></tr>
+    <tr><td class="num">0</td>
+        <td><b>구멍 뚫기가 여태 죽어 있었다</b> — <code>_punch_hole</code>·
+            <code>clear_crop</code> 이 쓰는 <code>dpi_scale</code>·
+            <code>_RGN_DIFF</code> 의 <b>정의만</b> 커밋 <code>e84cc46</code> 에서
+            지워지고 호출은 남았다. 매번 NameError 로 실패해 로그에만 남았고,
+            그래서 도킹 화면은 <code>keep_order</code> 의 z 순서 <b>하나에만</b>
+            기대고 있었다 — 035·036 이 하얗게 보이던 바닥이다. 정의를 되살렸다.</td>
+        <td class="ok">완료</td></tr>
+    <tr><td class="num">032</td>
+        <td><code>hwp_dock</code> 에 <b>소유권 대장</b>(claim/release, LIFO) —
+            편집 100 · 메인 10. pause 는 <code>stop_follow()</code> 만,
+            resume 은 <code>ensure_visible</code> → <code>start()</code>.
+            메인 ◫ 는 편집이 주인일 때 <b>뺏지도 떼지도 않고 안내</b>한다.</td>
+        <td class="ok">완료</td></tr>
+    <tr><td class="num">031-a</td>
+        <td><code>_fit_window(settle=True)</code> — 판을 접었다 펴는 두 자리에서만
+            스스로 레이아웃을 정리하고 이른 반환도 건너뛴다.
+            편집 때의 큰 높이가 <code>minsize</code> 에 박히지 않는다.</td>
+        <td class="ok">완료</td></tr>
+    <tr><td class="num">031-b·c</td>
+        <td>따로 고칠 것이 없다고 판단 — 예측대로 <b>032 에 딸려 풀리는 자리</b>다.
+            메인 도킹이 제자리로 복귀하면 그 <code>빈 문서 1</code> 은 주인 있는
+            문서가 되고, 버벅임의 정체였던 <b>Dock 둘의 SetWindowPos 왕복</b>이
+            사라진다. <b>실기 검증에서 확인할 항목.</b></td>
+        <td>실기 확인 대기</td></tr>
+    <tr><td class="num">035·036</td>
+        <td><code>keep_order</code> 의 ‘우리 편’ 판정을
+            <code>GetAncestor(fg, GA_ROOTOWNER)</code> 로 넓혀 팝오버·대화상자를
+            포함. 팝오버가 뜰 때 <b>갈고리</b>로 순서를 한 번 강제.
+            도킹 중 ‘항상 위’는 <b>바꿀 수 없고</b>(키·버튼 한 길에서 막는다)
+            들어갈 때 끈 값을 기억했다 뗄 때 되돌린다.</td>
+        <td class="ok">완료</td></tr>
+    <tr><td class="num">038-b</td>
+        <td>팝오버가 <b>잡기(grab)를 쓰지 않는다.</b> 열려 있는 동안만
+            <code>bind_all</code> 로 클릭을 엿들어 밖이면 닫는다 — 그 클릭은
+            원래 목적지(창의 ✕)로 <b>그대로 통과</b>한다.</td>
+        <td class="ok">완료</td></tr>
+  </table>
+  <p style="margin-bottom:0">테스트 <b>750개</b> 통과 (기존 728 + 새 규칙 22).
+    새 검사는 <code>tests/test_dock_owner.py</code>.
+    <b>실기 검증 4종은 사용자 몫</b> — 아래 ‘검증 규약’ 참고.</p>
+</div>
+
+<p class="lead">
+  이 파트는 <b>한글 창과 우리 창의 관계</b>만 다룬다 — 도킹의 주인이 누구이고
+  누가 위에 오는가. 넷은 전부 <code>hwp_dock.py</code>·<code>popover.py</code>·
+  <code>app.py</code>·<code>palette_ui.py</code> 의 같은 자리를 만진다.
+  <b>033·034 는 이 파트에 넣지 않는다</b>(파트 3 으로 옮겼다) — 건드리는 파일이
+  다르고(엔진·판독기) 스파이크가 먼저라 시간 성격도 다르다. 섞으면 실기 검증에서
+  <b>무엇이 원인인지 못 가린다.</b>
+</p>
+
+<div class="phase p0"><div class="no">1</div><div>
+  <h3>031 — 양식 수정의 세 증상</h3>
+  <p><b>a. 창이 커짐 (원인 확정)</b> — <code>_exit_dock_layout()</code> 이 접었던 판을
+     다시 편 <b>직후 동기로</b> <code>_fit_window()</code> 를 부른다. 그런데
+     <code>_fit_window</code> 는 “호출부가 전부 after_idle 로 미룬다”를 전제로
+     스스로 <code>update_idletasks()</code> 를 하지 않는다 — <b>그 전제가 이 한 곳에서만
+     깨져 있다.</b> 편집 때의 큰 값이 <code>minsize</code> 에 박혀 이후 줄일 수도 없다.</p>
+  <p><b>b. 빈 문서 남음</b> — <code>hide_window_if_ours</code> 는 “고치기 전에 없던
+     창일 때만” 숨긴다. 그 <code>빈 문서 1</code> 이 사용자 것인지 우리가 켜며 딸려온
+     바탕 문서인지부터 가른다. <b>032 를 고치면 상당 부분 함께 풀릴 가능성이 높다</b>
+     (메인 도킹이 제자리로 복귀하면 그 문서는 ‘주인 있는 문서’가 된다).</p>
+  <p><b>c. 버벅임</b> — 유력 원인이 032 다. 도킹 없이도 버벅이면
+     <code>hwp_dock._follow_loop</code> 의 훅/폴링(훅 실패 시 8ms) 쪽에 원인이 따로 남는다.</p>
+  <p class="why">031-a 는 바로 고칠 수 있다. 031-b·c 는 032 를 먼저 넣고 다시 본다.</p>
+</div></div>
+
+<div class="phase p0"><div class="no">2</div><div>
+  <h3>032 — 도킹 소유권 위계 <b>(이 라운드의 핵심)</b></h3>
+  <p>한글 창의 도킹 주인은 <b>한 번에 하나</b>. 겹치면 더 구체적인 작업이 이긴다 —
+     <b>양식 수정(편집 세션) &gt; 메인 도킹</b>.</p>
+  <p><code>hwp_dock</code> 에 소유권 대장(<code>claim</code>/<code>release</code>,
+     LIFO 스택)을 두고, 우선순위는 편집 세션 100 · 메인 도킹 10.
+     <b>pause 는 <code>stop_follow()</code> 만</b> — 창 복원은 하지 않는다(제자리로
+     튕겼다 다시 붙는 깜빡임 방지). resume 은 hwnd 유효성 확인 → <code>ensure_visible()</code>
+     → <code>start()</code>.</p>
+  <p>반대 방향(편집 중 메인 ◫)은 <b>뺏지 않고 안내</b>한다.</p>
+  <p class="why">지금은 Dock 인스턴스 둘이 같은 hwnd 를 서로 제 판으로 끌어
+     SetWindowPos 를 왕복시킨다 — 사용자가 말한 버벅임의 정체.</p>
+</div></div>
+
+<div class="phase"><div class="no">3</div><div>
+  <h3>038-b — 팝오버가 창의 ✕ 를 먹는다</h3>
+  <p>판이 <code>grab_set()</code> 으로 마우스를 잡고, 바깥 클릭까지 제 이벤트로 받아
+     <b>판을 닫는 데 써 버린다</b> — 그 클릭은 ✕ 로 가지 않는다.
+     “눌러도 안 꺼진다”의 정체.</p>
+  <p><b>잡기를 쓰지 않는다</b>: 판이 열려 있는 동안만 클릭을 엿듣고 밖이면 닫는다.
+     Tk 의 바인딩 차례상 위젯 제 처리가 먼저 도므로 클릭은 원래 목적지로 통과한다.</p>
+  <p class="why">035 와 <b>같은 파일</b>(<code>design/popover.py</code>)이고, 잡기 구조를
+     바꾸면 z 순서에도 영향이 간다 — 따로 하면 같은 자리를 두 번 만진다.</p>
+</div></div>
+
+<div class="phase p0"><div class="no">4</div><div>
+  <h3>035·036 — 도킹의 z 순서 주인이 둘이다 <span class="ref">2026-08-01 추가</span></h3>
+  <p><b>035</b> 도킹 중 팔레트 드롭다운을 열면 도킹 화면이 안 보인다.
+     <code>keep_order</code> 가 <code>fg</code> 를 한글·우리 창 <b>두 핸들과만</b>
+     비교해서, 자체 hwnd 를 갖는 <b>팝오버를 남의 창으로 판정</b>하고 그냥 돌아간다
+     → 순서를 다시 잡아 줄 사람이 없다.</p>
+  <p><b>036</b> 한글을 클릭하지 않은 채 키를 누르면 도킹 화면이 사라진다.
+     <code>PageUp</code> 이 <b>단독키로 ‘항상 위’ 토글</b>인데(입력칸만 예외),
+     우리 창이 <code>-topmost</code> 가 되면 <b>최상위 띠</b>로 올라가
+     “한글이 맨 위 · 우리 창은 그 바로 아래”라는 도킹 계약을 매 틱 뒤집는다.
+     사용자는 <b>눈앞의 한글을 스크롤하려고</b> 누른 것인데 창 순서가 뒤집힌다.</p>
+  <p><b>고칠 방향(셋을 함께)</b> — ① 도킹에 들어갈 때 <code>-topmost</code> 를 끄고
+     기억했다가 뗄 때 되돌린다(도킹 중 순서의 주인은 <code>keep_order</code> 하나).
+     ② 도킹 중 PageUp·⇧ 버튼은 비켜 주고 안내 한 줄.
+     ③ <code>keep_order</code> 의 ‘우리 편’ 판정을
+     <code>GetAncestor(fg, GA_ROOTOWNER)</code> 로 넓혀 팝오버·대화상자를 포함한다.</p>
+  <p class="why">032 와 <b>같은 파일·같은 개념</b>이다 — 따로 하면 keep_order 를 두 번 고친다.
+     035 는 원인 후보가 둘이라 <b>가르는 실측 1건</b>(팝오버 열 때 fg·소유사슬·z순서·구멍 상태 로그)이 먼저다.</p>
+</div></div>
+
+<h3>이 라운드의 검증 규약</h3>
+<div class="card">
+  <ul>
+    <li><b>테스트 전체 실행</b> <span class="ok">✔ 750개 통과</span>
+        (기존 728 + 새 규칙 22 — <code>tests/test_dock_owner.py</code>).</li>
+    <li><b>실기 검증 5종</b> <span class="ref">— 한글이 필요해 사용자가 한다</span>
+        ① 도킹 → 양식 수정 → 저장 → <b>메인 자동 복귀</b> (취소 경로도)
+        ② 같은 경로에서 <b>창이 커지지 않고 빈 문서도 안 남는지</b> (031)
+        ③ 도킹 중 <b>팔레트 드롭다운</b>을 열었다 닫아도 도킹이 그대로 (035)
+        ④ 도킹 중 한글 미클릭 상태에서 <b>PageUp</b> → 도킹 유지 + 안내
+        (도킹을 떼면 PageUp 이 다시 ‘항상 위’로 동작) (036)
+        ⑤ 팝오버가 떠 있을 때 창의 <b>✕ 가 한 번에</b> 먹는지 (038-b).</li>
+    <li>끝나면 <b>main 에 병합·푸시</b>.</li>
+    <li><b>버전은 올리지 않는다</b> (기존 규약과 동일 — 사용자가 정한다).</li>
+  </ul>
+</div>
+
+
+<h2>7. 파트 2~4 개요 <small>상세는 FEEDBACK 문서의 같은 번호 항목</small></h2>
+
+<div class="phase"><div class="no">2</div><div>
+  <h3>파트 2 — 창고에서 하는 일 <span class="ref">028 · 038-a·c·d · 039 · 한글 불필요</span></h3>
+  <p><b>028 (회귀 복원)</b> 특수기호 창의 <b>종류별 묶음 목록</b>과 <b>내가 등록한 기호</b>를
+     되살린다. 022 를 반영하며 <b>기능이 적은 창으로 합친 것</b>이 원인이라,
+     합치는 방향을 <b>반대로</b> 잡는다(묶음 목록이 있는 격자를 기준으로).</p>
+  <p><b>038</b> 우클릭에 <b>삭제</b>(되돌릴 수 없음·함께 지워지는 것을 미리 셈) ·
+     지금 분류는 목록에서 빼기 · <b>옮기기는 하위 분류 탭으로 끌어놓기</b>.
+     그러면 우클릭은 <b>삭제 전용</b>이 되어 단순해진다.</p>
+  <p><b>039</b> 도구 <b>‘라이브러리’ 폐지</b> — 021 과 같은 절차(<code>RETIRED_KEYS</code>).
+     <code>open_manager</code> 자체는 특수기호·사진 폴더가 계속 쓰므로 <b>남긴다</b>.</p>
+  <p class="why">한글이 필요 없어 <b>테스트만으로 검증</b>된다 — 파트 1 과 성격이 아예 다르다.</p>
+</div></div>
+
+<div class="phase spike"><div class="no">3</div><div>
+  <h3>파트 3 — 누르면 무슨 일이 일어나는가 <span class="ref">033 · 034 · 040 · 스파이크 먼저 · 한글 필요</span></h3>
+  <p><b>040 (먼저 정할 것)</b> <code>\\</code> 와 <code>\이름\</code> 이 다르게 취급되는 문제.
+     결정이 셋 어긋나 있다 — <b>안 A(누르면 옵션 고르기)</b> 권함.
+     A 로 가면 <b>033-b(우클릭 채워서 꽂기)는 없어진다.</b></p>
+  <p><b>033-a</b> 등록 2 vs 채우기 1 불일치 — 둘째 <code>\</code> 가 글상자 안이라
+     run 스캐너가 못 연다. <b>실측 먼저</b>(부모 태그 추적 + <b>재주입 안전성</b>).
+     부정적이면 <b>안전망</b>(채우기 창에 불일치를 그대로 알림)만이라도.</p>
+  <p><b>034</b> 자간 맞춤을 <b>표 안</b>에서도. <code>list_id</code> 배관 문제일 뿐이다.
+     <b>여러 셀에 걸친 선택은 1차 제외.</b> 실측 3건 먼저.</p>
+</div></div>
+
+<div class="phase"><div class="no">4</div><div>
+  <h3>파트 4 — 보이는 것 <span class="ref">027 · 029 · 030 · 037 · 한글 불필요</span></h3>
+  <p><b>030 (범위 결정 먼저)</b> ① 서식 창만 ② 서식 창 + <b>자체 부품</b>(체크·수치칸)을
+     <code>design/</code> 에 ③ ② + 전체 훑기. <b>권함 ②</b> — ①은 반복되고 ③은 이번 범위 밖.</p>
+  <p><b>037</b> 여러 물감이 든 칸에 <b>세로 띠</b>. 표기 <b>안 B 권함</b>(겹침=개수 · 섞기=MIX).
+     띠를 <b>공용 부품</b>으로 만들어 <b>메인·설정 격자·창고 세 화면</b>이 같이 쓴다 —
+     지금은 창고 카드에만 있어 화면마다 다르게 보인다.</p>
+  <p><b>029</b> 사진 폴더 연결을 <b>판 안에서</b>(지금 [설정]은 다섯 탭짜리 창을 통째로 연다).
+     <b>폴더 순서 바꾸기(↑↓)</b>도 함께 — 순서가 곧 이름 충돌 우선순위인데 지금은 바꿀 길이 없다.</p>
+  <p><b>027</b> 도구 판의 빈자리를 <b>사용법</b>으로. 글의 출처를 <b>한 곳</b>으로 정하는 것이 핵심
+     (지금 힌트는 <code>builtin_actions</code>, 절 단위 설명은 <code>help_content</code>).</p>
+  <p class="why">030 의 부품이 037·029·027 의 바닥이다. <b>맨 뒤에 둬야</b> 앞 셋이 바꾼 화면 위에 한 번만 얹는다.</p>
+</div></div>
+
+
 <footer>
-  HwpPalette 수정 기획서 · 2026-07-31 사용자 승인 · 근거: docs/FEEDBACK_post_0.3.0.md (001~018) ·
-  시안: docs/mockups/store-reform-2026-07-31.html<br>
+  HwpPalette 수정 기획서 · 2026-07-31 사용자 승인 (1차) · 2026-08-01 2·3차 피드백 반영<br>
+  근거: docs/FEEDBACK_post_0.3.0.md (001~040) ·
+  시안: docs/mockups/store-reform-2026-07-31.html · docs/mockups/store-subcats.html<br>
   이 문서가 기준이며, 세부 근거·검토 이력은 FEEDBACK 문서를 따른다.
 </footer>
 
