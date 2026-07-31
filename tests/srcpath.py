@@ -27,7 +27,7 @@ _LAYERS = {
                "hwp_dock", "form_markdown"],
     "ui":     ["palette_ui", "store_ui", "library_ui", "form_fill_ui",
                "form_table_ui", "help_ui", "help_content", "onboarding",
-               "tutorial", "tutorials", "dock_bar"],
+               "tutorial", "tutorials", "dock_bar", "char_source"],
 }
 _WHERE = {m: layer for layer, mods in _LAYERS.items() for m in mods}
 

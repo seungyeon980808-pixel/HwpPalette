@@ -291,7 +291,7 @@ BLOCK_ICON = {
     "photo":        "▲",
     "special":      "※",    # 특수기호 그 자체
     "form_fill":    "▤",    # 줄 그은 종이 = 양식
-    "library":      "▥",
+    # "library" 는 뺐다 (2026-08-01, 피드백 039 — 도구 자체를 없앴다)
     "search":       "⌕",
 }
 

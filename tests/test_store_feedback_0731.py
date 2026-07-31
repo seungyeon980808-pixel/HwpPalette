@@ -52,6 +52,54 @@ class RetiredToolTest(unittest.TestCase):
         self.assertFalse(palette._drop_retired_tools(tabs))
 
 
+class RetiredLibraryToolTest(unittest.TestCase):
+    r"""'라이브러리' 도구도 없앴다 (사용자 결정 2026-08-01, 피드백 039).
+
+        "도구에서 라이브러리 기능을 삭제해야합니다.
+         지금 아무 짝에도 쓸모없는 기능입니다."
+
+    맞는 판단이다 — 만들 당시에는 등록한 물감을 보는 유일한 창이었는데,
+    그 뒤로 **물감 창고**가 설정 창 안에 생겨 같은 일을 더 잘한다.
+    남아 있던 것은 "창 하나 더 여는 버튼"뿐이었다.
+
+    ⚠ 없앤 것은 **도구 블럭 하나**다 — 물감 설정 창 자체는 남는다.
+    """
+
+    def test_카탈로그에_없다(self):
+        self.assertNotIn("library", builtin_actions.ACTION_BY_KEY)
+        self.assertNotIn("library", builtin_actions.DEFAULT_MAIN_KEYS)
+        keys = [a["key"] for a in builtin_actions.visible_actions()]
+        self.assertNotIn("library", keys)
+
+    def test_폐지_목록에_있다(self):
+        """카탈로그에서 빼기만 하면 이미 놓인 블럭이 '모르는 키'로 남는다."""
+        self.assertIn("library", builtin_actions.RETIRED_KEYS)
+
+    def test_이미_놓인_블럭을_걷어낸다(self):
+        tabs = [{"name": "메인", "cols": 8, "blocks": [
+            {"type": "builtin", "key": "convert"},
+            {"type": "builtin", "key": "library"},
+        ]}]
+        self.assertTrue(palette._drop_retired_tools(tabs))
+        self.assertEqual([b.get("key") for b in tabs[0]["blocks"]], ["convert"])
+
+    def test_물감_설정_창을_여는_길은_남는다(self):
+        r"""도구 '특수기호'와 사진 폴더 관리가 같은 창을 다른 입구로 쓴다.
+
+        여기까지 지우면 특수기호 도구가 통째로 죽는다 — 039 계획이
+        "지우면 안 되는 것"으로 못박아 둔 자리다.
+        """
+        import io
+        import pathlib as _pl
+        app = _pl.Path(__file__).resolve().parent.parent / "hwp_palette" / "app.py"
+        code = io.open(app, encoding="utf-8").read()
+        self.assertIn("def fn_open_library", code)
+        self.assertIn('fn_open_library(cat="문자")', code)
+        # 도구 잇기(BUILTIN_DISPATCH)에서는 빠져 있어야 한다
+        table = code.split("BUILTIN_DISPATCH = {")[1].split("}")[0]
+        self.assertNotIn('"library"', table)
+
+
 class SpacingFitToolTest(unittest.TestCase):
     """자간 맞춤 — 사용자가 '어떻게 쓰는지 알 수 없다'고 한 그 기능."""
 

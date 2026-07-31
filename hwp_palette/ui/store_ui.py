@@ -901,44 +901,84 @@ class StorePanel(tk.Frame):
             w.bind("<ButtonRelease-1>", self._tile_release)
             if cat != "도구":
                 w.bind("<Button-3>",
-                       lambda e, c=cat, i=item: self._move_menu(e, c, i))
+                       lambda e, c=cat, i=item: self._tile_menu(e, c, i))
         self._paint_tile(tile, state, selected=False)
         return tile
 
-    def _move_menu(self, e, cat, item):
-        r"""물감 우클릭 — '분류 옮기기' (시안 K-3). Ctrl 로 여러 개 담아 두고
-        그중 하나를 우클릭하면 담은 것이 **한 번에** 옮겨진다."""
+    def _targets_of(self, cat, item):
+        r"""이 우클릭·끌기가 다룰 물감들.
+
+        Ctrl 로 담아 둔 것 중 하나를 집었으면 **같은 분류의 담은 것 전부**가
+        대상이다. 아니면 그 하나뿐.
+        """
+        if (cat, item.get("id")) in self.multi:
+            return [iid for c, iid in sorted(self.multi) if c == cat]
+        return [item.get("id")]
+
+    def _tile_menu(self, e, cat, item):
+        r"""물감 우클릭 — **삭제 전용** (2026-08-01, 피드백 038-a·c·d).
+
+        예전에는 '분류 옮기기' 목록이었다. 두 가지가 겹쳐 바뀌었다:
+
+          · 038-d 사용자 결정: *"옮기기 기능은 끌어놓기로 하겠습니다"* —
+            위쪽 하위 분류 탭에 끌어다 놓으면 그 분류로 간다.
+          · 038-c: 그 목록은 **지금 있는 분류까지** 늘어놓아서, 눌러도 아무
+            일이 안 일어나는 항목이 늘 하나 섞여 있었다.
+
+        옮기기가 끌어놓기로 가면서 이 메뉴는 삭제만 남아 훨씬 단순해졌다.
+        """
         from hwp_palette.design.popover import Popover
-        key = (cat, item.get("id"))
-        # 담은 것 중 하나를 우클릭했으면 같은 분류의 담은 것 전부가 대상
-        targets = ([iid for c, iid in sorted(self.multi) if c == cat]
-                   if key in self.multi else [item.get("id")])
-        cur = library.subcat_of(item)
+        targets = self._targets_of(cat, item)
         many = len(targets) > 1
-
-        def move(subname):
-            for iid in targets:
-                library.set_subcat(cat, iid, subname)
-            self.refresh()
-
         pop = Popover(self.winfo_toplevel())
-        prefix = f"담은 {len(targets)}개를 " if many else ""
-        for subname, label in ([("", "미분류")]
-                               + [(s, s) for s in self._subcats.get(cat) or []]):
-            mark = " ●" if (not many and subname == cur) else ""
-            pop.add(f"{prefix}{label} 로 옮기기{mark}",
-                    lambda s=subname: move(s))
-        pop.separator()
-        pop.add(f"{prefix}＋ 새 분류로 옮기기", lambda: self._move_new(cat, move))
+        label = f"담은 {len(targets)}개 삭제" if many else "삭제"
+        pop.add(label, lambda: self._delete_items(cat, targets))
         pop.show_at(e.x_root, e.y_root)     # 맥락 메뉴는 누른 자리에
 
-    def _move_new(self, cat, move):
-        name = simpledialog.askstring(
-            "새 분류", f"{_cat_label(cat)}의 새 분류 이름:",
-            parent=self.winfo_toplevel())
-        made = library.add_subcat(cat, name) if name else None
-        if made:
-            move(made)
+    def _delete_items(self, cat, ids):
+        r"""물감을 창고에서 **완전히** 지운다 — 되돌릴 수 없다.
+
+        지우기 전에 **함께 사라지는 것을 미리 센다** (사용자 요구 038-a):
+        그 물감을 가리키던 팔레트 자리는 같이 걷힌다(`_purge_palette_refs`).
+        모르고 지우면 시험지 팔레트에 구멍이 난다.
+
+        꾸러미(섞기)가 쓰고 있는 요소는 아예 못 지운다 — 지우면 그 꾸러미의
+        빈칸 수가 조용히 줄어 시험지가 어긋난다. `library.MixInUse` 로 막고
+        누가 쓰는지 이름을 보여준다.
+        """
+        names, refs = [], 0
+        for iid in ids:
+            it = library.find_by_id(cat, iid)
+            if it:
+                names.append(it.get("name", "?"))
+                refs += library.count_palette_refs(cat, iid)
+        if not names:
+            return
+        what = names[0] if len(names) == 1 else f"물감 {len(names)}개"
+        msg = "창고에서 완전히 지웁니다. 조각 파일까지 지워지며 되돌릴 수 없습니다."
+        if refs:
+            msg += (f"\n⚠ 팔레트에 놓여 있는 {refs}자리도 함께 사라집니다.")
+        if not messagebox.askyesno(
+                "정말 없앨까요?", f"'{what}' 을(를) 지울까요?\n\n{msg}",
+                default="no", icon="warning", parent=self.winfo_toplevel()):
+            return
+        blocked = []
+        for iid in ids:
+            try:
+                library.delete_item(cat, iid)
+            except library.MixInUse as e:
+                blocked.append(str(e))
+            except Exception as e:
+                applog.exc(f"{cat} 물감 삭제 실패", e)
+                blocked.append(f"{iid} — {type(e).__name__}")
+        self.multi.clear()
+        self.refresh()
+        if blocked:
+            messagebox.showwarning(
+                "지우지 못한 물감이 있습니다",
+                "꾸러미가 쓰고 있는 물감은 지울 수 없습니다.\n\n"
+                + "\n".join(blocked[:5]),
+                parent=self.winfo_toplevel())
 
     # ── 타일 끌어서 팔레트에 놓기 ─────────────────────
     def _tile_press(self, e, cat, item):
@@ -951,11 +991,16 @@ class StorePanel(tk.Frame):
             return
         self._select(cat, item)             # 누르는 것 자체는 '고르기'
         block = self.block_of(cat, item)
-        if self.on_drop is None or block is None:
-            self._drag = None               # 놓을 수 없는 분류 (서식)
+        # 팔레트에 못 놓는 분류(서식)라도 **끌기는 시작한다** (2026-08-01,
+        # 038-d): 하위 분류 탭으로 옮기는 길이 생겼기 때문이다. 놓는 자리가
+        # 팔레트면 block 이 없을 때 그냥 아무 일도 안 일어난다.
+        if self.on_drop is None and cat == "도구":
+            self._drag = None               # 도구는 옮길 분류가 없다
             return
-        self._drag = {"block": block, "name": item.get("name", ""),
-                      "x": e.x_root, "y": e.y_root, "ghost": None}
+        self._drag = {"block": block, "cat": cat, "item": item,
+                      "name": item.get("name", ""),
+                      "x": e.x_root, "y": e.y_root, "ghost": None,
+                      "over": None}
 
     def _tile_motion(self, e):
         d = self._drag
@@ -988,6 +1033,51 @@ class StorePanel(tk.Frame):
             d["ghost"].geometry(f"+{e.x_root + 8}+{e.y_root + 8}")
         except Exception:
             pass
+        # 하위 분류 탭 위에 있으면 그 탭을 강조한다 — 어디에 떨어지는지가
+        # 보여야 끌어놓기가 쓸 만해진다 (팔레트 격자의 초록 테두리와 같은 규칙).
+        self._hover_sub(d, self._sub_at(e.x_root, e.y_root))
+
+    def _sub_at(self, x_root, y_root):
+        r"""그 화면 좌표가 **하위 분류 탭** 위인가 — 맞으면 그 분류 이름.
+
+        위젯이 아니라 좌표로 가른다 (038-d 계획): 끌기 중에는 마우스가
+        잡혀 있어 밑에 있는 위젯이 제 이벤트를 받지 못한다. `""` 는 미분류라
+        정상 값이므로 **못 찾은 것은 None** 으로 구분한다.
+        """
+        fr = self._sub_frames.get(self.filter)
+        if fr is None or not fr.winfo_ismapped():
+            return None
+        for sub, parts in (getattr(fr, "_cells", {}) or {}).items():
+            cell = parts[0]
+            try:
+                if not cell.winfo_ismapped():
+                    continue
+                x, y = cell.winfo_rootx(), cell.winfo_rooty()
+                if (x <= x_root <= x + cell.winfo_width()
+                        and y <= y_root <= y + cell.winfo_height()):
+                    return sub
+            except Exception:
+                continue
+        return None
+
+    def _hover_sub(self, d, sub):
+        """끌고 지나가는 동안 그 탭만 강조 — 들어오고 나갈 때만 색을 만진다."""
+        if d.get("over") == sub:
+            return
+        for name in (d.get("over"), sub):
+            if name is None:
+                continue
+            parts = (getattr(self._sub_frames.get(self.filter), "_cells", {})
+                     or {}).get(name)
+            if not parts:
+                continue
+            on = (name == sub)
+            try:
+                parts[0].config(highlightthickness=2 if on else 1,
+                                highlightbackground=SEL_LINE if on else SUBBG)
+            except tk.TclError:
+                pass
+        d["over"] = sub
 
     def _tile_release(self, e):
         d, self._drag = self._drag, None
@@ -997,8 +1087,27 @@ class StorePanel(tk.Frame):
             d["ghost"].destroy()
         except Exception:
             pass
-        if self.on_drop:
+        self._hover_sub(d, None)            # 강조를 걷는다
+        # 놓은 자리로 가른다 (2026-08-01, 038-d 사용자 결정:
+        # "옮기기 기능은 끌어놓기로 하겠습니다").
+        sub = self._sub_at(e.x_root, e.y_root)
+        if sub is not None:
+            self._move_to_sub(d["cat"], d["item"], sub)
+            return
+        if self.on_drop and d.get("block"):
             self.on_drop(dict(d["block"]), e.x_root, e.y_root)
+
+    def _move_to_sub(self, cat, item, sub):
+        """하위 분류 탭에 떨어뜨렸다 — 담아 둔 것이 있으면 **전부** 옮긴다."""
+        targets = self._targets_of(cat, item)
+        if library.subcat_of(item) == sub and len(targets) == 1:
+            return                          # 제자리 — 아무 일도 안 한다
+        for iid in targets:
+            try:
+                library.set_subcat(cat, iid, sub)
+            except Exception as ex:
+                applog.exc(f"{cat} 물감 분류 옮기기 실패", ex)
+        self.refresh()
 
     def _paint_tile(self, tile, state, selected):
         """타일 하나의 색만 바꾼다 — 위젯을 다시 만들지 않으므로 안 깜빡인다."""

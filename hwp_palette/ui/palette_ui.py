@@ -23,7 +23,7 @@ from hwp_palette.model import palette
 from hwp_palette.model import library
 from hwp_palette.model import func_catalog
 from hwp_palette.model import builtin_actions              # 프로그램 기능 블럭('도구') 카탈로그
-from hwp_palette.model import builtin_chars               # 내장 기호 (특수기호 블럭 만들기)
+from hwp_palette.ui import char_source                    # 기호 목록·묶음 규칙 (창고와 공유)
 from hwp_palette.hwp import engine_library               # 고치기 세션 마무리 (hide_window_if_ours)
 from hwp_palette.hwp import hwp_dock                     # 고치는 동안 한글 창을 미리보기 판에 도킹
 from hwp_palette.hwp import hwp_engine
@@ -3505,9 +3505,24 @@ class _CharDialog(tk.Toplevel):
     쓸 길이 없었다 — 한글에서 미리 복사해 오는 수밖에. 입력칸 + 검색 +
     기호 격자를 한 창에 둔다. 기호를 누르면 입력칸의 커서 자리에 들어가므로
     여러 개를 이어 담을 수도 있다("① " 처럼 기호+공백 조합 등).
+
+    (2026-08-01, 피드백 028 — 회귀 복원) **묶음 목록**과 **내가 등록한 기호**를
+    돌려놓았다. 022 를 반영하며 창을 하나로 합칠 때 기능이 적은 이 창을 기준으로
+    삼는 바람에 둘 다 사라졌다:
+
+        "원래 특수기호가 종류별로 잘 정리가 되어있었는데 … 종류별로 분류되어
+         있어야 합니다. 내가 추가한 특수기호도 들어가야하는거고요"
+
+    목록을 만드는 규칙은 `char_source` 가 갖는다 — 창고의 '문자' 탭과 **같은
+    목록**이다. 두 곳이 각자 만들다가 한쪽만 기능이 빠진 것이 이 회귀의 원인이라,
+    같은 실수를 못 하게 규칙 자체를 한 곳으로 모았다.
+
+    96개 상한은 없앴다: 묶음을 고르면 묶음 하나가 그보다 작고, 그래도 큰
+    '전체'는 창고와 같은 **나눠 그리기**로 버틴다.
     """
     _COLS = 12          # 격자 열 수
-    _SHOW_MAX = 96      # 한 번에 그리는 최대 개수 — 나머지는 검색으로 좁힌다
+    _CHUNK = 3          # 나눠 그리기 — 한 번에 몇 줄씩 (창고 격자와 같은 규칙)
+    _FIRST_ROWS = 8     # 눈에 보일 몇 줄은 즉시
 
     def __init__(self, master, prefill=""):
         super().__init__(master)
@@ -3536,7 +3551,7 @@ class _CharDialog(tk.Toplevel):
 
         srow = tk.Frame(self, bg=BG)
         srow.pack(fill="x", padx=16, pady=(10, 4))
-        tk.Label(srow, text="내장 기호", font=(FONT, theme.fs(FS["body"]), "bold"),
+        tk.Label(srow, text="기호 고르기", font=(FONT, theme.fs(FS["body"]), "bold"),
                  bg=BG, fg=TEXT).pack(side="left")
         self.q = tk.Entry(srow, font=(FONT, theme.fs(FS["body"])),
                           relief="solid", bd=1, width=16)
@@ -3546,9 +3561,22 @@ class _CharDialog(tk.Toplevel):
                               bg=BG, fg=MUTED)
         self.count.pack(side="left", padx=(8, 0))
 
-        self.grid_box = tk.Frame(self, bg=CARD, highlightbackground=BORDER,
+        # 묶음 + 격자를 좌우로 (창고 '문자' 탭과 같은 배치 — 2026-08-01, 028).
+        # 묶음이 열몇 갈래라 세로 목록이 맞다: 가로 칩으로 늘어놓으면 줄이 접혀
+        # 창 위쪽을 다 먹는다 (2026-07-26 에 창고에서 이미 겪은 것).
+        body = tk.Frame(self, bg=BG)
+        body.pack(fill="both", expand=True, padx=16)
+        self._group = char_source.ALL_GROUP
+        self.side = tk.Frame(body, bg=CARD, highlightbackground=BORDER,
+                             highlightthickness=1)
+        self.side.pack(side="left", fill="y", padx=(0, 8))
+        self._chip_btns = {}
+        self._build_chips()
+
+        self.grid_box = tk.Frame(body, bg=CARD, highlightbackground=BORDER,
                                  highlightthickness=1)
-        self.grid_box.pack(fill="x", padx=16)
+        self.grid_box.pack(side="left", fill="both", expand=True)
+        self._grid_job = None
 
         foot = tk.Frame(self, bg=BG, padx=16, pady=12)
         foot.pack(fill="x")
@@ -3563,25 +3591,77 @@ class _CharDialog(tk.Toplevel):
         self.grab_set()
         self.entry.focus_set()
 
+    def _build_chips(self):
+        """왼쪽 묶음 목록 — 창고 '문자' 탭과 **같은 묶음**(char_source)."""
+        for w in self.side.winfo_children():
+            w.destroy()
+        self._chip_btns = {}
+        inner = tk.Frame(self.side, bg=CARD)
+        inner.pack(fill="both", expand=True)
+        for g in char_source.groups():
+            on = g == self._group
+            b = RoundButton(inner, text=g, command=lambda gg=g: self._pick(gg),
+                            bg=ACCENT if on else CARD,
+                            fg="white" if on else TEXT,
+                            radius=theme.RADIUS["ctl"],
+                            font=(FONT, theme.fs(FS["sub"])), outline="",
+                            zone_bg=CARD, justify="left")
+            b.fit(pad_x=8, pad_y=4,
+                  min_w=int(round(96 * (theme.FONT_SCALE or 1))))
+            b.pack(anchor="w", padx=4, pady=1)
+            self._chip_btns[g] = b
+
+    def _pick(self, group):
+        self._group = group
+        for g, b in self._chip_btns.items():
+            on = g == group
+            b.retint(bg=ACCENT if on else CARD, fg="white" if on else TEXT)
+        self._render()
+
     def _render(self, _e=None):
+        # 나눠 그리기가 돌고 있으면 멈춘다 — 부순 격자에 계속 그리면 안 된다
+        if self._grid_job is not None:
+            try:
+                self.after_cancel(self._grid_job)
+            except Exception:
+                pass
+            self._grid_job = None
         for w in self.grid_box.winfo_children():
             w.destroy()
-        items = builtin_chars.search(self.q.get())
-        shown = items[:self._SHOW_MAX]
-        for k, (label, text, group) in enumerate(shown):
-            c = tk.Label(self.grid_box, text=text,
+        items = char_source.entries(self._group, self.q.get())
+        self.count.config(text=f"{len(items)}개" if items else "없습니다")
+        cols = self._COLS
+
+        def _cell(k, e):
+            # 문구가 긴 항목(자주 쓰는 문장)은 앞부분만 — 전체는 툴팁에서
+            shown = (e["text"] or "").replace("\n", " ")
+            if len(shown) > 4:
+                shown = shown[:3] + "…"
+            c = tk.Label(self.grid_box, text=shown,
                          font=(FONT, theme.fs(FS["head"])),
                          bg=CARD, fg=TEXT, width=3, pady=2, cursor="hand2")
-            c.grid(row=k // self._COLS, column=k % self._COLS, padx=1, pady=1)
-            c.bind("<Enter>", lambda e, w=c: w.config(bg=ACCENT_SOFT))
-            c.bind("<Leave>", lambda e, w=c: w.config(bg=CARD))
+            c.grid(row=k // cols, column=k % cols, padx=1, pady=1)
+            c.bind("<Enter>", lambda ev, w=c: w.config(bg=ACCENT_SOFT))
+            c.bind("<Leave>", lambda ev, w=c: w.config(bg=CARD))
             c.bind("<ButtonRelease-1>",
-                   lambda e, t=text: self.entry.insert("insert", t))
-            _tip(c, f"{label} · {group}")
-        more = len(items) - len(shown)
-        self.count.config(
-            text=(f"{len(items)}개 중 {len(shown)}개 — 검색으로 좁혀 보세요"
-                  if more > 0 else f"{len(items)}개"))
+                   lambda ev, t=e["text"]: self.entry.insert("insert", t))
+            _tip(c, f"{e['label']} · {e['group']}")
+
+        def _build(start):
+            self._grid_job = None
+            if not self.grid_box.winfo_exists():
+                return              # 그 사이 묶음·검색이 바뀌어 부서졌다
+            end = min(len(items), start + cols * self._CHUNK)
+            for k in range(start, end):
+                _cell(k, items[k])
+            if end < len(items):
+                self._grid_job = self.after(1, lambda: _build(end))
+
+        first = min(len(items), cols * self._FIRST_ROWS)
+        for k in range(first):
+            _cell(k, items[k])
+        if first < len(items):
+            self._grid_job = self.after(1, lambda: _build(first))
 
     def _ok(self):
         val = self.entry.get()

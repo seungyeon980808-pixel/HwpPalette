@@ -322,7 +322,7 @@
   <tr><td class="num">028</td><td><b>회귀</b></td>
       <td>특수기호 창에서 <b>종류별 분류</b>와 <b>내가 등록한 기호</b>가 사라짐<br>
           <span class="ref">022 를 반영하며 기능이 적은 창으로 합친 것이 원인 — Claude 잘못</span></td>
-      <td>원인 확정 · 대기</td></tr>
+      <td class="ok">파트 2 완료</td></tr>
   <tr><td class="num">029</td><td>기능</td>
       <td>사진 도구의 <b>폴더 연결을 판 안에서</b> (지금은 [설정]이 다섯 탭짜리 창을 통째로 연다)</td>
       <td>검토 완료 · 대기</td></tr>
@@ -354,10 +354,10 @@
   <tr><td class="num">038</td><td>버그·기능</td>
       <td>창고 우클릭에 <b>삭제</b> 추가 · <b>지금 분류는 목록에서 빼기</b> ·
           옮기기는 <b>끌어놓기</b>로 · <b>팝오버가 창의 ✕ 를 먹는다</b></td>
-      <td><b>b 는 파트 1 완료</b> · a·c·d 는 파트 2</td></tr>
+      <td class="ok">파트 1·2 완료 (네 건)</td></tr>
   <tr><td class="num">039</td><td>삭제</td>
       <td>도구 <b>‘라이브러리’</b> 폐지 — 창고가 같은 일을 더 잘한다</td>
-      <td>계획 완료 · 대기</td></tr>
+      <td class="ok">파트 2 완료</td></tr>
   <tr><td class="num">040</td><td>결정</td>
       <td><code>\\</code> 와 <code>\이름\</code> 이 다르게 취급된다 —
           누르면 <b>옵션을 고르게</b> 할지 결정<br>
@@ -600,6 +600,25 @@
   <p><b>039</b> 도구 <b>‘라이브러리’ 폐지</b> — 021 과 같은 절차(<code>RETIRED_KEYS</code>).
      <code>open_manager</code> 자체는 특수기호·사진 폴더가 계속 쓰므로 <b>남긴다</b>.</p>
   <p class="why">한글이 필요 없어 <b>테스트만으로 검증</b>된다 — 파트 1 과 성격이 아예 다르다.</p>
+  <div class="card" style="border-left:3px solid #0a6b2e;margin:10px 0 0">
+    <h3 style="margin-top:0">진행 결과 — 2026-08-01 <span class="ok">완료</span></h3>
+    <ul style="margin:6px 0 0;padding-left:20px">
+      <li><b>028</b> 목록 규칙을 <code>ui/char_source.py</code> 한 곳으로 모으고
+          <b>두 화면이 공유</b>한다. <b>각자 만들던 것이 회귀의 원인</b>이라,
+          화면을 통째로 합치는 대신 규칙을 공유해 한쪽만 빠질 수 없게 했다.
+          팔레트 빈칸 창이 <b>묶음 21갈래·내가 등록한 기호</b>를 되찾고,
+          96개 상한 대신 <b>나눠 그리기</b>를 쓴다.</li>
+      <li><b>038-a</b> 우클릭 삭제 — <b>함께 사라지는 팔레트 자리를 세어</b> 보여주고,
+          꾸러미가 쓰는 물감은 막는다. <b>038-c</b> 는 목록이 없어지며 함께 풀렸다.
+          <b>038-d</b> 옮기기는 <b>끌어놓기</b>(좌표로 가름 · 지나가는 탭 강조 ·
+          담은 것 전부). 우클릭은 <b>삭제 전용</b>이 됐다.</li>
+      <li><b>039</b> 021 과 같은 절차(<code>RETIRED_KEYS</code>). 이미 놓인 블럭도 걷힌다.
+          <code>open_manager</code> 는 <b>남겼다</b> — 특수기호·사진 폴더가 계속 쓴다.</li>
+    </ul>
+    <p style="margin-bottom:0">테스트 <b>783개</b> 통과 (파트 1 의 754 + 29).
+      새 검사: <code>tests/test_char_source.py</code> ·
+      <code>tests/test_store_dnd_delete.py</code>.</p>
+  </div>
 </div></div>
 
 <div class="phase spike"><div class="no">3</div><div>

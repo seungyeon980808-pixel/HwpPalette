@@ -30,6 +30,7 @@ from hwp_palette.hwp import engine_library
 from hwp_palette.model import library
 from hwp_palette.model import palette                    # 보낼 팔레트 목록 (팔레트 보내기)
 from hwp_palette.model import builtin_chars
+from hwp_palette.ui import char_source                   # 기호 목록·묶음 규칙 (두 창이 공유)
 from hwp_palette.core import settings
 
 from hwp_palette.core import appinfo
@@ -67,7 +68,7 @@ CATS = (
 # '내장' 탭은 없앴다 (사용자 결정 2026-07-26) — 내장 기호와 내가 등록한 기호는
 # 쓰는 사람 입장에서 같은 것("문서에 \라벨\ 로 부르는 기호")인데 탭이 갈려 있어
 # 두 곳을 뒤져야 했다. 이제 '특수기호' 한 탭에서 문자표처럼 함께 보여준다.
-MY_GROUP_CHIP = "내가 등록"
+MY_GROUP_CHIP = char_source.MY_GROUP     # 이름은 한 곳에서 (2026-08-01, 028)
 CAT_LABEL = {c["key"]: c["label"] for c in CATS}
 TABS = tuple(c["key"] for c in CATS)    # open_manager(cat=...) 검사용
 
@@ -1016,10 +1017,7 @@ class LibraryManager(tk.Toplevel):
         for w in self.side.winfo_children():
             w.destroy()
         self._chip_btns = {}
-        groups = ["전체", MY_GROUP_CHIP]
-        for _, _, g in builtin_chars.BUILTINS:
-            if g not in groups:
-                groups.append(g)
+        groups = char_source.groups()       # 팔레트 쪽 창과 **같은 묶음 목록**
         if self._builtin_group not in groups:
             self._builtin_group = "전체"
         # 분류가 많아지면 이 목록도 스크롤이 필요하다 — 기호판과 같은 방식
@@ -1229,29 +1227,15 @@ class LibraryManager(tk.Toplevel):
     # 정작 한 번에 열 개도 못 봤다. 격자로 모으면 한 화면에 다 들어오고,
     # 무엇을 고르든 **호출 방법은 아래 한 곳**에서 말해 주면 된다.
     def _char_entries(self, query):
-        """내가 등록한 기호 + 내장 기호를 한 목록으로 (등록한 것이 먼저)."""
-        chip = self._builtin_group
-        ql = query.lower()
-        out = []
-        if chip in ("전체", MY_GROUP_CHIP):
-            for it in library.list_items("문자"):
-                if ql and ql not in self._search_blob("문자", it):
-                    continue
-                out.append({"kind": "item", "cat": "문자", "item": it,
-                            "text": it.get("text", ""),
-                            "label": it.get("label") or it["name"],
-                            # 내가 등록한 것은 내장 기호의 묶음(원문자·수학…)에
-                            # 속하지 않는다 — 칩에서는 '내가 등록'으로만 걸린다
-                            "group": MY_GROUP_CHIP})
-        if chip != MY_GROUP_CHIP:
-            for label, text, group in builtin_chars.search(query):
-                if chip not in ("전체", group):
-                    continue
-                out.append({"kind": "builtin", "cat": "문자",
-                            "item": {"name": label, "label": label,
-                                     "text": text, "group": group},
-                            "text": text, "label": label, "group": group})
-        return out
+        r"""내가 등록한 기호 + 내장 기호를 한 목록으로 (등록한 것이 먼저).
+
+        규칙 자체는 `char_source` 가 갖는다 (2026-08-01, 피드백 028) — 팔레트
+        빈칸에서 여는 창도 **같은 목록**을 써야 한다. 두 곳이 각자 만들다가
+        한쪽만 기능이 빠진 것이 그 회귀의 원인이었다.
+        """
+        return char_source.entries(
+            self._builtin_group, query,
+            blob_fn=lambda it: self._search_blob("문자", it))
 
     def _render_char_grid(self, query):
         r"""기호 격자 — 400여 칸을 **가볍게, 나눠서** 그린다 (2026-07-31).

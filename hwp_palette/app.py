@@ -724,7 +724,9 @@ BUILTIN_DISPATCH = {
     "special":      lambda: fn_open_library(cat="문자"),
     "form_fill":    lambda: fn_open_form_fill(),
     "exam_excel":   lambda: fn_open_excel(),
-    "library":      lambda: fn_open_library(),
+    # '라이브러리' 도구는 없앴다 (2026-08-01, 피드백 039 — RETIRED_KEYS).
+    # fn_open_library 자체는 남는다: 도구 '특수기호'(위 special)와 사진 폴더
+    # 관리가 같은 창을 다른 입구로 계속 쓴다.
     "search":       lambda: _open_search(),
 }
 
