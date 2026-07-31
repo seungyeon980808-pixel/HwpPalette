@@ -61,6 +61,7 @@ from hwp_palette.model import builtin_actions          # '도구' 분류의 목�
 from hwp_palette.model import library
 from hwp_palette.model import palette
 from hwp_palette.hwp import preview
+from hwp_palette.design import ribbon                    # 세로 띠 (037 공용 부품)
 from hwp_palette.design import theme
 from hwp_palette.design.roundbtn import RoundButton, RoundTile
 
@@ -97,9 +98,9 @@ SEL_BG, SEL_LINE, SEL_FG = ACCENT_SOFT, "#54aeff", "#0550ae"
 # 바깥의 무채색을 쓴다.
 CHIP_ON_BG, CHIP_ON_LINE, CHIP_ON_FG = "#e6e6ea", "#9a9aa0", "#3c3c40"
 
-# 꾸러미(섞은 물감) 리본 — 상태 색(파랑·초록·코랄) 어느 것과도 안 겹치는
-# 보라 계열이다. 이건 '상태'가 아니라 '무엇인가'를 말하는 표시라서다.
-MIX_BG, MIX_FG = "#f3eefc", "#6639ba"
+# 꾸러미(섞은 물감) 리본 색 — theme 한 곳으로 옮겼다 (2026-08-01, 037):
+# 세 화면(메인·설정 격자·창고)이 같은 색을 써야 같은 물건으로 읽힌다.
+MIX_BG, MIX_FG = theme.MIX_BG, theme.MIX_FG
 
 SHARE_GLYPH = theme.SHARE_GLYPH
 
@@ -878,11 +879,8 @@ class StorePanel(tk.Frame):
         # 하십시오. 옆에 세로로 MIX라고 표현해주어야 합니다"). 아랫줄에 배지를
         # 더하면 카드가 낱개보다 높아져 목록이 들쭉날쭉해진다.
         if item.get("mix"):
-            rib = tk.Label(tile, text="\n".join("MIX"), bg=MIX_BG, fg=MIX_FG,
-                           font=(FONT, max(6, theme.fs(FS["caption"]) - 2), "bold"),
-                           padx=1, pady=0)
-            rib.place(relx=1.0, rely=0.5, anchor="e", relheight=0.86)
-            tile._rib = rib
+            # 공용 부품으로 (2026-08-01, 037) — 세 화면이 같은 띠를 쓴다
+            tile._rib = ribbon.attach(tile, "mix", "MIX")
         tile._parts = (nm, sub)
         tile._state = state
         # 도구 카드는 둘째 줄이 말줄임으로 잘린다 — 커서를 올리면 **설명

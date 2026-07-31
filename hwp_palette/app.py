@@ -72,6 +72,7 @@ from hwp_palette.design import dialogs as messagebox   # 윈도우 기본 대화
 
 from hwp_palette.core import applog
 from hwp_palette.core import paths
+from hwp_palette.design import ribbon                   # 칸 오른쪽 세로 띠 (037)
 from hwp_palette.design import theme
 from hwp_palette.core import clipboard                    # 윈도우 클립보드 (실패한 변환의 원문 대피용)
 from hwp_palette.ui import onboarding
@@ -2483,6 +2484,17 @@ def _make_block_button(parent, blk, span=1, show_icon=True, cell_px=None):
     _btn_holder.append(btn)
     if blk.get("type") == "builtin" and blk.get("key"):
         _builtin_btns[blk["key"]] = btn
+    # 여럿을 담은 칸은 오른쪽 세로 띠 (2026-08-01, 피드백 037 · 안 B).
+    # 겹친 칸 = 개수 숫자(청록) · 꾸러미 = MIX(보라). 판정은 library.block_badge
+    # 한 곳 — 설정 격자·창고 카드와 같은 답을 쓴다. 이 표시가 없어서 "답안"
+    # 칸에 여섯 개가 든 것을 겉에서 알 수 없었다.
+    try:
+        badge = library.block_badge(blk)
+        if badge:
+            kind, text = badge
+            btn.set_ribbon(text, *ribbon.colors(kind))
+    except Exception as e:
+        applog.exc("블럭 세로 띠 표시 실패 (표시만 빠진다)", e)
     # 이름이 안 잘려도 '무엇이 들었는지'를 보여주므로 늘 붙인다 (UI 제안 6).
     # 문구는 함수로 넘긴다 — 실제로 마우스가 머무는 순간에만 만든다 (2026-07-31)
     _add_tooltip(btn, lambda b=blk: _block_tooltip(b))

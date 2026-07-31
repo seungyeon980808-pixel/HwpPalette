@@ -318,17 +318,17 @@
 <table>
   <tr><th class="num">번호</th><th>갈래</th><th>내용</th><th>상태</th></tr>
   <tr><td class="num">027</td><td>아이디어</td>
-      <td>도구 판의 빈자리를 <b>사용법</b>으로 채우기</td><td>접수 · 설계 전</td></tr>
+      <td>도구 판의 빈자리를 <b>사용법</b>으로 채우기</td><td class="ok">파트 4 완료</td></tr>
   <tr><td class="num">028</td><td><b>회귀</b></td>
       <td>특수기호 창에서 <b>종류별 분류</b>와 <b>내가 등록한 기호</b>가 사라짐<br>
           <span class="ref">022 를 반영하며 기능이 적은 창으로 합친 것이 원인 — Claude 잘못</span></td>
       <td class="ok">파트 2 완료</td></tr>
   <tr><td class="num">029</td><td>기능</td>
       <td>사진 도구의 <b>폴더 연결을 판 안에서</b> (지금은 [설정]이 다섯 탭짜리 창을 통째로 연다)</td>
-      <td>검토 완료 · 대기</td></tr>
+      <td class="ok">파트 4 완료 (↑↓ 포함)</td></tr>
   <tr><td class="num">030</td><td>디자인</td>
       <td>서식 만들기 창이 프로그램의 다른 창과 <b>컨셉이 안 맞음</b> (기본 위젯 노출)</td>
-      <td>범위 결정 대기</td></tr>
+      <td class="ok">파트 4 완료 (범위 ②)</td></tr>
   <tr><td class="num">031</td><td><b>버그</b></td>
       <td>양식 수정 — 버벅임 · 끝난 뒤 창이 커짐 · 빈 문서가 남음</td>
       <td class="ok">파트 1 완료 (b·c 실기 확인)</td></tr>
@@ -350,7 +350,7 @@
   <tr><td class="num">037</td><td>표시</td>
       <td>한 칸에 여러 물감이 든 것을 <b>세로 띠</b>로 겉에서 알 수 있게<br>
           <span class="ref">아래 <b>3-1 잔결정 갱신</b> 참고 — 규약이 표시를 없앴던 자리다</span></td>
-      <td>표기 안 결정 대기</td></tr>
+      <td class="ok">안 B · 파트 4 완료</td></tr>
   <tr><td class="num">038</td><td>버그·기능</td>
       <td>창고 우클릭에 <b>삭제</b> 추가 · <b>지금 분류는 목록에서 빼기</b> ·
           옮기기는 <b>끌어놓기</b>로 · <b>팝오버가 창의 ✕ 를 먹는다</b></td>
@@ -664,6 +664,25 @@
   <p><b>027</b> 도구 판의 빈자리를 <b>사용법</b>으로. 글의 출처를 <b>한 곳</b>으로 정하는 것이 핵심
      (지금 힌트는 <code>builtin_actions</code>, 절 단위 설명은 <code>help_content</code>).</p>
   <p class="why">030 의 부품이 037·029·027 의 바닥이다. <b>맨 뒤에 둬야</b> 앞 셋이 바꾼 화면 위에 한 번만 얹는다.</p>
+  <div class="card" style="border-left:3px solid #0a6b2e;margin:10px 0 0">
+    <h3 style="margin-top:0">진행 결과 — 2026-08-01 <span class="ok">완료</span></h3>
+    <ul style="margin:6px 0 0;padding-left:20px">
+      <li><b>030 (②)</b> <code>design/fields.py</code> — 자체 <b>Check·Spin</b> 부품.
+          서식 만들기 창을 <b>글자/문단/여백 세 카드</b>로. 카탈로그에 새 항목이
+          생기면 맨 아래에라도 나온다.</li>
+      <li><b>037 (안 B)</b> <code>design/ribbon.py</code> + <code>RoundButton.set_ribbon</code>
+          + 판정 <code>library.block_badge</code> 한 곳. <b>겹침 = 청록 띠에 개수 ·
+          꾸러미 = 보라 MIX</b>, 세 화면이 같은 표시. 칸 높이 불변.</li>
+      <li><b>029 (안 1)</b> 사진 폴더 관리가 <b>판 안으로</b> — 줄마다 [↑][↓][해제] +
+          [＋ 폴더 연결]. [설정] 단추 폐지. <b>순서 바꾸기</b>(=이름 충돌 우선순위)
+          신설 (<code>settings.move_photo_dir</code>).</li>
+      <li><b>027</b> 도구 판의 빈자리에 <b>사용법</b>. 글의 출처는
+          <code>builtin_actions.USAGE</code> <b>한 곳</b> — 보이는 도구 전부에
+          사용법이 있는지 검사로 못박음.</li>
+    </ul>
+    <p style="margin-bottom:0">테스트 <b>806개</b> 통과
+      (새 검사 12건 — <code>tests/test_part4_visuals.py</code> + 도구 판 3건).</p>
+  </div>
 </div></div>
 
 

@@ -127,6 +127,7 @@ class RoundButton(tk.Canvas):
         self._pressed = False
         self._metrics = None      # 글꼴 높이 캐시 (_text_metrics)
         self._drawn_size = None   # 마지막으로 그린 (폭, 높이) — _on_configure 가 본다
+        self._ribbon = None       # 오른쪽 세로 띠 (text, bg, fg) — 037
 
         self.bind("<Configure>", self._on_configure)
         self.bind("<Enter>", lambda e: self._to(self._hover))
@@ -282,6 +283,7 @@ class RoundButton(tk.Canvas):
                 self.create_text(w - self._pad_in, h // 2 + dy,
                                  text=self._trailing, anchor="e",
                                  font=self._font, fill=self._fg, tags="trail")
+            self._draw_ribbon(w, h)
             return
 
         self.coords("body", *pts)
@@ -300,6 +302,7 @@ class RoundButton(tk.Canvas):
         self.coords("label", lx, ly + dy)
         self.itemconfig("label", text=self._text, fill=self._fg,
                         font=self._font, anchor=lanchor)
+        self._draw_ribbon(w, h)
         if self._trailing:
             self.coords("trail", w - self._pad_in, h // 2 + dy)
             self.itemconfig("trail", text=self._trailing, fill=self._fg,
@@ -400,6 +403,45 @@ class RoundButton(tk.Canvas):
         if icon_fg:
             self._icon_fg = icon_fg
         self._redraw()
+
+    # ── 오른쪽 세로 띠 (2026-08-01, 피드백 037) ─────────────
+    def set_ribbon(self, text, bg, fg):
+        r"""칸 오른쪽에 세로 띠를 단다 (겹친 칸의 개수 · 꾸러미의 MIX).
+
+        **칸 높이·폭은 불변**(2026-07-31 결정) — 띠는 칸 안쪽으로만 들어간다.
+        None 을 주면 뗀다. 캔버스라 place() 로 라벨을 못 얹으므로 도형으로
+        직접 그린다 — 세 화면이 같은 물감을 같은 표시로 보이게 하는 통로다.
+        """
+        self._ribbon = (str(text), bg, fg) if text else None
+        if self._drawn_size:
+            self._draw_ribbon(*self._drawn_size)
+
+    def _draw_ribbon(self, w, h):
+        if not self._ribbon:
+            self.delete("ribbon", "ribbontxt")
+            return
+        text, bg, fg = self._ribbon
+        f = self._font or ("TkDefaultFont", 9)
+        size = max(6, int(f[1]) - 2 if len(f) > 1 else 7)
+        rw = size + 6                       # 글자 한 자 폭 + 숨쉴 틈
+        r = min(self._radius, rw // 2, (h - 2) // 2)
+        pts = self._round_points(w - 1 - rw, 1, w - 2, h - 2, r)
+        vtext = "\n".join(text)             # 세로쓰기
+        if not self.find_withtag("ribbon"):
+            self.create_polygon(pts, smooth=True, fill=bg, outline="",
+                                tags="ribbon")
+            self.create_text(w - 1 - rw // 2, h // 2, text=vtext,
+                             font=(f[0], size, "bold"), fill=fg,
+                             justify="center", tags="ribbontxt")
+        else:
+            self.coords("ribbon", *pts)
+            self.itemconfig("ribbon", fill=bg)
+            self.coords("ribbontxt", w - 1 - rw // 2, h // 2)
+            self.itemconfig("ribbontxt", text=vtext, fill=fg,
+                            font=(f[0], size, "bold"))
+        # 띠가 이름을 덮지 않게 늘 맨 위로, 그리고 클릭은 버튼이 받게
+        self.tag_raise("ribbon")
+        self.tag_raise("ribbontxt")
 
 
 class RoundTile(tk.Canvas):
