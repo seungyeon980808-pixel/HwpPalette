@@ -118,7 +118,12 @@ def question_to_markdown(row, qtype, num, styles=None):
     if not label:
         return _plain(row, qtype, num)
 
-    slots = excel_form.TEMPLATES[label]
+    # 코드에 박힌 표가 아니라 **조각에 붙은 빈칸 이름표**를 먼저 본다
+    # (excel_form.slots_of 설명 참고) — 그래야 사용자가 만든 템플릿과
+    # 문서 해체로 꺼낸 문항 틀도 문항 엑셀에 참여한다.
+    slots = excel_form.slots_of(label)
+    if not slots:
+        return _plain(row, qtype, num)
     pt = row.get("배점", "")
     ask = _esc(row.get("발문", ""))
     if pt and "배점" not in slots:

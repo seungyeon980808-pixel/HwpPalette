@@ -182,7 +182,10 @@ def fn_open_form_fill():
 
 def fn_open_excel():
     """문항 엑셀 — 엑셀 표에 채워 시험 문항을 만든다 (마크다운 안 치고)."""
-    return _single("exam_excel", lambda: excel_ui.open_excel(root))
+    # 변환 함수를 건네준다 — [한글에 바로 넣기] 가 넣은 뒤 이어서 부른다.
+    # ui 층은 app 을 임포트할 수 없으므로(층 규칙) 이렇게 넘긴다.
+    return _single("exam_excel",
+                   lambda: excel_ui.open_excel(root, on_convert=fn_convert))
 
 
 # ── 한컴 연결 ───────────────────────────────────────────
@@ -763,8 +766,8 @@ def _sync_undo_btn():
     try:
         on = bool(_undo_point["token"])
         _undo_btn.retint(fg=TEXT if on else FAINT)
-        _tip(_undo_btn, (f"되돌리기 — {_undo_point['what']}" if on
-                         else "되돌릴 것이 없습니다"))
+        _tip(_undo_btn, (f"되돌리기 (Ctrl+Alt+Z) — {_undo_point['what']}" if on
+                         else "되돌릴 것이 없습니다 (Ctrl+Alt+Z)"))
     except Exception:
         pass
 
@@ -815,8 +818,11 @@ def fn_undo_last():
                        "한글의 Ctrl+Z 를 써 주세요.")
 
 
-def run_palette_block(block):
+def run_palette_block(block, _anchor=None):
     """팔레트 블럭 클릭 — 종류에 따라 삽입/적용."""
+    if block.get("type") == "stack":
+        _open_stack(block, _anchor)
+        return
     name = _block_label(block).replace("\n", " ")
     if block.get("type") == "builtin":
         # 도구 블럭은 여기서 잠그지 않는다 — fn_convert 등이 스스로 잠근다
@@ -850,6 +856,39 @@ def run_palette_block(block):
     finally:
         _op_busy[0] = False
         _unbusy()
+
+
+def _open_stack(block, anchor=None):
+    r"""겹친 물감 — 안에 든 것 중 하나를 골라 실행한다 (2026-07-31).
+
+    왜 겹치나 (사용자 기획): "선지의 스타일이 5개인 경우 이거를 다 다른
+    버튼으로 하게 되면 공간의 낭비가 심각합니다." 애플의 폴더처럼 한 칸에
+    포개 두고, 누르면 안에서 고른다.
+
+    **섞기(꾸러미)와 다른 것이다.** 겹치기는 같은 자리에 보관했다가 쓸 때
+    하나만 고르는 것(택일)이고, 섞기는 여러 물감을 이어 하나로 만드는
+    것(합체)이다 (사용자 2026-07-31: "겹치기는 그냥 하나의 위계를 설정하는
+    것이고 섞기는 여러 물감을 섞어서 하나의 물감을 만든다").
+
+    고르는 화면은 **특수기호가 쓰는 팝오버 그대로**다 — 새로 배울 것이 없다.
+    """
+    items = [b for b in (block.get("items") or []) if isinstance(b, dict)]
+    if not items:
+        notify("info", "이 겹친 물감이 비어 있습니다 — 설정에서 채워 주세요")
+        return
+    if len(items) == 1:
+        run_palette_block(items[0])
+        return
+    try:
+        from hwp_palette.design.popover import Popover
+        pop = Popover(root, anchor or root)
+        for b in items:
+            pop.add(_block_label(b).replace("\n", " ") or "(이름 없음)",
+                    lambda bb=b: run_palette_block(bb))
+        pop.show()
+    except Exception as e:
+        applog.exc("겹친 물감 열기 실패 — 첫 물감을 바로 실행한다", e)
+        run_palette_block(items[0])
 
 
 def _form_item(block):
@@ -1113,7 +1152,7 @@ def _bar_active(btn, on):
     btn.retint(bg=ACCENT_SOFT if on else CARD, fg=ACCENT if on else MUTED)
 
 
-_gear = _bar_btn("⚙", lambda: fn_open_palette_settings(), "물감·팔레트 설정",
+_gear = _bar_btn("⚙", lambda: fn_open_palette_settings(), "물감·팔레트 설정 (Ctrl++)",
                  icon="settings")
 _gear.pack(side="left")
 
@@ -1357,14 +1396,14 @@ _help_btn = _bar_btn("?", lambda: _help_menu(_help_btn), "도움말",
 # 손이 닿는 자리에 꺼냈다. ⚙·? 와 달리 메뉴를 열지 않고 바로 동작한다.
 #
 #   ↺  되돌리기   — 한글 Ctrl+Z 를 몇 번 눌러야 하는지 프로그램이 대신 센다
-#   ⌕  통합 찾기  — Ctrl+K 로만 있던 것. 물감이 팔레트보다 많아지면 여기가 입구다
+#   ⌕  통합 찾기  — Ctrl+F 로도 열린다. 물감이 팔레트보다 많아지면 여기가 입구다
 #   ⇧  항상 위    — 한글을 전체화면으로 쓸 때 잠깐 내린다 (창 위치처럼 기억된다)
-_undo_btn = _bar_btn("↺", lambda: fn_undo_last(), "되돌릴 것이 없습니다",
+_undo_btn = _bar_btn("↺", lambda: fn_undo_last(), "되돌릴 것이 없습니다 (Ctrl+Alt+Z)",
                      icon="undo")
 _undo_btn.pack(side="left", padx=(4, 0))
 _undo_btn.retint(fg=FAINT)          # 되돌릴 것이 생기면 진해진다 (_sync_undo_btn)
 
-_search_btn = _bar_btn("⌕", lambda: _open_search(), "통합 찾기  (Ctrl+K)",
+_search_btn = _bar_btn("⌕", lambda: _open_search(), "통합 찾기 (Ctrl+F)",
                        icon="search")
 _search_btn.pack(side="left", padx=(4, 0))
 
@@ -1384,12 +1423,13 @@ def _toggle_top():
     except Exception as e:
         applog.exc("항상 위 전환 실패", e)
     _bar_active(_top_btn, on)
-    _tip(_top_btn, "항상 위 — 켜짐" if on else "항상 위 — 꺼짐")
+    # 상태에 따라 문구가 바뀌는 단추 — **두 문구 모두**에 단축키를 붙인다
+    _tip(_top_btn, "항상 위 — 켜짐 (PageUp)" if on else "항상 위 — 꺼짐 (PageUp)")
     notify("info", "이 창을 항상 위에 둡니다" if on
                    else "이 창이 다른 창 뒤로 갈 수 있습니다")
 
 
-_top_btn = _bar_btn("⇧", lambda: _toggle_top(), "항상 위", icon="pin")
+_top_btn = _bar_btn("⇧", lambda: _toggle_top(), "항상 위 (PageUp)", icon="pin")
 _top_btn.pack(side="left", padx=(4, 0))
 
 # ── 한글과 도킹 — 기호 버튼 **하나**가 토글한다 (사용자 결정 2026-07-30) ──
@@ -1398,7 +1438,7 @@ _top_btn.pack(side="left", padx=(4, 0))
 # → ⚙·?·↺·⌕·⇧ 와 똑같은 정사각(_bar_btn)으로 만들고, 누를 때마다
 #   감싸기 ↔ 떼기를 오간다. 감싸는 동안은 켜짐(파랑)으로 보인다.
 _dock_btn = _bar_btn("◫", lambda: fn_dock_hwp(),
-                     "한글과 도킹 (다시 누르면 떼기)", icon="dock")
+                     "한글과 도킹 (Ctrl+D) — 다시 누르면 떼기", icon="dock")
 _dock_btn.pack(side="left", padx=(4, 0))
 
 # 여기까지가 '자주 쓰는 것', 구분선 뒤가 '드물게 쓰는 것'이다.
@@ -1410,7 +1450,7 @@ _help_btn.pack(side="left")
 def _show_dock_buttons(on):
     """도킹 상태를 버튼 켜짐(파랑)으로 보인다 — 버튼은 이 하나뿐이다."""
     _bar_active(_dock_btn, on)
-    _tip(_dock_btn, "도킹 떼기" if on else "한글과 도킹")
+    _tip(_dock_btn, "도킹 떼기 (Ctrl+D)" if on else "한글과 도킹 (Ctrl+D)")
 
 
 # 켜져 있으면 켜져 보여야 한다 — 상태를 말하지 않는 토글은 토글이 아니다
@@ -1516,7 +1556,9 @@ GUIDE_TEXT = (
     "\n"
     "■ 단축키\n"
     "   Ctrl+Alt+T   마크다운 변환 — 한글에서 눌러도 먹습니다\n"
-    "   Ctrl+K  찾기      Ctrl+1~9  지금 팔레트의 1~9번째 블럭\n"
+    "   Ctrl+F  찾기      Ctrl+1~9  지금 팔레트의 1~9번째 블럭\n"
+    "   Ctrl+D  도킹      PageUp  항상 위      Ctrl++  설정\n"
+    "   Ctrl+Alt+Z  되돌리기(↺)\n"
     "\n"
     "※ 되돌리기는 위쪽 ↺ 로 합니다 — 변환·템플릿 삽입은 여러 동작이 묶여\n"
     "   있어서, 몇 번 눌러야 하는지를 프로그램이 대신 셉니다.\n"
@@ -2069,6 +2111,10 @@ def _block_label(blk):
     if caption:
         return caption
     btype = blk.get("type")
+    if btype == "stack":
+        # 겹친 칸은 그룹 이름만 보인다 (무인 진행 규약 2026-07-31) —
+        # 마지막에 쓴 물감 이름까지 겉면에 적으면 칸이 두 얼굴이 된다.
+        return blk.get("name", "겹친 물감")
     if btype == "char":
         return blk.get("value", "")
     if btype == "builtin":
@@ -2090,6 +2136,11 @@ def _block_tooltip(blk):
     """
     btype = blk.get("type")
     name = _block_label(blk)
+    if btype == "stack":
+        inner = [_block_label(b).replace("\n", " ")
+                 for b in (blk.get("items") or [])]
+        return (f"겹친 물감 · {name}\n누르면 안에서 고릅니다 ({len(inner)}개)\n"
+                + "\n".join(f"· {t}" for t in inner[:8]))
     if btype == "builtin":
         key = blk.get("key")
         tip = f"도구 · {name}\n{builtin_actions.hint_of(key)}"
@@ -2295,8 +2346,13 @@ def _make_block_button(parent, blk, span=1, show_icon=True, cell_px=None):
     # 이름은 **굵게** (사용자 결정 2026-07-31) — 물감 창고 카드가 정갈해
     # 보인 것은 다른 서체가 아니라 같은 Pretendard 의 굵은 웨이트였다.
     # 블럭도 같은 무게로 맞춰 두 화면이 한 손글씨가 된다.
+    _btn_holder = []
     btn = RoundButton(parent, text=label,
-                      command=lambda b=blk: run_palette_block(b),
+                      # 겹친 칸은 팝오버를 **그 칸 아래**에 띄워야 하므로
+                      # 버튼 자신을 넘긴다. 아직 만들기 전이라 그릇에 담아
+                      # 두고, 아래에서 채운다.
+                      command=lambda b=blk, h=_btn_holder: run_palette_block(
+                          b, h[0] if h else None),
                       bg=bg, fg=theme.text_on(bg), radius=theme.RADIUS["ctl"],
                       font=_font(size, "bold"),
                       outline=theme.block_edge(), focus_color=ACCENT,
@@ -2310,6 +2366,7 @@ def _make_block_button(parent, blk, span=1, show_icon=True, cell_px=None):
                       icon_fg=_block_icon_fg(bg))
     # 도구 블럭은 이름표를 달아 둔다 — 튜토리얼이 '마크다운 변환' 버튼을
     # 짚으려면 그 위젯을 찾을 수 있어야 한다 (2026-07-26).
+    _btn_holder.append(btn)
     if blk.get("type") == "builtin" and blk.get("key"):
         _builtin_btns[blk["key"]] = btn
     # 이름이 안 잘려도 '무엇이 들었는지'를 보여주므로 늘 붙인다 (UI 제안 6).
@@ -2421,7 +2478,7 @@ def _insert_text(text):
 
 
 def _open_search():
-    """Ctrl+K — 찾기 창. 이미 떠 있으면 그 창을 앞으로 (2026-07-31 안전 점검).
+    """Ctrl+F — 찾기 창. 이미 떠 있으면 그 창을 앞으로 (2026-07-31 안전 점검).
 
     예전에는 누를 때마다 '항상 위' 창이 한 장씩 더 쌓였다 — 다른 홑창들과
     같은 _single 로 통일한다.
@@ -2517,8 +2574,56 @@ set_dot("ok")
 # 중에 쓰려면 전역 단축키가 따로 있어야 한다 (CONVERT_HOTKEY, 파일 맨 위에 정의).
 root.bind_all("<Control-t>", lambda e: fn_convert())
 root.bind_all("<Control-T>", lambda e: fn_convert())
-root.bind_all("<Control-k>", lambda e: _open_search())
-root.bind_all("<Control-K>", lambda e: _open_search())
+
+# 도구줄 단추마다 단축키를 준다 (사용자 결정 2026-07-31). 원칙 두 가지:
+#
+#   ① **전역으로 잡지 않는다.** 여기 있는 것은 모두 bind_all — 이 창이 선택돼
+#      있을 때만 먹는다. Ctrl+F 를 전역으로 뺏으면 한글·브라우저·탐색기의
+#      '찾기'가 통째로 막힌다. 전역은 변환(Ctrl+Alt+T) 하나뿐이다.
+#   ② **툴팁에 반드시 병기한다.** 단추에 적힌 것과 실제 키가 다른 상태를 겪었다
+#      (파일 맨 위 CONVERT_HOTKEY_LABEL 주석 참고). 상태에 따라 툴팁이 바뀌는
+#      단추(도킹·항상 위)는 **두 문구 모두**에 붙인다.
+#
+# 찾기는 Ctrl+K 에서 **Ctrl+F 로 갈아탔다** — 한글의 찾기와 뜻이 같아 배울 것이
+# 없다. Ctrl+K 는 남기지 않는다(사용자 결정): 같은 일에 입구가 둘이면 도움말과
+# 툴팁에 무엇을 적을지부터 갈린다.
+root.bind_all("<Control-f>", lambda e: _open_search())
+root.bind_all("<Control-F>", lambda e: _open_search())
+root.bind_all("<Control-d>", lambda e: fn_dock_hwp())
+root.bind_all("<Control-D>", lambda e: fn_dock_hwp())
+
+# 되돌리기는 Ctrl+Z 를 **쓰지 않는다** (검토 2026-07-31). 환경설정 창이 이미
+# 그 키로 '블럭 배치 되돌리기'를 bind_all 하고 있어 서로 덮어쓰고, ↺ 는 한글
+# 문서를 여러 단계 되돌리는 무거운 동작이라 손에 붙은 키에 두면 오발이 아프다.
+# Ctrl+Alt+Z 는 변환(Ctrl+Alt+T)과 짝이라 "변환한 것을 되돌린다"로 읽힌다.
+root.bind_all("<Control-Alt-z>", lambda e: fn_undo_last())
+root.bind_all("<Control-Alt-Z>", lambda e: fn_undo_last())
+
+# 설정은 Ctrl + '+' — 한국어 자판에서 '+' 는 Shift 를 눌러야 나오는 글쇠(= 와
+# 같은 자리)라, 실제로 오는 이벤트는 <Control-plus> 가 아니라
+# <Control-Shift-equal> 이다. 둘 다 잡고, 숫자 자판의 + (KP_Add) 도 함께 받는다.
+for _seq in ("<Control-plus>", "<Control-Shift-equal>", "<Control-KP_Add>"):
+    root.bind_all(_seq, lambda e: fn_open_palette_settings())
+
+
+def _on_pageup(e):
+    """PageUp — 항상 위 켜기/끄기 (사용자 결정 2026-07-31).
+
+    조합키가 아니라 **단독키**라, 글자를 치는 중에 눌리면 곤란하다. 입력칸
+    (Entry·Text·Combobox)에 포커스가 있으면 비켜 준다 — 거기서 PageUp 은
+    '위로 스크롤'이라는 제 뜻이 이미 있다 (무인 진행 규약 2026-07-31).
+    """
+    w = e.widget
+    try:
+        if w.winfo_class() in ("Entry", "TEntry", "Text", "TCombobox", "Listbox"):
+            return
+    except Exception:
+        pass
+    _toggle_top()
+    return "break"
+
+
+root.bind_all("<Prior>", _on_pageup)      # Tk 에서 PageUp 은 <Prior> 다
 
 # ── 전역 단축키 (한글에서 눌러도 먹는다) ────────────────
 #

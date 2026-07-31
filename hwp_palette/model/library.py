@@ -464,6 +464,47 @@ def add_form_from_file(name, src_path, label=None, tags=None,
     return item["id"]
 
 
+def add_mix(name, member_ids, label=None, tags=None):
+    r"""꾸러미(섞은 물감) 등록 — 요소 템플릿들을 **차례대로 가리키는** 항목.
+
+    왜 이런 물건이 필요한가 (사용자 기획 2026-07-31):
+        시험문제를 뜯어보면 요소가 반복되는데 조합만 다르다(1234 / 1235 /
+        1245 …). 지금까지는 조합이 하나 늘 때마다 hwp 조각을 통째로 새로
+        만들어 왔다 — 창고의 '합답형1사진3선지' '학교합답2사진5선지' 같은
+        이름들이 그 흔적이다. 요소와 조합을 갈라 놓으면 그 폭발이 없어진다.
+        조합에 이름을 붙여 두고 `\가\` 처럼 부르면 된다.
+
+    파일을 갖지 않는다 — `mix` 에 요소 id 만 담는다. 그래서 요소를 고치면
+    이 꾸러미로 뽑는 것이 전부 따라 바뀐다(참조 방식, 사용자 결정).
+    """
+    _ensure_dirs()
+    data = load()
+    item = _meta(_unique_name(data["템플릿"], name), label, tags)
+    item["mix"] = [str(i) for i in member_ids]
+    item["slot_count"] = sum(
+        int(m.get("slot_count") or 0) for m in mix_members(item, data))
+    data["템플릿"].append(item)
+    save(data)
+    return item["id"]
+
+
+def update_mix(item_id, name=None, member_ids=None):
+    """꾸러미의 이름·구성 바꾸기 (id 유지 → 팔레트 연결이 안 깨진다)."""
+    data = load()
+    for it in data.get("템플릿", []):
+        if it.get("id") != item_id or not it.get("mix"):
+            continue
+        if name:
+            it["name"] = name
+        if member_ids is not None:
+            it["mix"] = [str(i) for i in member_ids]
+        it["slot_count"] = sum(
+            int(m.get("slot_count") or 0) for m in mix_members(it, data))
+        save(data)
+        return True
+    return False
+
+
 def update_item(category, item_id, name=None, label=None, tags=None):
     """등록된 항목의 이름·라벨·태그를 수정한다 (id는 유지 → 팔레트 연결 안 깨짐)."""
     data = load()
@@ -630,6 +671,56 @@ def photo_folders_summary():
     return rows
 
 
+class MixInUse(Exception):
+    """꾸러미가 쓰고 있는 요소를 지우려 했다 — 호출부가 이름을 보여준다."""
+
+    def __init__(self, name, users):
+        self.name = name
+        self.users = list(users)
+        super().__init__(
+            f"‘{name}’ 은(는) 꾸러미 {', '.join(self.users)} 이(가) 쓰고 있습니다")
+
+
+def mix_members(item, data=None):
+    r"""꾸러미(섞은 물감)가 가리키는 **요소 항목들**을 차례대로 돌려준다.
+
+    꾸러미는 요소를 **참조**한다 (사용자 결정 2026-07-31) — 내용을 복사해
+    두지 않는다. '선지 5택' 하나를 고치면 그것을 쓰는 꾸러미가 전부 따라
+    바뀌어야 시험지 관리가 된다. 대신 지워진 요소는 조용히 빠진다.
+    """
+    ids = item.get("mix") or []
+    if not ids:
+        return []
+    if data is None:
+        data = load()
+    by_id = {it.get("id"): it for it in data.get("템플릿", [])}
+    return [by_id[i] for i in ids if i in by_id]
+
+
+def mix_users(item_id, data=None):
+    """이 요소를 쓰고 있는 꾸러미 이름들 — 지우기 전에 막아설 때 쓴다."""
+    if data is None:
+        data = load()
+    return [it.get("name", "?") for it in data.get("템플릿", [])
+            if item_id in (it.get("mix") or [])]
+
+
+def _resolve_mixes(data):
+    r"""꾸러미마다 요소 항목과 빈칸 합계를 채워 둔다 (변환 계획이 쓴다).
+
+    파서는 라이브러리를 모른다 — 여기서 미리 풀어 항목 안에 담아 주면
+    파서는 `_mix_items` 만 보고 펼치면 된다.
+    """
+    for it in data.get("템플릿", []):
+        if not it.get("mix"):
+            continue
+        members = mix_members(it, data)
+        it["_mix_items"] = members
+        # 꾸러미의 빈칸 수 = 요소들의 빈칸 합계. 사용자가 아랫줄을 몇 줄
+        # 적어야 하는지가 여기서 정해진다.
+        it["slot_count"] = sum(int(m.get("slot_count") or 0) for m in members)
+
+
 def label_lookup():
     """{라벨: (분류명, 항목)} — 마크다운 변환용.
 
@@ -640,6 +731,7 @@ def label_lookup():
     (등록 시점에 이미 경고하지만, 구 데이터에는 그 경고를 못 받은 항목이 있다).
     """
     data = load()
+    _resolve_mixes(data)
     out = {}
     for cat in CATEGORIES:
         for it in data[cat]:
@@ -734,6 +826,14 @@ def delete_item(category, item_id):
     target = next((it for it in items if it.get("id") == item_id), None)
     if target is None:
         return False
+    # 꾸러미가 쓰고 있는 요소는 지우지 않는다 (2026-07-31, 참조 방식의 대가).
+    # 지워 버리면 그 꾸러미는 빈칸 수가 조용히 줄어 시험지가 어긋난다 —
+    # 조용한 어긋남보다 못 지우는 편이 낫다. 호출부가 이유를 보여줄 수 있게
+    # 예외로 알린다.
+    if category == "템플릿":
+        users = mix_users(item_id, data)
+        if users:
+            raise MixInUse(target.get("name", "?"), users)
     # 구 데이터에는 file 키가 없는 항목도 있다 — KeyError 로 죽지 않는다
     fname = target.get("file") if category in _FILE_CATEGORIES else None
     data[category] = [it for it in items if it.get("id") != item_id]

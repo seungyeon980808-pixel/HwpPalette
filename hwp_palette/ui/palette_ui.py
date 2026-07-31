@@ -107,6 +107,143 @@ def _rgb_int(r, g, b):
     return r + (g << 8) + (b << 16)
 
 
+def _block_name_of(blk):
+    """겹치기 확인창에 쓸 짧은 이름 — app._block_label 과 달리 창고를 안 읽는다."""
+    if blk.get("caption"):
+        return str(blk["caption"]).replace("\n", " ")
+    t = blk.get("type")
+    if t == "stack":
+        return blk.get("name", "겹친 물감")
+    if t == "char":
+        return blk.get("value", "")
+    if t == "template":
+        return blk.get("template", "템플릿")
+    if t == "form":
+        return blk.get("form", "양식")
+    if t == "builtin":
+        return builtin_actions.name_of(blk.get("key"))
+    return blk.get("name", "물감")
+
+
+class _StackNameDialog(tk.Toplevel):
+    """물감 겹치기 확인 + 겹친 이름 정하기 (2026-07-31)."""
+
+    def __init__(self, master, keep, added):
+        super().__init__(master)
+        self.result = None
+        self.title("물감 겹치기")
+        self.configure(bg=BG)
+        self.resizable(False, False)
+        self.attributes("-topmost", True)
+        tk.Label(self, text="물감을 겹치겠습니까?",
+                 font=(FONT, theme.fs(FS["title"]), "bold"),
+                 bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(14, 2))
+        tk.Label(self, text=f"‘{keep}’ 과 ‘{added}’ 이(가) 한 칸에 들어갑니다.\n"
+                            "누르면 안에서 골라 쓰게 됩니다.",
+                 justify="left", font=(FONT, theme.fs(FS["sub"])),
+                 bg=BG, fg=MUTED).pack(anchor="w", padx=16, pady=(0, 10))
+        row = tk.Frame(self, bg=BG, padx=16)
+        row.pack(fill="x")
+        tk.Label(row, text="겹친 이름", font=(FONT, theme.fs(FS["body"])),
+                 bg=BG, fg=TEXT).pack(side="left")
+        self.var = tk.StringVar(value=keep)
+        ent = tk.Entry(row, textvariable=self.var, width=18,
+                       font=(FONT, theme.fs(FS["head"])), relief="solid", bd=1)
+        ent.pack(side="left", padx=(8, 0))
+        ent.select_range(0, "end")
+        foot = tk.Frame(self, bg=BG, padx=16, pady=12)
+        foot.pack(fill="x")
+        _dialog_btn(foot, "겹치기", self._ok, primary=True).pack(side="right")
+        _dialog_btn(foot, "취소", self.destroy).pack(side="right", padx=(0, 6))
+        self.bind("<Return>", lambda e: self._ok())
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.update_idletasks()
+        self.geometry(f"+{master.winfo_rootx()+60}+{master.winfo_rooty()+50}")
+        ent.focus_set()
+        self.grab_set()
+
+    def _ok(self):
+        library_ui.commit_ime(self)
+        self.result = (self.var.get() or "").strip() or None
+        self.destroy()
+
+
+class _StackEditDialog(tk.Toplevel):
+    """겹친 칸 편집 — 이름·차례·빼기·통째로 풀기 (2026-07-31)."""
+
+    def __init__(self, master, blk):
+        super().__init__(master)
+        self.result = None
+        self._items = [dict(b) for b in (blk.get("items") or [])]
+        self.title("겹친 물감")
+        self.configure(bg=BG)
+        self.resizable(False, False)
+        self.attributes("-topmost", True)
+        tk.Label(self, text="겹친 물감", font=(FONT, theme.fs(FS["title"]), "bold"),
+                 bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(14, 2))
+        tk.Label(self, text="팔레트에서 이 칸을 누르면 아래에서 골라 씁니다.",
+                 font=(FONT, theme.fs(FS["sub"])), bg=BG, fg=MUTED
+                 ).pack(anchor="w", padx=16, pady=(0, 10))
+        row = tk.Frame(self, bg=BG, padx=16)
+        row.pack(fill="x")
+        tk.Label(row, text="이름", font=(FONT, theme.fs(FS["body"])),
+                 bg=BG, fg=TEXT).pack(side="left")
+        self.var = tk.StringVar(value=blk.get("name", ""))
+        tk.Entry(row, textvariable=self.var, width=18,
+                 font=(FONT, theme.fs(FS["head"])), relief="solid", bd=1
+                 ).pack(side="left", padx=(8, 0))
+        self._list = tk.Frame(self, bg=BG, padx=16, pady=8)
+        self._list.pack(fill="x")
+        self._draw()
+        foot = tk.Frame(self, bg=BG, padx=16, pady=12)
+        foot.pack(fill="x")
+        _dialog_btn(foot, "저장", self._ok, primary=True).pack(side="right")
+        _dialog_btn(foot, "취소", self.destroy).pack(side="right", padx=(0, 6))
+        _dialog_btn(foot, "겹침 풀기", self._unstack).pack(side="left")
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.update_idletasks()
+        self.geometry(f"+{master.winfo_rootx()+60}+{master.winfo_rooty()+50}")
+        self.grab_set()
+
+    def _draw(self):
+        for w in self._list.winfo_children():
+            w.destroy()
+        if not self._items:
+            tk.Label(self._list, text="비어 있습니다 — 저장하면 이 칸이 없어집니다",
+                     font=(FONT, theme.fs(FS["sub"])), bg=BG, fg=MUTED).pack(anchor="w")
+            return
+        for i, b in enumerate(self._items):
+            r = tk.Frame(self._list, bg=CARD, padx=8, pady=4,
+                         highlightbackground=BORDER, highlightthickness=1)
+            r.pack(fill="x", pady=2)
+            tk.Label(r, text=f"{i + 1}. {_block_name_of(b)}",
+                     font=(FONT, theme.fs(FS["body"])), bg=CARD, fg=TEXT,
+                     anchor="w").pack(side="left", fill="x", expand=True)
+            _dialog_btn(r, "빼기", lambda n=i: self._drop(n),
+                        zone_bg=CARD).pack(side="right")
+
+    def _drop(self, n):
+        if 0 <= n < len(self._items):
+            del self._items[n]
+        self._draw()
+
+    def _unstack(self):
+        self.result = "unstack"
+        self.destroy()
+
+    def _ok(self):
+        library_ui.commit_ime(self)
+        self.result = {"name": (self.var.get() or "").strip() or "겹친 물감",
+                       "items": self._items}
+        self.destroy()
+
+
+def _ask_stack_name(master, keep, added):
+    dlg = _StackNameDialog(master, keep, added)
+    master.wait_window(dlg)
+    return dlg.result
+
+
 def _dialog_btn(parent, text, command, primary=False, zone_bg=None):
     """대화상자 공용 버튼 — 저장/확인은 파랑, 취소는 흰 바탕 (애플 A안)."""
     bg = ACCENT if primary else CARD
@@ -148,6 +285,27 @@ class FunctionDialog(tk.Toplevel):
         tk.Entry(namef, textvariable=self.name_var, width=20, font=(FONT, theme.fs(FS["head"])),
                  relief="solid", bd=1).pack(side="left", padx=(8, 0))
 
+        # ── 한글에서 가져오기 (2026-07-31) ─────────────────
+        # 수치를 손으로 다 적게 하지 않는다. 한글에서 마음에 드는 자리에
+        # 커서를 두고 이걸 누르면 아래 칸이 그 값으로 채워지고 **체크까지
+        # 켜진다**. 남이 정한 기본값보다 내 문서에서 뽑은 값이 쓸모 있다
+        # (사용자 2026-07-31: "서식을 내가 보고 하나하나 조정하는 것 보다
+        # 이렇게 하는것이 훨씬 편리합니다"). 한글의 '모양 복사(Alt+C)'와
+        # 같은 일을 이 창에서 하는 셈이다.
+        pull = tk.Frame(self, bg=CARD, padx=10, pady=7,
+                        highlightbackground=ACCENT, highlightthickness=1)
+        pull.pack(fill="x", padx=16, pady=(8, 0))
+        ptxt = tk.Frame(pull, bg=CARD)
+        ptxt.pack(side="left", fill="x", expand=True)
+        tk.Label(ptxt, text="한글에서 가져오기", font=(FONT, theme.fs(FS["body"]), "bold"),
+                 bg=CARD, fg=ACCENT, anchor="w").pack(fill="x")
+        self._pull_note = tk.Label(
+            ptxt, text="지금 커서 자리의 서식을 읽어 아래를 채웁니다",
+            font=(FONT, theme.fs(FS["caption"])), bg=CARD, fg=MUTED, anchor="w")
+        self._pull_note.pack(fill="x")
+        _dialog_btn(pull, "가져오기", self._pull_from_hwp,
+                    primary=True, zone_bg=CARD).pack(side="right")
+
         body = tk.Frame(self, bg=BG, padx=16, pady=8)
         body.pack(fill="x")
         self.rows = {}
@@ -186,6 +344,11 @@ class FunctionDialog(tk.Toplevel):
             w.pack(side="left")
             return w, var
         if kind == "number":
+            # 빈칸으로 두지 않는다 — 값이 없으면 흔히 쓰는 기본값을 미리 넣어
+            # 둔다 (func_catalog.DEFAULTS 머리말 참고). 체크는 꺼진 채라
+            # 그냥 두면 아무 일도 일어나지 않는다.
+            if cur is None:
+                cur = func_catalog.DEFAULTS.get(f["key"])
             var = tk.StringVar(value="" if cur is None else str(cur))
             w = tk.Entry(parent, textvariable=var, width=6, font=(FONT, theme.fs(FS["body"])),
                          relief="solid", bd=1)
@@ -223,6 +386,46 @@ class FunctionDialog(tk.Toplevel):
                                                                padx=(4, 0))
             return swatch, var
         return None, None
+
+    def _pull_from_hwp(self):
+        r"""[한글에서 가져오기] — 커서 자리 서식을 읽어 칸을 채우고 체크를 켠다.
+
+        읽어 온 항목만 켠다 — 안 읽힌 것은 손대지 않는다. 값이 0 이거나
+        비어 있으면 켜지 않는다: "왼쪽여백 0" 처럼 굳이 넣을 필요 없는 것까지
+        블럭에 담기면 나중에 무엇을 의도했는지가 흐려진다.
+        """
+        try:
+            hwp_engine.connect()
+        except Exception as e:
+            applog.exc("서식 가져오기: 한글 연결 실패", e)
+            self._pull_note.config(text="한글을 찾지 못했습니다 — 한글을 켜고 다시 눌러 주세요")
+            return
+        try:
+            shape = hwp_engine.read_shape_here()
+        except Exception as e:
+            applog.exc("서식 가져오기 실패", e)
+            self._pull_note.config(text="서식을 읽지 못했습니다")
+            return
+        got = 0
+        for key, val in shape.items():
+            row = self.rows.get(key)
+            if row is None:
+                continue                    # 이 창에 없는 항목 (오른쪽정렬 등)
+            chk, f, var, _w = row
+            if f["kind"] in ("toggle", "para"):
+                if val:
+                    chk.set(True)
+                    got += 1
+                continue
+            if val in (None, "", 0):
+                continue
+            if var is not None:
+                var.set(str(val))
+            chk.set(True)
+            got += 1
+        self._pull_note.config(
+            text=(f"문서에서 {got}가지를 가져왔습니다 — 필요 없는 것은 체크를 끄세요"
+                  if got else "커서 자리에서 가져올 서식이 없습니다"))
 
     def _ok(self):
         # 한글 IME 로 조합 중인 마지막 글자를 확정시킨다 (library_ui.commit_ime 설명 참고)
@@ -348,7 +551,15 @@ _FORM_SYNTAX_LINES = [
 
 # 미리보기 판의 폭 — 창고보다 넓어야 '크게 본다'가 성립하지만,
 # 셋이 나란히 서므로 창이 화면을 넘지 않는 선에서 잡는다
-ZOOM_W = 396          # 20% 더 넓게, 330 → 396 (사용자 결정 2026-07-27)
+# 미리보기 판 폭 (사용자 결정 2026-07-31: "저렇게 넓을 필요는 없습니다.
+# 펼치기 접기 기능도 필요없기 때문에 더욱 그렇습니다"). 396 → 268.
+# 창고와 나란히 서되 눈에 덜 무겁고, 창 전체 폭도 그만큼 줄어든다.
+ZOOM_W = 226
+ZOOM_IDLE_HINT = "고르면 보입니다"      # 좁은 판에 맞춘 짧은 안내
+# 왜 226 인가: 이 컴퓨터의 주 모니터는 **세로(1080×1920)** 다. 396 이던 시절
+# 설정 창은 화면 폭을 훌쩍 넘어 오른쪽이 잘려 나갔다(실측 2026-07-31: 창고를
+# 340 으로 못박은 뒤에도 1083px). 여기를 226 으로 줄여야 8칸 팔레트 기준으로
+# 창 전체(≈1077)가 1080 안에 들어온다.
 
 # 격자 블럭 안쪽 글자 여백 — main._BLOCK_TEXT_PAD 와 같은 값이어야 한다.
 # (이 판은 메인 창 블럭의 미리보기다)
@@ -433,6 +644,7 @@ class SettingsWindow(tk.Toplevel):
         self._edit_form = None     # 판에 심은 이름·태그 폼 (수정 상태)
         self._notify_job = None    # 메인 창 반영 디바운스 (400ms 모아 한 번)
         self._last_req = None      # _fit_window 가 마지막으로 잡은 요청 크기
+        self._decompose = None     # 문서 해체 중이면 그 판 (없으면 None)
 
         # 창 제목·설명 줄은 없앴다 (사용자 지적 2026-07-27: "윗부분에 남는
         # 공간이 너무 많다"). 판마다 머리말이 이미 있어서 — '팔레트',
@@ -463,28 +675,28 @@ class SettingsWindow(tk.Toplevel):
         self._store_grip.pack(side="left", fill="y")
         self._store_grip.bind("<Button-1>", lambda e: self._toggle_store())
 
-        # 창고와 미리보기는 **한 판** 안에 둔다 (사용자 지적 2026-07-28:
-        # "물감 창고와 물감 미리보기가 한 묶음이라는 느낌이 들어야 한다").
+        # 창고와 미리보기 **사이를 벌린다** (사용자 지적 2026-07-31: "지금
+        # 물감 창고와 물감 미리보기 사이에 위계가 존재하지 않습니다. 팔레트
+        # 설정과 물감 창고처럼 떨어져있는 느낌의 위계가 존재해야 합니다").
         #
-        # 예전에는 셋(팔레트 설정·창고·미리보기)이 각각 테두리를 두르고 같은
-        # 간격으로 서 있어서, 화면이 '나란한 세 개'로 읽혔다. 실제 관계는
-        # **팔레트 설정 ┃ (창고 + 미리보기)** 다 — 오른쪽 둘은 같은 물감을
-        # 고르고 들여다보는 한 벌이고, 왼쪽은 그것을 놓는 판이다.
-        # 테두리를 하나로 합치고 사이는 1px 선으로만 가르면, 바깥 테두리가
-        # '이 둘은 한 벌'을, 안쪽 선이 '그 안에서 하는 일은 둘'을 말한다.
-        self._paint_group = tk.Frame(outer, bg=CARD, highlightbackground=BORDER,
-                                     highlightthickness=1)
+        # 2026-07-28에는 반대로 했었다 — 둘을 한 테두리로 묶고 1px 선으로만
+        # 갈랐다. 그러니 둘이 한 덩어리로 읽혀 어디까지가 창고인지 흐렸다.
+        # 이제 셋 다 제 테두리를 갖고 같은 간격으로 선다. 다만 미리보기는
+        # **좁게** 둔다 (같은 지적: "저렇게 넓을 필요는 없습니다").
+        self._paint_group = tk.Frame(outer, bg=BG)
         self._paint_group.pack(side="left", fill="y", padx=(SP["s"], 0))
 
-        store_card = tk.Frame(self._paint_group, bg=CARD)
+        store_card = tk.Frame(self._paint_group, bg=CARD,
+                              highlightbackground=BORDER, highlightthickness=1)
         store_card.pack(side="left", fill="y")
         self._store_card = store_card
-        self._paint_div = tk.Frame(self._paint_group, bg=BORDER, width=1)
+        # 판 사이 숨통 — 1px 선이 아니라 **여백**이 위계를 만든다
+        self._paint_div = tk.Frame(self._paint_group, bg=BG, width=SP["s"])
         self._paint_div.pack(side="left", fill="y")
         self.store = store_ui.StorePanel(
             store_card, on_place=self._place_from_store,
             tab_name_fn=self._cur_tab_name, on_select=self._show_detail,
-            on_drop=self._drop_from_store)
+            on_drop=self._drop_from_store, on_new=self._new_paint)
         self.store.pack(fill="both", expand=True)
 
         # 맨 오른쪽 판: 고른 물감의 미리보기와 동작. 늘 떠 있고 내용만 바뀐다.
@@ -494,7 +706,8 @@ class SettingsWindow(tk.Toplevel):
         #   위: 스크롤되는 내용 칸 (그림이 커도 판 밖으로 안 넘친다)
         #   아래: **항상 같은 자리**에 고정된 버튼 줄
         # 그림이 커지거나 작아져도 버튼은 절대 움직이지 않는다.
-        self.zoom_pane = tk.Frame(self._paint_group, bg=CARD, width=ZOOM_W)
+        self.zoom_pane = tk.Frame(self._paint_group, bg=CARD, width=ZOOM_W,
+                                  highlightbackground=BORDER, highlightthickness=1)
         self.zoom_pane.pack_propagate(False)
         self.zoom_pane.pack(side="left", fill="y")
         self._zoom_photo = None
@@ -511,11 +724,15 @@ class SettingsWindow(tk.Toplevel):
         self._zoom_title = tk.Label(zhead, text="물감 미리보기",
                                     font=(FONT, theme.fs(FS["head"]), "bold"),
                                     bg=CARD, fg=TEXT)
-        self._zoom_title.pack(side="left")
-        self.zoom_hint = tk.Label(zhead, text="물감을 고르면 보입니다",
+        self._zoom_title.pack(side="top", anchor="w")
+        # 안내문은 제목 **아래 줄**로 내렸다 (2026-07-31). 판이 좁아지면서
+        # 제목 옆에 나란히 두면 잘렸다 — 게다가 이 라벨은 고른 물감 이름·
+        # "저장하는 중…" 같은 긴 글도 받으므로 한 줄을 통째로 갖는 편이 낫다.
+        self.zoom_hint = tk.Label(zhead, text=ZOOM_IDLE_HINT,
                                   font=(FONT, theme.fs(FS["caption"])),
-                                  bg=CARD, fg=MUTED)
-        self.zoom_hint.pack(side="left", padx=(SP["xs"] + 2, 0))
+                                  bg=CARD, fg=MUTED, anchor="w",
+                                  wraplength=ZOOM_W - 24, justify="left")
+        self.zoom_hint.pack(side="top", anchor="w")
         tk.Frame(self.zoom_pane, bg=BORDER, height=1).pack(side="top", fill="x")
 
         # 버튼 줄을 **먼저** side="bottom" 으로 붙인다 — 그래야 내용이 아무리
@@ -861,6 +1078,17 @@ class SettingsWindow(tk.Toplevel):
         acts.pack(fill="x", padx=SP["m"] - 2, pady=SP["s"])
         # 버튼은 오른쪽 정렬 (사용자 결정 2026-07-28). '팔레트에 놓기' 버튼은
         # 없앴다 — 창고 타일을 격자로 **끌어다 놓는** 것으로 대신한다.
+        if cat == "양식":
+            # [문서 해체] — 파일이 **선택된 상태에서** 바로 시작한다 (사용자
+            # 결정 2026-07-31: "쉽게 집어넣을 수 있게 파일이 선택된 상태에서
+            # 문서 해체를 누르면 해체가 되어야 합니다"). 파일을 다시 고르는
+            # 절차를 두지 않는다.
+            RoundButton(acts, text="문서 해체",
+                        command=lambda: self._start_decompose(item),
+                        bg=CARD, fg=TEXT, radius=theme.RADIUS["ctl"],
+                        font=(FONT, theme.fs(FS["body"])),
+                        outline=BORDER, zone_bg=CARD).fit(
+                        pad_x=10, pad_y=5).pack(side="right", padx=(0, 6))
         if cat in ("템플릿", "양식"):
             # 창(MetaDialog)을 띄우지 않고 이 판을 수정 폼으로 갈아끼운다
             # (사용자 결정 2026-07-27 — "미리보기 창이 템플릿 수정으로 치환")
@@ -1202,7 +1430,7 @@ class SettingsWindow(tk.Toplevel):
             else:
                 self._clear_zoom()
                 self._zoom_title.config(text="물감 미리보기")
-                self.zoom_hint.config(text="물감을 고르면 보입니다")
+                self.zoom_hint.config(text=ZOOM_IDLE_HINT)
 
         # **되돌리는 구간을 가린다** (사용자 지적 2026-07-28: "취소나 저장을
         # 누르면 깜빡거리는 모션이 있습니다").
@@ -1750,7 +1978,7 @@ class SettingsWindow(tk.Toplevel):
             self.pal_hint.config(text=self._pal_hint_text(), fg=MUTED)
             self.bind("<Escape>", lambda e: self._close())
             return
-        dlg = _ToolPickDialog(self, span, rows)
+        dlg = _BlockKindDialog(self, span, rows)
         self.wait_window(dlg)
         self._pending_area = (row, col, span, rows)
         self._pending_color = getattr(dlg, "color", None)
@@ -1766,6 +1994,95 @@ class SettingsWindow(tk.Toplevel):
             self._add_builtin(span, rows)
         self._pending_area = None
         self._pending_color = None
+
+    def _start_decompose(self, item):
+        r"""문서 해체 시작 — 복사본을 열고, 오른쪽에 골라 담기 판을 세운다.
+
+        **항상 복사본**이다 (사용자 결정 2026-07-31). 담는 중에 문서를 지우고
+        고치게 되므로, 원본 시험지가 상하는 사고를 이 한 가지가 막는다.
+        마침 양식 수정이 쓰던 open_form_copy 가 그 일을 이미 한다.
+        """
+        if getattr(self, "_decompose", None) is not None:
+            return                          # 이미 해체 중
+        path = library.template_path(item)
+        if not path:
+            messagebox.showwarning("파일이 없습니다",
+                                   "이 양식의 파일을 찾지 못했습니다.", parent=self)
+            return
+        try:
+            hwp_engine.connect()
+            engine_library.open_form_copy(path)
+        except Exception as e:
+            applog.exc("문서 해체: 복사본 열기 실패", e)
+            messagebox.showerror("열지 못했습니다",
+                                 "한글에서 복사본을 열지 못했습니다.", parent=self)
+            return
+        from hwp_palette.ui import decompose_ui          # 순환 참조 회피
+        panel = decompose_ui.DecomposePanel(
+            self._paint_group, doc_name=f"{item.get('name', '')} (복사본)",
+            on_finish=self._finish_decompose)
+        # 미리보기 자리를 잠깐 내주고 그 자리에 선다 — 창 폭이 안 늘어난다
+        self.zoom_pane.pack_forget()
+        panel.pack(side="left", fill="y")
+        self._decompose = panel
+        panel.rescan()
+
+    def _finish_decompose(self, taken_names):
+        """해체 끝 — 판을 걷고, 담은 것들로 팔레트 탭을 만들지 묻는다."""
+        panel, self._decompose = getattr(self, "_decompose", None), None
+        if panel is not None:
+            try:
+                panel.destroy()
+            except Exception:
+                pass
+        self.zoom_pane.pack(side="left", fill="y")
+        self.store.refresh()
+        if not taken_names:
+            return
+        if messagebox.askyesno(
+                "팔레트 탭 만들기",
+                f"담은 {len(taken_names)}개로 새 팔레트 탭을 만들까요?",
+                parent=self):
+            from hwp_palette.ui import decompose_ui
+            if decompose_ui.make_palette_tab("해체", taken_names):
+                self._reload_tabs()
+                self._notify(items_changed=True)
+
+    def _new_paint(self, cat):
+        r"""창고의 ＋ — 지금 켜 놓은 분류의 물감을 **만들기만** 한다 (2026-07-31).
+
+        팔레트 빈칸을 끄는 길(_add_char·_add_template …)과 다른 점은 하나다:
+        저쪽은 만들어서 **바로 팔레트에 놓고**, 여기는 **창고에 쌓기만** 한다.
+        "창고에서 분류된 것이 진짜 분류이고, 팔레트에 놓인 것은 그냥 배치일
+        뿐" 이라는 결정(2026-07-31)이 이 갈림에 그대로 들어 있다.
+
+        두 길은 **함께 남는다** — 창고에 입구를 하나 더 내는 것이지 팔레트
+        쪽을 옮기는 것이 아니다 (사용자: "여전히 팔레트에서 물감을 추가할
+        수도 있습니다. 그 기능은 건드려서는 안됩니다").
+        """
+        if cat in store_ui.READONLY_CATS:
+            return                          # 도구 — 사용자가 만드는 물감이 아니다
+        try:
+            if cat == "템플릿":
+                # 한글에서 지금 고른 것을 그 자리에서 등록 (라이브러리 창과 같은 코드)
+                if library_ui.capture_template_dialog(self) is None:
+                    return
+            else:
+                # 나머지 분류는 라이브러리 창의 해당 탭이 만들기 화면이다
+                library_ui.open_manager(self, on_saved=self._after_new_paint,
+                                        cat=cat)
+                return
+        except Exception as e:
+            applog.exc("창고: 새 물감 만들기 실패", e)
+            return
+        self._after_new_paint()
+
+    def _after_new_paint(self):
+        """새 물감이 생긴 뒤 — 창고만 다시 그린다 (팔레트 배치는 안 건드린다)."""
+        try:
+            self.store.refresh()
+        except Exception as e:
+            applog.exc("창고: 새 물감 반영 실패", e)
 
     def _place(self, block):
         """새 블럭을 지금 지정한 자리에 넣는다 (없으면 첫 빈자리)."""
@@ -2338,6 +2655,78 @@ class SettingsWindow(tk.Toplevel):
                         pass
             self._drag_cell_hint = new_cell
 
+    def _edit_stack(self, idx, blk):
+        """겹친 칸 편집 — 이름 바꾸기, 하나씩 빼기, 통째로 풀기."""
+        dlg = _StackEditDialog(self, blk)
+        self.wait_window(dlg)
+        if dlg.result is None:
+            return
+        if dlg.result == "unstack":
+            # 통째로 풀기 — 안의 물감을 빈자리에 하나씩 되돌려 놓는다
+            items = list(blk.get("items") or [])
+            palette.delete_block(self.sel_tab, idx)
+            for b in items:
+                palette.add_block(self.sel_tab, dict(b))
+        else:
+            new = dict(blk)
+            new["name"] = dlg.result["name"]
+            new["items"] = dlg.result["items"]
+            if not new["items"]:
+                palette.delete_block(self.sel_tab, idx)   # 다 뺐다 = 없앤다
+            elif len(new["items"]) == 1:
+                # 하나만 남으면 겹칠 이유가 없다 — 낱개로 되돌린다
+                one = dict(new["items"][0])
+                for k in ("row", "col", "span", "rows", "color"):
+                    if blk.get(k) is not None:
+                        one[k] = blk[k]
+                palette.update_block(self.sel_tab, idx, one)
+            else:
+                palette.update_block(self.sel_tab, idx, new)
+        self.sel_block = None
+        self._render_blocks()
+        self._notify()
+
+    def _stack_onto(self, src, target):
+        r"""블럭을 블럭 위에 놓았다 — 겹친 물감으로 묶는다 (2026-07-31).
+
+        "선지의 스타일이 5개인 경우 이거를 다 다른 버튼으로 하게 되면 공간의
+        낭비가 심각합니다. 애플에서 하는 것 처럼 블럭을 잡고 겹치면 물감을
+        겹치겠습니까? 알람이 뜨고 알겠다고 하면 그 겹친 물감의 전체 이름을
+        정하고" — 사용자 기획 그대로다.
+
+        이미 겹친 칸 위에 놓으면 **묻지 않고 그 안에 더한다** (애플과 같게) —
+        한 번 겹치기로 뜻을 밝힌 자리이므로 매번 확인할 이유가 없다.
+        """
+        blocks = palette.load_tabs()[self.sel_tab]["blocks"]
+        if not (0 <= src < len(blocks) and 0 <= target < len(blocks)):
+            self._clear_drag_paint()
+            return
+        a, b = dict(blocks[src]), dict(blocks[target])
+        # 겹친 칸에 담을 때는 자리·크기 정보를 떼어 낸다 — 자리는 겹친 칸이 갖는다
+        def _bare(blk):
+            return {k: v for k, v in blk.items()
+                    if k not in ("row", "col", "span", "rows")}
+        if b.get("type") == "stack":
+            items = list(b.get("items") or [])
+            items.extend(a.get("items") or [_bare(a)])
+            b["items"] = items
+        else:
+            name = _ask_stack_name(self, _block_name_of(b), _block_name_of(a))
+            if not name:
+                self._clear_drag_paint()
+                return
+            b = {"type": "stack", "name": name,
+                 "items": [_bare(b), *(a.get("items") or [_bare(a)])],
+                 "row": b.get("row"), "col": b.get("col"),
+                 "span": b.get("span", 2), "rows": b.get("rows", 1)}
+            if blocks[target].get("color"):
+                b["color"] = blocks[target]["color"]
+        palette.update_block(self.sel_tab, target, b)
+        palette.delete_block(self.sel_tab, src)
+        self.sel_block = None
+        self._render_blocks()
+        self._notify()
+
     def _tile_border_normal(self, i):
         """타일 테두리를 평상시 모습(선택이면 파랑, 아니면 회색)으로 되돌린다."""
         tile = getattr(self, "_tiles", {}).get(i)
@@ -2376,10 +2765,11 @@ class SettingsWindow(tk.Toplevel):
                 self._clear_drag_paint()  # 겹쳐서 실패 — 강조만 지운다
             return
         if target is not None and target != src:
-            palette.move_block_to(self.sel_tab, src, target)
-            self.sel_block = target
-            self._render_blocks()
-            self._notify()
+            # 블럭 **위에** 놓으면 겹친다 (사용자 기획 2026-07-31, 애플 폴더식).
+            # 예전에는 목록 순서만 맞바꿨는데(move_block_to), 칸 자리를 따로
+            # 갖는 격자에서 순서 바꾸기는 눈에 보이는 뜻이 거의 없었다.
+            # 자리 옮기기는 **빈칸에 놓기**가 이미 하고 있다.
+            self._stack_onto(src, target)
         else:
             # 제자리 — 강조만 원복한다. 여기서 _render_blocks() 를 부르면
             # **그냥 클릭할 때마다** 격자 전체(타일 수십 개 + 글꼴 측정)를
@@ -2516,6 +2906,9 @@ class SettingsWindow(tk.Toplevel):
             # 서식 조합 블럭이 나오는지") — 저장하면 도구가 서식 블럭으로
             # 둔갑하는 사고까지 가능했다. 이름은 우클릭 → 이름 바꾸기.
             return
+        if blk["type"] == "stack":
+            self._edit_stack(idx, blk)
+            return
         if blk["type"] == "char":
             dlg = _CharDialog(self, prefill=blk.get("value", ""))
             self.wait_window(dlg)
@@ -2639,7 +3032,7 @@ class SettingsWindow(tk.Toplevel):
         # "이름 — 설명"을 한 줄로 이어 콤보박스에 넣던 옛 방식은 콤보박스
         # 폭에서 설명이 잘려 무엇을 고르는지 알 수 없었다 (사용자 지적
         # 2026-07-31). 이름과 설명을 두 줄로 보여주는 전용 목록으로 바꿨다.
-        pick = _ToolPickDialog(self, builtin_actions.BUILTIN_ACTIONS)
+        pick = _BuiltinPickDialog(self, builtin_actions.BUILTIN_ACTIONS)
         self.wait_window(pick)
         if not pick.result:
             return
@@ -2840,8 +3233,15 @@ class _SourceDialog(tk.Toplevel):
         self.destroy()
 
 
-class _ToolPickDialog(tk.Toplevel):
+class _BuiltinPickDialog(tk.Toplevel):
     r"""도구 고르기 — 이름과 설명을 **두 줄**로 보여준다 (2026-07-31).
+
+    이름 주의 (2026-07-31 버그 수정): 예전엔 이 클래스도 `_ToolPickDialog`
+    였다. 파일 아래쪽의 '무엇을 넣을까' 창과 **이름이 똑같아** 나중 정의가
+    이것을 덮어썼고, `_add_builtin` 이 부르면 엉뚱한 창이 열리며 도구 목록이
+    제목 라벨에 날 데이터로 찍혔다("어떤 도구를 사용할 수 있는지 알 수가
+    없습니다"). 무엇을 고르는 창인지가 이름에 드러나야 한다 —
+    여기는 **붙박이 도구(builtin)** 고르기, 저기는 **블럭 종류** 고르기다.
 
     예전에는 "이름 — 설명"을 한 줄로 이어 콤보박스(_ChoiceDialog)에 넣었는데,
     콤보박스 폭에서 설명이 잘려 무엇을 고르는지 알 수 없었다 (사용자 지적:
@@ -3134,8 +3534,12 @@ class _CaptionDialog(tk.Toplevel):
         self.destroy()
 
 
-class _ToolPickDialog(tk.Toplevel):
-    """빈칸을 끌어 칸 수를 정한 뒤 '무엇을 넣을지' 고르는 창."""
+class _BlockKindDialog(tk.Toplevel):
+    """빈칸을 끌어 칸 수를 정한 뒤 '무엇을 넣을지' 고르는 창.
+
+    이름 주의: 위쪽 `_BuiltinPickDialog`(붙박이 도구 고르기)와 이름이 겹치면
+    안 된다 — 겹쳤을 때 어떤 일이 벌어졌는지는 그 클래스의 설명 참고.
+    """
 
     _TOOLS = [
         ("char", "특수기호", "특수기호·자주 쓰는 문구를 커서 자리에 삽입"),

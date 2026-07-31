@@ -20,9 +20,32 @@ r"""물감 창고 — 팔레트 설정 창 왼쪽에 붙는 서랍 (2026-07-27).
     "안 씀이 파란색이면 느낌이 이상하다"). 흰색은 빈 자리처럼 읽혀서
     '아직 아무 데도 안 갔다'와 정확히 맞물린다.
 
-분류를 탭이 아니라 칩 한 줄로 둔 이유:
-    창고의 핵심은 "안 놓인 물감이 여기 있다"인데, 분류로 탭을 갈라 놓으면
-    그것들이 네 탭에 흩어져 **어느 탭에서도 다 보이지 않는다.**
+분류를 해시태그에서 **탭**으로 (사용자 결정 2026-07-31):
+    예전에는 `#전체 #서식 #특수기호 #템플릿 #양식` 칩 한 줄이었고, 그 옆에
+    '쓰는 중·이 팔레트·고른 것' 색 안내가 나란히 붙어 있었다. 성격이 다른
+    두 가지가 한 줄에 섞여 위계가 안 보였다 — 앞은 **분류**(무엇인가)이고
+    뒤는 **상태**(지금 어떤가)다.
+
+        분류  → 탭 한 줄. 물감은 반드시 다섯 중 하나에 속하므로 한 번에 하나.
+        상태  → 창고 **제목 옆**으로 옮긴다. 자리를 따로 먹지 않는다.
+
+    '전체'는 없앴다 (사용자: "섞여있을 필요가 없습니다"). 특수기호와 양식을
+    같은 목록에서 볼 일이 없고, 개수는 탭마다 적혀 있다.
+
+    '도구'를 정식 분류로 올렸다. 예전엔 팔레트 빈칸 대화상자에만 있고 창고엔
+    없어서, 만드는 입구가 화면마다 달랐다. 다만 도구는 프로그램이 가진
+    기능이라 **읽기 전용**이다 — ＋ 가 없다(무인 진행 규약 2026-07-31).
+
+만드는 입구(＋)는 분류 바로 아래 (사용자 결정 2026-07-31, 시안 안 3):
+    고정 줄이라 목록을 굴려도 늘 보이고, 분류 바로 밑이라 목록과도 가깝다.
+    글씨는 켜 놓은 분류를 따라 바뀐다 — 누르기 전에 무엇이 만들어질지 안다.
+    **팔레트 빈칸을 끌어 만드는 기존 길은 그대로 둔다** — 여기는 길을 하나
+    더 내는 것이지 옮기는 것이 아니다.
+
+폭을 고정한 이유 (사용자 지적 2026-07-31):
+    내용에 따라 판 폭을 계산하던 것을 그만뒀다. 물감이 있고 없고에 따라
+    좌우 폭이 출렁여서 "변형되어서는 안 된다"는 지적을 받았다. 이제 가득 찬
+    상태를 기준으로 못박고, 스크롤바 자리도 늘 비워 둔다.
 
 놓기가 되는 것:
     템플릿·양식·특수기호. 서식 물감은 팔레트 블럭 종류가 따로 없어(문서에서
@@ -34,6 +57,7 @@ from tkinter import ttk
 from hwp_palette.design import dialogs as messagebox   # 윈도우 기본 대화상자 대신 프로그램과 같은 얼굴 (2026-07-27)
 
 from hwp_palette.core import applog
+from hwp_palette.model import builtin_actions          # '도구' 분류의 목록
 from hwp_palette.model import library
 from hwp_palette.model import palette
 from hwp_palette.hwp import preview
@@ -48,6 +72,7 @@ TEXT = _C["text"]
 MUTED = _C["muted"]
 BORDER = _C["border"]
 SOFT = _C["yellow"]
+SUBBG = _C["subbg"]
 ACCENT_SOFT = _C["accent_soft"]
 FONT = theme.FONT
 SP = theme.SP
@@ -72,13 +97,26 @@ SEL_BG, SEL_LINE, SEL_FG = ACCENT_SOFT, "#54aeff", "#0550ae"
 # 바깥의 무채색을 쓴다.
 CHIP_ON_BG, CHIP_ON_LINE, CHIP_ON_FG = "#e6e6ea", "#9a9aa0", "#3c3c40"
 
+# 꾸러미(섞은 물감) 리본 — 상태 색(파랑·초록·코랄) 어느 것과도 안 겹치는
+# 보라 계열이다. 이건 '상태'가 아니라 '무엇인가'를 말하는 표시라서다.
+MIX_BG, MIX_FG = "#f3eefc", "#6639ba"
+
 SHARE_GLYPH = theme.SHARE_GLYPH
 
-CATS = (("전체", None), ("서식", "서식"), ("특수기호", "문자"),
-        ("템플릿", "템플릿"), ("양식", "양식"))
+# 분류 다섯 — 이 차례가 화면의 탭 차례다. '전체'는 없다(위 머리말 참고).
+# 라벨은 짧게: '서식 조합' 은 탭에서 줄이 바뀌어 '서식' 으로 줄였다
+# (사용자 결정 2026-07-31).
+CATS = (("특수기호", "문자"), ("템플릿", "템플릿"), ("서식", "서식"),
+        ("양식", "양식"), ("도구", "도구"))
+DEFAULT_CAT = "템플릿"        # 창고를 열면 여기부터 (가장 많이 쓰는 분류)
+READONLY_CATS = {"도구"}      # 사용자가 만들 수 없는 분류 — ＋ 를 숨긴다
 PLACEABLE = {"템플릿", "양식", "문자"}
 PREVIEW_W, PREVIEW_H = 260, 150
 COLS = 2                      # 타일 열 수
+
+# 판 폭 고정 (사용자 결정 2026-07-31) — 내용에 따라 재계산하지 않는다.
+# 가득 찬 상태에서 두 열이 온전히 들어가는 폭이다.
+STORE_W = 340
 
 
 class StorePanel(tk.Frame):
@@ -86,16 +124,18 @@ class StorePanel(tk.Frame):
     # 창고는 스크롤이라 내용 높이가 0에 가깝다. 그대로 두면 창고가 두 줄만
     # 보이게 창이 납작해진다.
     def __init__(self, master, on_place, tab_name_fn, on_select=None,
-                 on_drop=None,
-                 width=326, height=430):  # 20% 더 넓게 (사용자 결정 2026-07-27)
+                 on_drop=None, on_new=None,
+                 width=STORE_W, height=430):
         super().__init__(master, bg=CARD, width=width, height=height)
         self.pack_propagate(False)
         self.on_place = on_place            # 블럭 dict → 팔레트에 놓기
         self.on_select = on_select          # (분류, 항목) → 오른쪽 미리보기 판
         self.on_drop = on_drop              # (블럭, x_root, y_root) → 격자에 놓기
+        self.on_new = on_new                # 분류 key → 그 분류의 물감 새로 만들기
         self.tab_name_fn = tab_name_fn      # 지금 보고 있는 탭 이름
         self._drag = None                   # 끌기 상태 (타일 → 팔레트 격자)
-        self.filter = None                  # None = 전체
+        # 분류는 늘 하나가 켜져 있다 — '전체'가 없어졌으므로 None 이 될 수 없다
+        self.filter = DEFAULT_CAT
         self.sel_key = None                 # 고른 물감 (분류, id)
         # Ctrl 을 누른 채 고르면 여러 개가 쌓인다 (사용자 결정 2026-07-28) —
         # 동료에게 물감 몇 개만 골라 보내는 일에 쓴다. 미리보기 판은 여전히
@@ -121,39 +161,48 @@ class StorePanel(tk.Frame):
             font=(FONT, theme.fs(FS["body"])), outline="", zone_bg=CARD)
         self.share_btn.config(width=theme.fs(22), height=theme.fs(20))
         self.share_btn.pack(side="right")
+        # 색 안내를 **제목 줄 오른쪽**으로 옮겼다 (사용자 결정 2026-07-31:
+        # "이 부분은 물감창고 이름 옆으로 옮기는 걸로 하겠습니다. 굳이 저
+        # 위치에 있을 필요가 없습니다"). 제목줄은 원래 오른쪽이 비어 있던
+        # 자리라 세로 길이가 늘지 않고, 분류 탭 아래 한 줄이 통째로 사라져
+        # 그만큼 목록이 더 보인다.
+        #
+        # '안 씀'은 넣지 않는다 (사용자 지적 2026-07-31: "안씀의 경우에는
+        # 알려주는 표시가 없어야 합니다") — 안 쓰는 물감은 흰 카드 그대로라
+        # 색이 없다. 색 없는 상태를 위해 색 견본을 그리는 것이 모순이다.
+        states = (("쓰는 중", USED_BG, USED_LINE, USED_FG),
+                  ("이 팔레트", HERE_BG, HERE_LINE, HERE_FG),
+                  ("고른 것", SEL_BG, SEL_LINE, SEL_FG))
+        legend = tk.Frame(head, bg=CARD)
+        legend.pack(side="right", padx=(6, 4))
+        for text, bg, line, fg in states:
+            tk.Label(legend, text=text, font=(FONT, theme.fs(FS["caption"])),
+                     bg=bg, fg=fg, padx=4,
+                     highlightbackground=line, highlightthickness=1
+                     ).pack(side="left", padx=(0, 3))
+
         self.hint = tk.Label(head, text="", font=(FONT, theme.fs(FS["caption"])),
                              bg=CARD, fg=MUTED)
         self.hint.pack(side="left", padx=(6, 0))
 
-        self.chip_box = tk.Frame(self, bg=CARD)
-        self.chip_box.pack(fill="x", padx=6, pady=(2, 4))
+        # 분류 탭 — 한 번에 하나만 켜진다 (물감은 다섯 중 하나에 속하므로)
+        self.chip_box = tk.Frame(self, bg=SUBBG, highlightbackground=BORDER,
+                                 highlightthickness=1)
+        self.chip_box.pack(fill="x", padx=8, pady=(4, 0))
 
+        # ＋ 줄 — 분류 **바로 아래** 고정 (사용자 결정 2026-07-31, 시안 안 3)
+        self.new_btn = tk.Label(self, text="", cursor="hand2",
+                                font=(FONT, theme.fs(FS["sub"]), "bold"),
+                                bg=CARD, fg=ACCENT, pady=5,
+                                highlightbackground=SEL_LINE, highlightthickness=1)
+        self.new_btn.bind("<Button-1>", lambda e: self._new_here())
+        self.new_btn.pack(fill="x", padx=8, pady=(5, 5))
 
-        # 색이 무슨 뜻인지 화면이 말해 준다 (사용자 지적 2026-07-27) —
-        # 안내가 없으면 파랑·코랄을 반대로 읽는다.
-        # 견본은 **타일과 같은 생김새**(그 색 판 위에 그 색 글자)로, 세 칸을
-        # 같은 폭으로 고르게 편다 — 점 따로 글자 따로 왼쪽에 몰려 있던 옛
-        # 안내는 색과 뜻을 잇느라 눈이 한 번 더 오가야 했고 한쪽으로 쏠려
-        # 보였다 (사용자 지적 2026-07-27).
-        legend = tk.Frame(self, bg=CARD)
-        legend.pack(fill="x", padx=8, pady=(0, 6))
-        # '안 씀'은 뺐다 (사용자 지적 2026-07-31: "안씀의 경우에는 알려주는
-        # 표시가 없어야 합니다") — 안 쓰는 물감은 원래도 흰 카드 그대로라
-        # 색이 없다. 색 없는 상태를 위해 색 견본을 그리는 것 자체가 모순이라,
-        # 실제로 색이 있는 세 상태만 안내한다.
-        states = (("쓰는 중", USED_BG, USED_LINE, USED_FG),
-                  ("이 팔레트", HERE_BG, HERE_LINE, HERE_FG),
-                  ("고른 것", SEL_BG, SEL_LINE, SEL_FG))
-        for i, (text, bg, line, fg) in enumerate(states):
-            legend.columnconfigure(i, weight=1, uniform="legend")
-            tk.Label(legend, text=text, font=(FONT, theme.fs(FS["caption"])),
-                     bg=bg, fg=fg, pady=2,
-                     highlightbackground=line, highlightthickness=1
-                     ).grid(row=0, column=i, sticky="ew",
-                            padx=(0, 3) if i < len(states) - 1 else 0)
-
-        # 물감이 스무 개를 넘으면 스크롤이 필요하다
+        # 물감이 스무 개를 넘으면 스크롤이 필요하다.
+        # 스크롤바는 **늘 자리를 차지한다** — 목록 길이에 따라 생겼다 없어지면
+        # 그만큼 카드 폭이 출렁인다 (폭 고정 규칙, 위 머리말).
         wrap = tk.Frame(self, bg=CARD)
+        self._list_wrap = wrap
         wrap.pack(fill="both", expand=True, padx=(6, 0), pady=(0, 6))
         self.canvas = tk.Canvas(wrap, bg=CARD, highlightthickness=0)
         messagebox.style_scrollbars(self)
@@ -199,9 +248,15 @@ class StorePanel(tk.Frame):
         """
         if lib is None:
             lib = library.load()
+        if self.filter == "도구":
+            # 도구는 라이브러리에 없다 — 프로그램이 가진 기능 목록이다.
+            # 항목 모양(id·name)만 맞춰 주면 아래 그리기가 그대로 돈다.
+            return [("도구", {"id": f"builtin:{a['key']}", "name": a["name"],
+                              "hint": a.get("hint", ""), "key": a["key"]})
+                    for a in builtin_actions.BUILTIN_ACTIONS]
         out = []
-        for _label, key in CATS[1:]:
-            if self.filter and key != self.filter:
+        for _label, key in CATS:
+            if key != self.filter:
                 continue
             for it in lib.get(key, []):
                 out.append((key, it))
@@ -264,32 +319,10 @@ class StorePanel(tk.Frame):
                            else "모두 팔레트에 놓여 있습니다")
         self._sync_share()
 
-        # 판 폭을 **내용으로 계산한다** (2026-07-31, 사용자 지적: "물감창고와
-        # 물감 미리보기가 잘려있다"). 고정 326px 은 카드 이름이 길어지면
-        # 두 열의 최소 폭이 그걸 넘어, 오른쪽 열이 미리보기와의 경계선에서
-        # 잘렸다. 가장 긴 이름(잘림 처리 후)을 실측해 두 열이 온전히 들어갈
-        # 폭으로 판을 늘린다 — 창은 _fit_window 가 따라 커진다.
-        try:
-            # Font 는 한 번만 만들어 재사용한다 (2026-07-31, 성능) — 생성이
-            # Tcl 폰트 등록이라 비싸다. 판이 사는 동안 스펙(글꼴·크기)이 안
-            # 바뀌므로 값이 어긋날 일이 없다.
-            f = self._name_font
-            if f is None:
-                import tkinter.font as tkfont
-                f = self._name_font = tkfont.Font(
-                    family=FONT, size=theme.fs(FS["sub"]), weight="bold")
-            def shown(name):
-                return name if len(name) <= 12 else name[:12] + "…"
-            # 같은 이름은 한 번만 잰다 — 잘림 처리 후 이름은 13자 이하라
-            # 겹치는 것이 많다.
-            widest = max((f.measure(n)
-                          for n in {shown(it.get("name", ""))
-                                    for _c, it in items}), default=120)
-            # 카드 안쪽 여백(6*2) + 카드 사이(3*2*2) + 스크롤바(≈16) + 판 여백
-            need = 2 * (widest + 12 + 6) + 16 + 12
-            self.config(width=max(326, min(560, need)))
-        except Exception:
-            pass
+        # 폭은 **다시 계산하지 않는다** (사용자 결정 2026-07-31). 예전에는 가장
+        # 긴 이름을 재서 판을 늘렸는데, 그 바람에 물감이 있고 없고·분류를
+        # 바꿀 때마다 좌우 폭이 출렁였다 ("변형되어서는 안 됩니다"). 이름이
+        # 길면 카드 안에서 말줄임으로 처리하고, 판은 STORE_W 로 고정한다.
 
         grid = tk.Frame(self.body, bg=CARD)
         grid.pack(fill="x")
@@ -303,34 +336,70 @@ class StorePanel(tk.Frame):
                       padx=3, pady=3)
             self._tiles[key] = tile
         if not items:
-            tk.Label(self.body, text="이 분류에 물감이 없습니다.",
+            # 비었다고 판이 좁아지지는 않는다(폭 고정) — 대신 여기서 무엇을
+            # 하면 되는지 말해 준다. 읽기 전용 분류에는 ＋ 가 없으므로 안내도 다르다.
+            msg = ("이 분류에 물감이 없습니다."
+                   if self.filter in READONLY_CATS
+                   else f"아직 {_cat_label(self.filter)}이(가) 없습니다.\n"
+                        "위의 ＋ 로 하나 만들어 보세요.")
+            tk.Label(self.body, text=msg, justify="center",
                      font=(FONT, theme.fs(FS["sub"])), bg=CARD, fg=MUTED).pack(pady=SP["xl"])
         self._paint_selection()
 
     def _draw_chips(self, lib=None):
+        """분류 탭 한 줄 — 이름 위, 개수 아래. 켜진 하나만 흰 칸으로 뜬다."""
         for w in self.chip_box.winfo_children():
             w.destroy()
         if lib is None:                     # refresh 가 읽어 둔 것을 나눠 쓴다
             lib = library.load()
-        counts = {key: len(lib.get(key, []))
-                  for _l, key in CATS[1:]}
-        counts[None] = sum(counts.values())
-        # 칩은 세 개씩 줄바꿈한다 — 한 줄로 늘어놓으면 창고 폭을 넘어
-        # 마지막 칩(#양식)이 잘려 안 보였다 (실측 2026-07-27).
+        counts = {key: len(lib.get(key, [])) for _l, key in CATS}
+        counts["도구"] = len(builtin_actions.BUILTIN_ACTIONS)
         for i, (label, key) in enumerate(CATS):
             on = (self.filter == key)
-            chip = tk.Label(self.chip_box,
-                            text=f"#{label} {counts.get(key, 0)}",
-                            font=(FONT, theme.fs(FS["caption"])),
-                            bg=CHIP_ON_BG if on else CARD,
-                            fg=CHIP_ON_FG if on else MUTED,
-                            padx=5, pady=2, cursor="hand2",
-                            highlightbackground=CHIP_ON_LINE if on else BORDER,
-                            highlightthickness=1)
-            chip.grid(row=i // 3, column=i % 3, sticky="ew", padx=2, pady=1)
-            chip.bind("<Button-1>", lambda e, k=key: self._pick_chip(k))
-        for c in range(3):
-            self.chip_box.columnconfigure(c, weight=1)
+            cell = tk.Frame(self.chip_box, bg=CARD if on else SUBBG,
+                            cursor="hand2",
+                            highlightbackground=BORDER if on else SUBBG,
+                            highlightthickness=1 if on else 0)
+            cell.grid(row=0, column=i, sticky="nsew", padx=1, pady=1)
+            nm = tk.Label(cell, text=label,
+                          font=(FONT, theme.fs(FS["caption"]),
+                                "bold" if on else "normal"),
+                          bg=CARD if on else SUBBG,
+                          fg=TEXT if on else MUTED, pady=0)
+            nm.pack(fill="x", pady=(3, 0))
+            ct = tk.Label(cell, text=str(counts.get(key, 0)),
+                          font=(FONT, theme.fs(FS["caption"])),
+                          bg=CARD if on else SUBBG,
+                          fg=MUTED if on else BORDER, pady=0)
+            ct.pack(fill="x", pady=(0, 3))
+            for w in (cell, nm, ct):
+                w.bind("<Button-1>", lambda e, k=key: self._pick_chip(k))
+        for c in range(len(CATS)):
+            self.chip_box.columnconfigure(c, weight=1, uniform="cat")
+        self._sync_new_btn()
+
+    def _sync_new_btn(self):
+        """＋ 줄 — 글씨는 켜 놓은 분류를 따라가고, 읽기 전용 분류에선 숨는다."""
+        try:
+            if self.filter in READONLY_CATS or self.on_new is None:
+                self.new_btn.pack_forget()
+                return
+            self.new_btn.config(text=f"＋ 새 {_cat_label(self.filter)} 만들기")
+            if not self.new_btn.winfo_ismapped():
+                # 목록(wrap)보다 먼저 붙어야 분류 바로 아래에 온다
+                self.new_btn.pack(fill="x", padx=8, pady=(5, 5),
+                                  before=self._list_wrap)
+        except Exception as e:
+            applog.exc("창고: ＋ 줄 갱신 실패", e)
+
+    def _new_here(self):
+        """＋ — 지금 켜 놓은 분류의 물감을 새로 만든다."""
+        if self.on_new is None or self.filter in READONLY_CATS:
+            return
+        try:
+            self.on_new(self.filter)
+        except Exception as e:
+            applog.exc("창고: 새 물감 만들기 실패", e)
 
     def _pick_chip(self, key):
         self.filter = key
@@ -347,6 +416,44 @@ class StorePanel(tk.Frame):
             return USED_BG, USED_LINE, USED_FG
         return FREE_BG, FREE_LINE, FREE_FG      # free · plain — 안 씀(흰색)
 
+    def _sub_text(self, cat, item):
+        """카드 둘째 줄 — 분류마다 **그 분류에서 뜻이 있는 것**을 보인다.
+
+        '빈칸 N' 은 템플릿·양식에서만 뜻이 있다. 예전에는 분류를 가리지 않고
+        그것만 적어, 특수기호·서식 카드는 늘 빈 줄이었다 (무인 진행 규약
+        2026-07-31 에서 분류별 표기를 정함).
+        """
+        if cat == "도구":
+            # 카드 폭(2열)에 들어가는 길이는 열한 자쯤이다 — 그보다 길면
+            # 가운데 정렬 라벨이 양옆으로 삐져나가 앞뒤가 함께 잘린다(실측).
+            hint = item.get("hint", "")
+            return hint if len(hint) <= 11 else hint[:11] + "…"
+        if cat == "문자":
+            txt = (item.get("text") or "").replace("\n", " ").strip()
+            return (txt if len(txt) <= 14 else txt[:14] + "…") or " "
+        if cat == "서식":
+            return self._func_summary(item)
+        slots = int(item.get("slot_count") or 0)
+        if item.get("mix"):
+            return f"빈칸 {slots} · {len(item['mix'])}개"
+        return f"빈칸 {slots}" if slots else " "
+
+    @staticmethod
+    def _func_summary(item):
+        """서식 물감 — 켜져 있는 것 두어 개를 수치와 함께 짧게."""
+        fx = item.get("funcs") or item.get("value") or {}
+        if not isinstance(fx, dict):
+            return " "
+        parts = []
+        for key, unit in (("size", "pt"), ("spacing", ""), ("line", "%")):
+            v = fx.get(key)
+            if v not in (None, ""):
+                parts.append(f"{v}{unit}")
+        if not parts:
+            n = sum(1 for v in fx.values() if v not in (None, "", False))
+            return f"{n}가지" if n else " "
+        return " · ".join(parts[:3])
+
     def _tile(self, parent, cat, item, state):
         # 곡률은 메인 창 블럭과 같다 (RoundTile 머리말 참고)
         tile = RoundTile(parent, bg=CARD, radius=theme.RADIUS["ctl"],
@@ -358,11 +465,20 @@ class StorePanel(tk.Frame):
                       font=(FONT, theme.fs(FS["sub"]), "bold"),
                       anchor="center", justify="center")
         nm.pack(fill="x", padx=6, pady=(5, 0))
-        slots = int(item.get("slot_count") or 0)
-        sub = tk.Label(tile, text=(f"빈칸 {slots}" if slots else " "),
+        sub = tk.Label(tile, text=self._sub_text(cat, item),
                        font=(FONT, theme.fs(FS["caption"])),
                        anchor="center", justify="center")
         sub.pack(fill="x", padx=6, pady=(0, 5))
+        # 꾸러미(섞은 물감)는 오른쪽 끝에 세로 MIX 리본을 단다 (사용자 결정
+        # 2026-07-31: "섞음 배지를 아래에 달아서 칸의 높이가 늘어나지 않게
+        # 하십시오. 옆에 세로로 MIX라고 표현해주어야 합니다"). 아랫줄에 배지를
+        # 더하면 카드가 낱개보다 높아져 목록이 들쭉날쭉해진다.
+        if item.get("mix"):
+            rib = tk.Label(tile, text="\n".join("MIX"), bg=MIX_BG, fg=MIX_FG,
+                           font=(FONT, max(6, theme.fs(FS["caption"]) - 2), "bold"),
+                           padx=1, pady=0)
+            rib.place(relx=1.0, rely=0.5, anchor="e", relheight=0.86)
+            tile._rib = rib
         tile._parts = (nm, sub)
         tile._state = state
         # 누르면 고르고, 그대로 끌면 팔레트 격자로 가져간다 (사용자 결정
@@ -495,6 +611,27 @@ class StorePanel(tk.Frame):
                 pairs.append((cat, it))
         return pairs
 
+    def _mix_selected(self):
+        """Ctrl+클릭으로 담은 템플릿들을 섞는다 — 입구 ①."""
+        pairs = [(c, i) for c, i in self._multi_pairs() if c == "템플릿"]
+        self.open_mix([i["id"] for i in (p[1] for p in pairs)])
+
+    def open_mix(self, member_ids=None, edit_id=None):
+        r"""섞기 창 — 요소를 골라 차례를 정하고 이름을 붙인다.
+
+        입구가 둘이다 (사용자 결정 2026-07-31): 창고에서 Ctrl+클릭으로 고른 뒤
+        [섞기], 또는 그냥 [섞기]를 눌러 빈 창에서 **[＋ 물감 추가]** 로 하나씩
+        골라 배열. 어느 쪽으로 들어와도 창 안에서 추가·빼기·차례 바꾸기가 된다.
+        """
+        from hwp_palette.ui import mix_ui               # 순환 참조 회피
+        mix_ui.open_mix_dialog(self.winfo_toplevel(), member_ids=member_ids,
+                               edit_id=edit_id, on_saved=self._after_mix)
+
+    def _after_mix(self):
+        self.clear_multi()
+        self.filter = "템플릿"
+        self.refresh()
+
     def _share_menu(self):
         r"""↗ — 주고받기. **누르자마자 파일창이 뜨지 않는다** (사용자 결정
         2026-07-28): 내보내기와 불러오기 중 어느 쪽인지 먼저 고르게 한다.
@@ -512,6 +649,13 @@ class StorePanel(tk.Frame):
                         self.winfo_toplevel(), pairs, on_done=self.clear_multi))
         else:
             pop.add("내보낼 물감을 Ctrl+클릭으로 고르세요", lambda: None)
+        pop.separator()
+        # 물감 섞기 (2026-07-31) — 담아 둔 템플릿이 있으면 그것들을 안고
+        # 열리고, 없으면 빈 창에서 [＋ 물감 추가]로 고른다. 입구 둘이 여기서
+        # 하나로 만난다.
+        picked = len([p for p in pairs if p[0] == "템플릿"])
+        pop.add(f"물감 섞기 ({picked}개 담음)" if picked else "물감 섞기",
+                self._mix_selected)
         pop.separator()
         pop.add("불러오기",
                 lambda: library_ui.import_flow(self.winfo_toplevel(),
@@ -587,7 +731,10 @@ class StorePanel(tk.Frame):
             self.multi.clear()
             self._sync_share()
         self._paint_selection()
-        if self.on_select:
+        # '도구'는 라이브러리 항목이 아니다 — 미리보기 판이 id 로 찾아보면
+        # 없는 물감이라 빈손으로 돌아온다. 고르기 표시(파란 테두리)만 하고
+        # 오른쪽 판은 건드리지 않는다.
+        if self.on_select and cat != "도구":
             self.on_select(cat, item)
 
     def clear_selection(self):
@@ -623,9 +770,16 @@ class StorePanel(tk.Frame):
         if cat == "문자":
             return {"type": "char", "value": item.get("text", ""),
                     "caption": item["name"], "span": 2, "rows": 1}
+        if cat == "도구":
+            return {"type": "builtin", "key": item["key"],
+                    "name": item["name"], "span": 2, "rows": 1}
         return None
 
     def edit_item(self, cat, item):
+        # 꾸러미는 파일이 아니라 '요소 목록'이라 고치는 창이 다르다
+        if item.get("mix"):
+            self.open_mix(edit_id=item.get("id"))
+            return
         from hwp_palette.ui import library_ui            # 순환 참조 회피 (library_ui → … → store_ui)
         library_ui.edit_item_dialog(self.winfo_toplevel(), cat, item,
                                     on_saved=self.refresh)

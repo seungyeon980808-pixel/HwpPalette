@@ -80,6 +80,33 @@ STYLES = {
 QTYPES = list(STYLES)
 
 
+def slots_of(label):
+    r"""라벨 → 그 템플릿의 **빈칸 이름 목록**.
+
+    2026-07-31: 여기가 이 기능의 진짜 병목이었다. 아래 TEMPLATES 는 조각
+    이름과 각 빈칸의 뜻을 **코드에 직접 적어 둔 표**라, 거기 없는 템플릿은
+    문항 엑셀에 참여할 수 없었다("여기 없는 템플릿은 스타일 목록에 뜨지
+    않는다"). 선생님이 만든 템플릿은 물론이고, 문서 해체(015)로 시험지에서
+    꺼낸 문항 틀도 마찬가지였다 — 만들기가 쉬워질수록 이 벽이 더 아프다.
+
+    이제 **라이브러리를 먼저 본다.** 조각에 `\번호\ \발문\ \선1\` 처럼 이름
+    붙은 빈칸이 있으면 그 이름들이 곧 열 지도다(등록할 때 slot_names 로 이미
+    적힌다 — 새 데이터가 필요하지 않다). 이름표가 없는 옛 조각만 아래 표로
+    떨어진다.
+    """
+    try:
+        entry = library.label_lookup().get(label)
+        if entry and entry[0] in ("템플릿", "양식"):
+            names = [n for n in (entry[1].get("slot_names") or []) if n]
+            # 빈칸 수와 이름 수가 같을 때만 믿는다 — 일부만 이름이 붙어
+            # 있으면 순서가 어긋나 값이 엉뚱한 칸으로 간다.
+            if names and len(names) == int(entry[1].get("slot_count") or 0):
+                return names
+    except Exception:
+        pass
+    return TEMPLATES.get(label, [])
+
+
 def styles_for(qtype):
     """그 유형에서 고를 수 있는 스타일 이름들 — **라이브러리에 실제 등록된 것만.**
 

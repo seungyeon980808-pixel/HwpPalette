@@ -21,6 +21,7 @@ from hwp_palette.design import dialogs as messagebox
 from hwp_palette.design import theme
 from hwp_palette.design import ui_fx
 from hwp_palette.design.roundbtn import RoundButton
+from hwp_palette.hwp import hwp_engine        # [한글에 바로 넣기]
 from hwp_palette.model import excel_form
 from hwp_palette.model import excel_read
 
@@ -37,8 +38,10 @@ MONO = "Consolas"        # form_fill_ui 와 같은 모노 글꼴
 
 class ExcelWindow(tk.Toplevel):
 
-    def __init__(self, master):
+    def __init__(self, master, on_convert=None):
         super().__init__(master)
+        # 마크다운 변환 함수 — 여는 쪽이 건네준다 (ui 층은 app 을 모른다)
+        self.on_convert = on_convert
         # 다 만들 때까지 숨긴다 (2026-07-31, SettingsWindow 와 같은 이유) —
         # 기본 자리에 깜빡 그려졌다가 place_beside 로 건너오는 것이 보였다.
         self.withdraw()
@@ -66,7 +69,7 @@ class ExcelWindow(tk.Toplevel):
             "· 합답형(ㄱㄴㄷ 고르기) · 정답형(오지선다) · 서술형 문항을 엑셀 표에 한 줄에 하나씩 적습니다\n"
             "· [엑셀 양식 만들기] — 열이 미리 짜인 빈 엑셀을 만듭니다. 예시 문항을 넣어 형식을 보고 배울 수 있습니다\n"
             "· [엑셀 파일 고르기] — 채워 온 엑셀을 읽어 시험지 마크다운과 정답표를 만듭니다. 잘못 쓴 칸은 읽기 결과가 짚어 줍니다\n"
-            "· [마크다운 복사] 뒤 한글에 붙여넣고 선택 → [마크다운 변환] — 등록해 둔 조각 서식 그대로 시험지가 완성됩니다"),
+            "· [한글에 바로 넣기] 한 번이면 붙여넣기·선택·변환까지 이어집니다 — 등록해 둔 조각 서식 그대로 시험지가 완성됩니다"),
             font=(FONT, theme.fs(8)), bg=CARD, fg=MUTED, justify="left"
         ).pack(anchor="w", padx=12, pady=(0, 8))
 
@@ -157,13 +160,18 @@ class ExcelWindow(tk.Toplevel):
                     bg=CARD, fg=TEXT, radius=theme.RADIUS["ctl"],
                     font=(FONT, theme.fs(9)), outline=BORDER,
                     zone_bg=BG).fit(pad_x=14, pad_y=5).pack(side="left")
-        RoundButton(foot, text="마크다운 복사", command=self._copy_md,
+        # [한글에 바로 넣기] — 창 밖에서 손으로 하던 네 걸음(복사 → 붙여넣기
+        # → 선택 → 변환)을 단추 하나로 잇는다 (2026-07-31). 이 창이 어렵던
+        # 이유의 절반이 "일이 창 밖에서 벌어진다"였다.
+        # [마크다운 복사]도 **남긴다** — 다른 곳에 붙여넣고 싶을 때가 있다.
+        RoundButton(foot, text="한글에 바로 넣기", command=self._send_to_hwp,
                     bg=ACCENT, fg="white", radius=theme.RADIUS["ctl"],
                     font=(FONT, theme.fs(10), "bold"), outline="",
                     zone_bg=BG).fit(pad_x=16, pad_y=6).pack(side="right")
-        tk.Label(foot, text="한글에 붙여넣고 선택한 뒤 [마크다운 변환]",
-                 font=(FONT, theme.fs(8)), bg=BG,
-                 fg=MUTED).pack(side="right", padx=(0, 10))
+        RoundButton(foot, text="마크다운 복사", command=self._copy_md,
+                    bg=CARD, fg=TEXT, radius=theme.RADIUS["ctl"],
+                    font=(FONT, theme.fs(9)), outline=BORDER,
+                    zone_bg=BG).fit(pad_x=14, pad_y=5).pack(side="right", padx=(0, 8))
 
     # ── 동작 ────────────────────────────────────────────
     def _make(self):
@@ -211,7 +219,7 @@ class ExcelWindow(tk.Toplevel):
         self.md, self.answers = md, answers
         self._set(self.report_box, "\n".join(report))
         self._set(self.md_box, md)
-        self.status.set("문항 %d개 — [마크다운 복사] 뒤 한글에 붙여넣으세요."
+        self.status.set("문항 %d개 — 한글에서 넣을 자리를 클릭하고 [한글에 바로 넣기]."
                         % len(answers) if answers
                         else "읽을 문항이 없습니다. 엑셀을 확인해 주세요.")
 
@@ -227,6 +235,50 @@ class ExcelWindow(tk.Toplevel):
         clipboard.set_text(self.md, self)
         self.status.set("복사했습니다 — 한글에 붙여넣고 선택한 뒤 [마크다운 변환].")
 
+    def _send_to_hwp(self):
+        r"""[한글에 바로 넣기] — 커서 자리에 넣고 그 부분만 변환까지 한다.
+
+        사용자가 손으로 하던 네 걸음을 대신한다. 변환 함수는 **선택 영역**을
+        읽어 바꾸므로, 넣은 뒤 그 범위를 정확히 선택해 넘겨야 한다 — 넣기
+        전 위치를 기억했다가 넣은 뒤 그 자리부터 끝까지 선택한다.
+        """
+        if not self.md.strip():
+            self.status.set("먼저 채운 엑셀을 불러오세요.")
+            return
+        try:
+            hwp_engine.connect()
+        except Exception as e:
+            applog.exc("문항 엑셀: 한글 연결 실패", e)
+            self.status.set("한글을 찾지 못했습니다 — 한글을 켜고 다시 눌러 주세요.")
+            return
+        try:
+            hwp = hwp_engine.hwp
+            start = hwp.GetPos()
+            hwp_engine.insert_plain(self.md)
+            end = hwp.GetPos()
+            hwp.SetPos(*start)
+            hwp.MoveSelPos(*end)
+        except Exception as e:
+            applog.exc("문항 엑셀: 한글에 넣기 실패", e)
+            self.status.set("한글에 넣지 못했습니다 — [마크다운 복사]를 쓰세요.")
+            return
+        # 변환은 **넘겨받은 함수**로 부른다 — ui 층이 app 을 임포트하면 층
+        # 규칙(test_layers)이 깨진다. 이 창을 여는 쪽(app.fn_open_excel)이
+        # 제 변환 함수를 건네준다.
+        if self.on_convert is None:
+            self.status.set("넣었습니다 — 그 부분을 선택한 뒤 [마크다운 변환]을 눌러 주세요.")
+            return
+        self.status.set("한글에 넣었습니다 — 변환하는 중…")
+        self.after(60, self._run_convert)
+
+    def _run_convert(self):
+        try:
+            self.on_convert()
+            self.status.set("시험지가 완성됐습니다.")
+        except Exception as e:
+            applog.exc("문항 엑셀: 변환 실패", e)
+            self.status.set("변환에 실패했습니다 — 한글에서 직접 [마크다운 변환]을 눌러 주세요.")
+
     def _copy_answers(self):
         if not self.answers:
             self.status.set("먼저 채운 엑셀을 불러오세요.")
@@ -235,5 +287,5 @@ class ExcelWindow(tk.Toplevel):
         self.status.set("정답표를 복사했습니다 — 엑셀·한글 표에 그대로 붙습니다.")
 
 
-def open_excel(master):
-    return ExcelWindow(master)
+def open_excel(master, on_convert=None):
+    return ExcelWindow(master, on_convert=on_convert)
