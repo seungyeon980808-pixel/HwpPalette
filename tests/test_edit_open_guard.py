@@ -17,6 +17,7 @@ r"""'내용 고치기'로 펼칠 때·저장할 때의 안전장치 테스트 (2
 """
 
 import pathlib
+import time
 import sys
 import unittest
 from unittest import mock
@@ -226,7 +227,16 @@ class OpenTemplateCopyTest(unittest.TestCase):
 
     def tearDown(self):
         mock.patch.stopall()
-        self.tmp.unlink(missing_ok=True)
+        # 새로 쓴 .hwp 를 백신·색인기가 잠깐 무는 수가 있다 (실측 2026-07-31:
+        # 연속 실행에서 서너 번에 한 번 WinError 32). 테스트 본체와 무관한
+        # 뒷정리이므로 짧게 몇 번 기다렸다 지우고, 끝내 안 되면 남겨 둔다 —
+        # setUp 의 write_bytes 가 어차피 덮어쓴다.
+        for _ in range(5):
+            try:
+                self.tmp.unlink(missing_ok=True)
+                return
+            except PermissionError:
+                time.sleep(0.1)
 
     def test_조각_파일이_없으면_예외(self):
         r"""스테일 경로(덮어쓰기로 이미 지워진 옛 파일명)를 조용히 통과시키지 않는다."""
