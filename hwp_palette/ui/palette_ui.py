@@ -348,7 +348,15 @@ _FORM_SYNTAX_LINES = [
 
 # 미리보기 판의 폭 — 창고보다 넓어야 '크게 본다'가 성립하지만,
 # 셋이 나란히 서므로 창이 화면을 넘지 않는 선에서 잡는다
-ZOOM_W = 396          # 20% 더 넓게, 330 → 396 (사용자 결정 2026-07-27)
+# 미리보기 판 폭 (사용자 결정 2026-07-31: "저렇게 넓을 필요는 없습니다.
+# 펼치기 접기 기능도 필요없기 때문에 더욱 그렇습니다"). 396 → 268.
+# 창고와 나란히 서되 눈에 덜 무겁고, 창 전체 폭도 그만큼 줄어든다.
+ZOOM_W = 226
+ZOOM_IDLE_HINT = "고르면 보입니다"      # 좁은 판에 맞춘 짧은 안내
+# 왜 226 인가: 이 컴퓨터의 주 모니터는 **세로(1080×1920)** 다. 396 이던 시절
+# 설정 창은 화면 폭을 훌쩍 넘어 오른쪽이 잘려 나갔다(실측 2026-07-31: 창고를
+# 340 으로 못박은 뒤에도 1083px). 여기를 226 으로 줄여야 8칸 팔레트 기준으로
+# 창 전체(≈1077)가 1080 안에 들어온다.
 
 # 격자 블럭 안쪽 글자 여백 — main._BLOCK_TEXT_PAD 와 같은 값이어야 한다.
 # (이 판은 메인 창 블럭의 미리보기다)
@@ -463,28 +471,28 @@ class SettingsWindow(tk.Toplevel):
         self._store_grip.pack(side="left", fill="y")
         self._store_grip.bind("<Button-1>", lambda e: self._toggle_store())
 
-        # 창고와 미리보기는 **한 판** 안에 둔다 (사용자 지적 2026-07-28:
-        # "물감 창고와 물감 미리보기가 한 묶음이라는 느낌이 들어야 한다").
+        # 창고와 미리보기 **사이를 벌린다** (사용자 지적 2026-07-31: "지금
+        # 물감 창고와 물감 미리보기 사이에 위계가 존재하지 않습니다. 팔레트
+        # 설정과 물감 창고처럼 떨어져있는 느낌의 위계가 존재해야 합니다").
         #
-        # 예전에는 셋(팔레트 설정·창고·미리보기)이 각각 테두리를 두르고 같은
-        # 간격으로 서 있어서, 화면이 '나란한 세 개'로 읽혔다. 실제 관계는
-        # **팔레트 설정 ┃ (창고 + 미리보기)** 다 — 오른쪽 둘은 같은 물감을
-        # 고르고 들여다보는 한 벌이고, 왼쪽은 그것을 놓는 판이다.
-        # 테두리를 하나로 합치고 사이는 1px 선으로만 가르면, 바깥 테두리가
-        # '이 둘은 한 벌'을, 안쪽 선이 '그 안에서 하는 일은 둘'을 말한다.
-        self._paint_group = tk.Frame(outer, bg=CARD, highlightbackground=BORDER,
-                                     highlightthickness=1)
+        # 2026-07-28에는 반대로 했었다 — 둘을 한 테두리로 묶고 1px 선으로만
+        # 갈랐다. 그러니 둘이 한 덩어리로 읽혀 어디까지가 창고인지 흐렸다.
+        # 이제 셋 다 제 테두리를 갖고 같은 간격으로 선다. 다만 미리보기는
+        # **좁게** 둔다 (같은 지적: "저렇게 넓을 필요는 없습니다").
+        self._paint_group = tk.Frame(outer, bg=BG)
         self._paint_group.pack(side="left", fill="y", padx=(SP["s"], 0))
 
-        store_card = tk.Frame(self._paint_group, bg=CARD)
+        store_card = tk.Frame(self._paint_group, bg=CARD,
+                              highlightbackground=BORDER, highlightthickness=1)
         store_card.pack(side="left", fill="y")
         self._store_card = store_card
-        self._paint_div = tk.Frame(self._paint_group, bg=BORDER, width=1)
+        # 판 사이 숨통 — 1px 선이 아니라 **여백**이 위계를 만든다
+        self._paint_div = tk.Frame(self._paint_group, bg=BG, width=SP["s"])
         self._paint_div.pack(side="left", fill="y")
         self.store = store_ui.StorePanel(
             store_card, on_place=self._place_from_store,
             tab_name_fn=self._cur_tab_name, on_select=self._show_detail,
-            on_drop=self._drop_from_store)
+            on_drop=self._drop_from_store, on_new=self._new_paint)
         self.store.pack(fill="both", expand=True)
 
         # 맨 오른쪽 판: 고른 물감의 미리보기와 동작. 늘 떠 있고 내용만 바뀐다.
@@ -494,7 +502,8 @@ class SettingsWindow(tk.Toplevel):
         #   위: 스크롤되는 내용 칸 (그림이 커도 판 밖으로 안 넘친다)
         #   아래: **항상 같은 자리**에 고정된 버튼 줄
         # 그림이 커지거나 작아져도 버튼은 절대 움직이지 않는다.
-        self.zoom_pane = tk.Frame(self._paint_group, bg=CARD, width=ZOOM_W)
+        self.zoom_pane = tk.Frame(self._paint_group, bg=CARD, width=ZOOM_W,
+                                  highlightbackground=BORDER, highlightthickness=1)
         self.zoom_pane.pack_propagate(False)
         self.zoom_pane.pack(side="left", fill="y")
         self._zoom_photo = None
@@ -511,11 +520,15 @@ class SettingsWindow(tk.Toplevel):
         self._zoom_title = tk.Label(zhead, text="물감 미리보기",
                                     font=(FONT, theme.fs(FS["head"]), "bold"),
                                     bg=CARD, fg=TEXT)
-        self._zoom_title.pack(side="left")
-        self.zoom_hint = tk.Label(zhead, text="물감을 고르면 보입니다",
+        self._zoom_title.pack(side="top", anchor="w")
+        # 안내문은 제목 **아래 줄**로 내렸다 (2026-07-31). 판이 좁아지면서
+        # 제목 옆에 나란히 두면 잘렸다 — 게다가 이 라벨은 고른 물감 이름·
+        # "저장하는 중…" 같은 긴 글도 받으므로 한 줄을 통째로 갖는 편이 낫다.
+        self.zoom_hint = tk.Label(zhead, text=ZOOM_IDLE_HINT,
                                   font=(FONT, theme.fs(FS["caption"])),
-                                  bg=CARD, fg=MUTED)
-        self.zoom_hint.pack(side="left", padx=(SP["xs"] + 2, 0))
+                                  bg=CARD, fg=MUTED, anchor="w",
+                                  wraplength=ZOOM_W - 24, justify="left")
+        self.zoom_hint.pack(side="top", anchor="w")
         tk.Frame(self.zoom_pane, bg=BORDER, height=1).pack(side="top", fill="x")
 
         # 버튼 줄을 **먼저** side="bottom" 으로 붙인다 — 그래야 내용이 아무리
@@ -1202,7 +1215,7 @@ class SettingsWindow(tk.Toplevel):
             else:
                 self._clear_zoom()
                 self._zoom_title.config(text="물감 미리보기")
-                self.zoom_hint.config(text="물감을 고르면 보입니다")
+                self.zoom_hint.config(text=ZOOM_IDLE_HINT)
 
         # **되돌리는 구간을 가린다** (사용자 지적 2026-07-28: "취소나 저장을
         # 누르면 깜빡거리는 모션이 있습니다").
@@ -1766,6 +1779,42 @@ class SettingsWindow(tk.Toplevel):
             self._add_builtin(span, rows)
         self._pending_area = None
         self._pending_color = None
+
+    def _new_paint(self, cat):
+        r"""창고의 ＋ — 지금 켜 놓은 분류의 물감을 **만들기만** 한다 (2026-07-31).
+
+        팔레트 빈칸을 끄는 길(_add_char·_add_template …)과 다른 점은 하나다:
+        저쪽은 만들어서 **바로 팔레트에 놓고**, 여기는 **창고에 쌓기만** 한다.
+        "창고에서 분류된 것이 진짜 분류이고, 팔레트에 놓인 것은 그냥 배치일
+        뿐" 이라는 결정(2026-07-31)이 이 갈림에 그대로 들어 있다.
+
+        두 길은 **함께 남는다** — 창고에 입구를 하나 더 내는 것이지 팔레트
+        쪽을 옮기는 것이 아니다 (사용자: "여전히 팔레트에서 물감을 추가할
+        수도 있습니다. 그 기능은 건드려서는 안됩니다").
+        """
+        if cat in store_ui.READONLY_CATS:
+            return                          # 도구 — 사용자가 만드는 물감이 아니다
+        try:
+            if cat == "템플릿":
+                # 한글에서 지금 고른 것을 그 자리에서 등록 (라이브러리 창과 같은 코드)
+                if library_ui.capture_template_dialog(self) is None:
+                    return
+            else:
+                # 나머지 분류는 라이브러리 창의 해당 탭이 만들기 화면이다
+                library_ui.open_manager(self, on_saved=self._after_new_paint,
+                                        cat=cat)
+                return
+        except Exception as e:
+            applog.exc("창고: 새 물감 만들기 실패", e)
+            return
+        self._after_new_paint()
+
+    def _after_new_paint(self):
+        """새 물감이 생긴 뒤 — 창고만 다시 그린다 (팔레트 배치는 안 건드린다)."""
+        try:
+            self.store.refresh()
+        except Exception as e:
+            applog.exc("창고: 새 물감 반영 실패", e)
 
     def _place(self, block):
         """새 블럭을 지금 지정한 자리에 넣는다 (없으면 첫 빈자리)."""
