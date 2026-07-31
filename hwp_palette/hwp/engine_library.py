@@ -1428,6 +1428,208 @@ def execute_function_block(actions):
         act.Execute("ParagraphShape", ps.HParaShape.HSet)
 
 
+# ── 자간 맞춤 (피드백 016 · docs/SPIKE_자간보정.md) ──────────
+#
+# 무엇을 하는가: 단어가 줄 끝에서 잘리지 않게 하고, 그래서 생긴 줄 끝의 빈
+# 폭을 자간을 조금 좁혀 메운다. **두 단계**다 —
+#   ⓐ BreakNonLatinWord = 0 (어절 단위 줄나눔).  한글의 기본값은 1(글자 단위)
+#      이라 **지금도 단어 중간에서 잘리고 있다**(스파이크 ⑤ — 016 의 전제가
+#      틀렸던 지점). 잘림을 없애는 본체는 이것이다.
+#   ⓑ ⓐ 때문에 줄 끝에 생긴 빈 폭(실측 최대 7칸 ≒ 3.5글자)을, 다음 줄 첫
+#      어절이 올라올 만큼 자간을 좁혀 메운다. 마감 손질이다.
+#
+# 좁히기만 한다. 넓히면 앞 줄이 다시 흔들려 진동의 여지가 생긴다(스파이크
+# '진동 방지'). 재흐름은 손댄 문단 안에 갇히므로(스파이크 ④) 위에서 아래로
+# 한 번만 지나간다.
+#
+# 남는 폭을 직접 재는 API 는 없다(스파이크 ②). 정렬을 잠깐 왼쪽으로 바꿔
+# 재는 방법도 되지만, 중간에 예외가 나면 정렬이 어긋난 채 남아서 1차에서는
+# 쓰지 않는다 — **걸어 보고 줄이 늘었는지 보는** 안전한 쪽으로 간다.
+
+# 자간은 글자 종류마다 필드가 따로다. 한글만 바꾸면 줄에 섞인 영문·숫자·기호가
+# 안 따라와 줄 폭이 계산과 어긋난다 (스파이크 ③).
+SPACING_FIELDS = ("SpacingHangul", "SpacingLatin", "SpacingHanja",
+                  "SpacingJapanese", "SpacingOther", "SpacingSymbol",
+                  "SpacingUser")
+FIT_MIN_PCT = -8        # 자간 하한 (스파이크 권장 — 더 좁히면 글자가 붙어 보인다)
+FIT_STEP_PCT = 2        # 한 단계
+_FIT_MAX_LINES = 300    # 한 번 실행이 손댈 줄 수 상한 (폭주 방지)
+_FIT_MAX_PARAS = 200
+
+
+def _run_action(action):
+    return _h().HAction.Run(action)
+
+
+def _line_col():
+    """KeyIndicator 의 칸 번호(1부터) — 그 줄이 쓴 폭의 대용치. 못 읽으면 0."""
+    try:
+        return int(_h().KeyIndicator()[6])
+    except Exception:
+        return 0
+
+
+def _line_bounds(para, offset):
+    """offset 이 놓인 **시각적 한 줄**의 (시작 offset, 끝 offset, 끝칸)."""
+    hwp = _h()
+    hwp.SetPos(0, para, offset)
+    _run_action("MoveLineBegin")
+    begin = hwp.GetPos()
+    _run_action("MoveLineEnd")
+    end = hwp.GetPos()
+    return begin[2], end[2], _line_col()
+
+
+def _selected_para_range():
+    """선택 영역이 걸친 (첫 문단, 끝 문단). 본문(list 0) 이 아니면 None.
+
+    표·글상자·머리말은 1차 범위에서 뺀다 — 셀마다 폭이 달라 기준 폭 계산이
+    통째로 달라진다 (스파이크 '남은 위험').
+    """
+    try:
+        got = _h().GetSelectedPos()
+        # (성공여부, slist, spara, spos, elist, epara, epos)
+        if got and got[0] and int(got[1]) == 0 and int(got[4]) == 0:
+            a, b = int(got[2]), int(got[5])
+            return (a, b) if a <= b else (b, a)
+    except Exception as e:
+        applog.exc("자간 맞춤: 선택 범위를 읽지 못함", e)
+    return None
+
+
+def _set_break_by_word(para):
+    """그 문단의 줄나눔을 어절 단위로. 이미 그렇다면 건드리지 않고 False."""
+    hwp = _h()
+    hwp.SetPos(0, para, 0)
+    act, ps = hwp.HAction, hwp.HParameterSet
+    act.GetDefault("ParagraphShape", ps.HParaShape.HSet)
+    try:
+        if int(ps.HParaShape.BreakNonLatinWord or 0) == 0:
+            return False
+    except Exception:
+        pass
+    ps.HParaShape.BreakNonLatinWord = 0
+    act.Execute("ParagraphShape", ps.HParaShape.HSet)
+    return True
+
+
+def _read_spacing(para, offset):
+    """그 자리의 한글 자간(%) — 이미 손댄 줄을 가려내는 데 쓴다."""
+    hwp = _h()
+    hwp.SetPos(0, para, offset)
+    ps = hwp.HParameterSet
+    hwp.HAction.GetDefault("CharShape", ps.HCharShape.HSet)
+    try:
+        return int(ps.HCharShape.SpacingHangul or 0)
+    except Exception:
+        return 0
+
+
+def _apply_spacing(para, start, end, pct):
+    r"""[start, end) 구간에만 자간을 건다.
+
+    GetDefault 를 먼저 부르는 이유: HSet 을 비운 채 Execute 하면 글꼴·크기까지
+    기본값으로 덮어써 문서를 망친다 (set_char_shape 와 같은 관례).
+    """
+    if end <= start:
+        return
+    hwp = _h()
+    hwp.SetPos(0, para, start)
+    try:
+        hwp.SelectText(para, start, para, end)
+    except Exception:
+        for _ in range(end - start):        # SelectText 가 없는 판 대비
+            _run_action("MoveSelRight")
+    act, ps = hwp.HAction, hwp.HParameterSet
+    act.GetDefault("CharShape", ps.HCharShape.HSet)
+    for f in SPACING_FIELDS:
+        try:
+            setattr(ps.HCharShape, f, pct)
+        except Exception:
+            pass                            # 그 판에 없는 필드 — 나머지로 간다
+    act.Execute("CharShape", ps.HCharShape.HSet)
+    _run_action("Cancel")
+
+
+def _pull_up(para, start, end):
+    """한 줄의 자간을 한 단계씩 좁혀 다음 줄 첫 어절을 끌어올린다.
+
+    반환: (그 줄의 새 끝 offset, 좁혔는가). 하한까지 가도 소득이 없으면
+    자간을 0 으로 되돌린다 — 얻는 것 없이 글자만 좁아지지 않게.
+    """
+    base = end
+    cur = end
+    pct = -FIT_STEP_PCT
+    while pct >= FIT_MIN_PCT:
+        _apply_spacing(para, start, cur, pct)
+        _b, new_end, _c = _line_bounds(para, start)
+        if new_end > base:
+            # 끌어올린 조각까지 같은 자간으로 — 한 줄 안에서 글자 폭이
+            # 갈리면 그 이음매가 눈에 띈다.
+            _apply_spacing(para, start, new_end, pct)
+            _b, new_end, _c = _line_bounds(para, start)
+            return new_end, True
+        cur = max(cur, new_end)
+        pct -= FIT_STEP_PCT
+    _apply_spacing(para, start, cur, 0)
+    _b, back, _c = _line_bounds(para, start)
+    return back, False
+
+
+def _tighten_para(para, budget):
+    """문단 하나를 위에서 아래로 훑으며 줄마다 당긴다. 좁힌 줄 수를 반환."""
+    hwp = _h()
+    tightened = 0
+    start, end, _c = _line_bounds(para, 0)
+    for _ in range(_FIT_MAX_LINES):
+        if budget[0] <= 0:
+            break
+        # 다음 줄이 있어야 당길 것이 있다 (마지막 줄은 그냥 둔다)
+        hwp.SetPos(0, para, end)
+        _run_action("MoveRight")
+        nxt = hwp.GetPos()
+        if nxt[1] != para or nxt[2] <= end:
+            break
+        budget[0] -= 1
+        # 이미 자간을 손봐 둔 줄은 건너뛴다 — 남의 서식을 덮어쓰지 않는다
+        if end > start and _read_spacing(para, start) == 0:
+            end, changed = _pull_up(para, start, end)
+            if changed:
+                tightened += 1
+        hwp.SetPos(0, para, end)
+        _run_action("MoveRight")
+        nxt = hwp.GetPos()
+        if nxt[1] != para or nxt[2] <= end:
+            break
+        start, end, _c = _line_bounds(para, nxt[2])
+    return tightened
+
+
+def fit_line_spacing():
+    r"""선택한 문단들의 자간을 맞춘다. 반환 {"paras", "tightened", "broke"}.
+
+    호출부(app.fn_spacing_fit)가 선택 영역을 보장하고, 되돌리기 한 묶음으로
+    봉인한다 — 줄마다 자간을 걸므로 한글의 되돌리기 칸이 그만큼 쌓인다
+    (스파이크 ③: 자간 적용 1회 = 되돌리기 1칸).
+    """
+    rng = _selected_para_range()
+    if rng is None:
+        return {"paras": 0, "tightened": 0, "broke": 0}
+    first, last = rng
+    _run_action("Cancel")               # 선택을 풀어야 문단 단위로 옮겨 다닌다
+    budget = [_FIT_MAX_LINES]
+    paras = tightened = broke = 0
+    for para in range(first, min(last, first + _FIT_MAX_PARAS - 1) + 1):
+        try:
+            if _set_break_by_word(para):
+                broke += 1
+            tightened += _tighten_para(para, budget)
+            paras += 1
+        except Exception as e:
+            applog.exc(f"자간 맞춤: 문단 {para} 는 건너뜀", e)
+    return {"paras": paras, "tightened": tightened, "broke": broke}
+
+
 # ── 팔레트: 블럭 실행 ──────────────────────────────────
 def restore_text(text):
     r"""지워진 원문을 커서 자리에 그대로 다시 넣는다. 성공 여부를 돌려준다.

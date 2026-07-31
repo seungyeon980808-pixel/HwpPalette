@@ -35,7 +35,14 @@ _EMPTY = {"서식": [], "문자": [], "템플릿": [], "양식": []}
 _FILE_CATEGORIES = ("템플릿", "양식")
 
 # 라이브러리 분류 → 팔레트 블럭 타입 (고아 블럭 정리·사용처 카운트용)
-_BLOCK_TYPE = {"템플릿": "template", "서식": "style", "문자": "char", "양식": "form"}
+#
+# 서식 → "function" (2026-07-31). 창고의 '서식' 물감과 팔레트의 '서식 조합'
+# 블럭이 서로 다른 물건이던 것을 **팔레트 쪽으로 합쳤다** (사용자 결정:
+# "물감창고에서 서식 기능을 추가할떄랑 팔레트에서 드래그해서 서식을 추가할때랑
+# 전혀 다르게 뜨는데 팔레트가 기본이 되어야 합니다"). 이제 둘 다 같은
+# actions 목록이고, 팔레트 블럭은 ref 로 창고의 그것을 가리킨다.
+_BLOCK_TYPE = {"템플릿": "template", "서식": "function", "문자": "char",
+               "양식": "form"}
 
 
 def _ensure_dirs():
@@ -475,16 +482,93 @@ def _meta(name, label, tags=None):
             "tags": normalize_tags(tags)}
 
 
-def add_style(name, fields, label=None, tags=None, subcat=None):
-    """fields: {친화적필드명: 값} — 캡처 시 선택된 항목만 들어있는 델타.
-    반환: 등록된 항목의 고유 id."""
+def add_style(name, fields=None, label=None, tags=None, subcat=None,
+              actions=None):
+    r"""서식 물감을 등록한다. 반환: 등록된 항목의 고유 id.
+
+    actions: [{"func": 이름, "value": 값}, …] — **지금 쓰는 형식** (2026-07-31).
+        팔레트의 '서식 조합' 블럭과 똑같은 모양이라, 창고에서 만든 서식을
+        팔레트에 그대로 끌어다 놓을 수 있다 (사용자 결정: 팔레트가 기본).
+    fields: {친화적필드명: 값} — 한글에서 캡처하던 옛 형식. 이미 등록된
+        물감이 갖고 있으므로 읽기는 계속 지원한다.
+    """
     data = load()
     item = _meta(_unique_name(data["서식"], name), label, tags)
-    item["fields"] = fields
+    if actions is not None:
+        item["actions"] = list(actions)
+    if fields is not None:
+        item["fields"] = fields
     item["subcat"] = _ensure_subcat(data, "서식", subcat)
     data["서식"].append(item)
     save(data)
     return item["id"]
+
+
+def update_style_actions(item_id, name=None, actions=None):
+    """서식 물감의 이름·조작 목록 바꾸기 (id 유지 → 팔레트 연결이 안 깨진다)."""
+    data = load()
+    for it in data.get("서식", []):
+        if it.get("id") != item_id:
+            continue
+        if name and name.strip():
+            others = [o for o in data["서식"] if o.get("id") != item_id]
+            it["name"] = _unique_name(others, name.strip())
+        if actions is not None:
+            it["actions"] = list(actions)
+            it.pop("fields", None)      # 옛 캡처 형식은 갈아탄 뒤 남길 이유가 없다
+        save(data)
+        return True
+    return False
+
+
+# 조작 이름 ↔ 글자모양 델타의 친화적 이름 (engine_library.CHARSHAPE_FIELD_LABELS).
+# 문단 단위 조작(정렬·줄간격·여백 …)은 여기 없다 — 줄 일부에는 못 걸기 때문이다.
+_ACTION_TO_FIELD = {"굵게": "굵게", "기울임": "기울임", "밑줄": "밑줄",
+                    "글씨체": "글꼴", "글씨크기": "크기",
+                    "자간": "자간", "글자색": "글자색"}
+
+
+def style_fields(item):
+    r"""서식 물감 → 글자모양 델타 {친화적이름: 값}.
+
+    `\서식{글자}` 처럼 **줄 일부**에 입히는 자리가 쓴다. 문단 단위 조작은
+    빠진다 — 한 줄 안의 몇 글자에 '가운데 정렬'을 걸 수는 없다.
+    """
+    item = item or {}
+    if not item.get("actions"):
+        return dict(item.get("fields") or {})       # 옛 캡처 형식 그대로
+    out = {}
+    for a in item["actions"]:
+        label = _ACTION_TO_FIELD.get(a.get("func"))
+        if label is None:
+            continue
+        out[label] = a.get("value", True) if "value" in a else True
+    return out
+
+
+def style_actions(item):
+    r"""서식 물감의 조작 목록. 옛 캡처 형식(fields)도 여기서 번역해 돌려준다.
+
+    한 곳에서만 번역해 두면, 이것을 읽는 쪽(팔레트 실행·카드 요약·수정 창)이
+    '옛 것이냐 새 것이냐'를 저마다 따지지 않아도 된다.
+    """
+    item = item or {}
+    if item.get("actions"):
+        return list(item["actions"])
+    out = []
+    for label, val in (item.get("fields") or {}).items():
+        if label in ("굵게", "기울임", "밑줄"):
+            if val:
+                out.append({"func": label})
+        elif label == "글꼴":
+            out.append({"func": "글씨체", "value": val})
+        elif label == "크기":
+            out.append({"func": "글씨크기", "value": val})
+        elif label == "자간":
+            out.append({"func": "자간", "value": val})
+        elif label == "글자색":
+            out.append({"func": "글자색", "value": val})
+    return out
 
 
 def add_char(name, text, label=None, tags=None, subcat=None):

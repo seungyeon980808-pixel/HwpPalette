@@ -129,6 +129,7 @@ LaTeX 와 다른 점: 진짜 LaTeX 는 여러 서식을 겹칠 때 중첩(`\text
 """
 
 from hwp_palette.model import func_catalog
+from hwp_palette.model import library        # 서식 물감 → 글자모양 델타 번역
 
 # \라벨\ — 등록한 것을 꺼내 넣기
 LIB_TOKEN_RE = re.compile(r'\\([^\\\r\n]+?)\\')
@@ -234,7 +235,9 @@ def resolve_style_token(tok, lookup, warnings):
         return None
     entry = lookup.get(t)
     if entry and entry[0] == '서식':
-        return dict(entry[1].get("fields") or {})
+        # 서식 물감은 지금 조작 목록(actions)으로 저장된다 — 줄 일부에 걸 수
+        # 있는 글자모양만 골라 델타로 번역한다 (library.style_fields).
+        return library.style_fields(entry[1])
     m = re.fullmatch(r'(?:크기|글씨크기)?\s*(-?\d+(?:\.\d+)?)', t)
     if m:
         return {"크기": float(m.group(1))}

@@ -110,7 +110,11 @@ CATS = (("특수기호", "문자"), ("템플릿", "템플릿"), ("서식", "서�
         ("양식", "양식"), ("도구", "도구"))
 DEFAULT_CAT = "템플릿"        # 창고를 열면 여기부터 (가장 많이 쓰는 분류)
 READONLY_CATS = {"도구"}      # 사용자가 만들 수 없는 분류 — ＋ 를 숨긴다
-PLACEABLE = {"템플릿", "양식", "문자"}
+# 서식도 팔레트에 놓을 수 있다 (2026-07-31) — 창고의 '서식' 물감과 팔레트의
+# '서식 조합' 블럭을 팔레트 쪽 형식으로 합쳤기 때문이다 (사용자 결정:
+# "팔레트가 기본이 되어야 합니다"). 예전에는 창고에 보이면서 끌어놓으면
+# 거절돼, 왜 안 되는지 화면 어디에도 없었다.
+PLACEABLE = {"템플릿", "양식", "문자", "서식"}
 PREVIEW_W, PREVIEW_H = 260, 150
 COLS = 2                      # 타일 열 수
 
@@ -669,7 +673,7 @@ class StorePanel(tk.Frame):
                 w.bind("<Button-1>", lambda e, s=sub: self._pick_sub(s))
                 if sub:                     # 미분류는 이름을 못 바꾸고 못 지운다
                     w.bind("<Button-3>",
-                           lambda e, s=sub, c=cell: self._sub_menu(c, s))
+                           lambda e, s=sub: self._sub_menu(e, s))
             cells[sub] = (cell, nm, ct)
         # ＋ — 그 자리에서 새 하위 분류 만들기 (시안 K-1)
         n = len(entries)
@@ -726,13 +730,13 @@ class StorePanel(tk.Frame):
         _SUB_MEMORY[self.filter] = made
         self.refresh()
 
-    def _sub_menu(self, anchor, sub):
+    def _sub_menu(self, e, sub):
         """하위 분류 탭 우클릭 — 이름 바꾸기 · 지우기 (시안 K-3)."""
         from hwp_palette.design.popover import Popover
-        pop = Popover(self.winfo_toplevel(), anchor)
+        pop = Popover(self.winfo_toplevel())
         pop.add("이름 바꾸기", lambda: self._rename_sub(sub))
         pop.add("지우기 (물감은 미분류로)", lambda: self._delete_sub(sub))
-        pop.show()
+        pop.show_at(e.x_root, e.y_root)
 
     def _rename_sub(self, sub):
         new = simpledialog.askstring("이름 바꾸기", "새 이름:",
@@ -836,19 +840,23 @@ class StorePanel(tk.Frame):
 
     @staticmethod
     def _func_summary(item):
-        """서식 물감 — 켜져 있는 것 두어 개를 수치와 함께 짧게."""
-        fx = item.get("funcs") or item.get("value") or {}
-        if not isinstance(fx, dict):
+        """서식 물감 — 담긴 조작 두어 개를 값과 함께 짧게.
+
+        옛 캡처 형식(fields)도 style_actions 가 같은 모양으로 번역해 주므로
+        여기서는 한 가지만 읽으면 된다.
+        """
+        acts = library.style_actions(item)
+        if not acts:
             return " "
         parts = []
-        for key, unit in (("size", "pt"), ("spacing", ""), ("line", "%")):
-            v = fx.get(key)
-            if v not in (None, ""):
-                parts.append(f"{v}{unit}")
-        if not parts:
-            n = sum(1 for v in fx.values() if v not in (None, "", False))
-            return f"{n}가지" if n else " "
-        return " · ".join(parts[:3])
+        for a in acts[:2]:
+            v = a.get("value")
+            parts.append(a.get("func", "?") if v in (None, "")
+                         else f"{a['func']} {v}")
+        text = " · ".join(parts)
+        if len(acts) > 2:
+            text += f" 외 {len(acts) - 2}"
+        return text if len(text) <= 16 else text[:16] + "…"
 
     def _tile(self, parent, cat, item, state):
         # 곡률은 메인 창 블럭과 같다 (RoundTile 머리말 참고)
@@ -913,7 +921,7 @@ class StorePanel(tk.Frame):
                 library.set_subcat(cat, iid, subname)
             self.refresh()
 
-        pop = Popover(self.winfo_toplevel(), e.widget)
+        pop = Popover(self.winfo_toplevel())
         prefix = f"담은 {len(targets)}개를 " if many else ""
         for subname, label in ([("", "미분류")]
                                + [(s, s) for s in self._subcats.get(cat) or []]):
@@ -922,7 +930,7 @@ class StorePanel(tk.Frame):
                     lambda s=subname: move(s))
         pop.separator()
         pop.add(f"{prefix}＋ 새 분류로 옮기기", lambda: self._move_new(cat, move))
-        pop.show()
+        pop.show_at(e.x_root, e.y_root)     # 맥락 메뉴는 누른 자리에
 
     def _move_new(self, cat, move):
         name = simpledialog.askstring(
@@ -1177,10 +1185,12 @@ class StorePanel(tk.Frame):
             self.multi.clear()
             self._sync_share()
         self._paint_selection()
-        # '도구'는 라이브러리 항목이 아니다 — 미리보기 판이 id 로 찾아보면
-        # 없는 물감이라 빈손으로 돌아온다. 고르기 표시(파란 테두리)만 하고
-        # 오른쪽 판은 건드리지 않는다.
-        if self.on_select and cat != "도구":
+        # 도구도 오른쪽 판에 보낸다 (사용자 지적 2026-07-31: "내가 미리보기랑
+        # 전혀 상관없는 물감을 눌렀는데 미리보기가 나오고 있습니다").
+        # 예전에는 도구일 때 판을 건드리지 않아서, **직전에 고른 템플릿의
+        # 미리보기가 그대로 남아** 지금 고른 것의 내용처럼 보였다. 도구는
+        # 그릴 그림이 없으니 이름·설명·설정 단추를 보여준다.
+        if self.on_select:
             self.on_select(cat, item)
 
     def clear_selection(self):
@@ -1194,13 +1204,22 @@ class StorePanel(tk.Frame):
             return
         self.sel_key = None
         self._paint_selection()
+        # 고른 것이 없으면 미리보기도 비운다 (사용자 지적 2026-07-31:
+        # "선택되지 않은 물감의 미리보기가 남아있어서는 안됩니다"). 격자 쪽
+        # 블럭을 고르면 이 선택이 풀리는데, 그때 오른쪽 판에 남아 있던 그림이
+        # 지금 고른 블럭의 것처럼 읽혔다.
+        if self.on_select:
+            try:
+                self.on_select(None, None)
+            except Exception as e:
+                applog.exc("창고: 미리보기 비우기 실패", e)
 
     # ── 바깥(미리보기 판)에서 부르는 동작 ─────────────
     def place_item(self, cat, item):
         block = self.block_of(cat, item)
         if block is None:
             messagebox.showinfo("놓을 수 없음",
-                                "서식 물감은 팔레트 블럭이 아니라 문서에서 "
+                                "이 물감은 팔레트 블럭이 아니라 문서에서 "
                                 r"\이름\ 으로 부르는 물감입니다.", parent=self)
             return
         self.on_place(block)
@@ -1216,6 +1235,13 @@ class StorePanel(tk.Frame):
         if cat == "문자":
             return {"type": "char", "value": item.get("text", ""),
                     "caption": item["name"], "span": 2, "rows": 1}
+        if cat == "서식":
+            # 팔레트의 '서식 조합' 블럭과 같은 모양이다. ref 로 창고의 물감을
+            # 가리키므로, 물감을 고치면 놓아 둔 버튼이 전부 따라 바뀐다.
+            return {"type": "function", "ref": item["id"],
+                    "name": item["name"],
+                    "actions": library.style_actions(item),
+                    "span": 2, "rows": 1}
         if cat == "도구":
             return {"type": "builtin", "key": item["key"],
                     "name": item["name"], "span": 2, "rows": 1}
@@ -1225,6 +1251,12 @@ class StorePanel(tk.Frame):
         # 꾸러미는 파일이 아니라 '요소 목록'이라 고치는 창이 다르다
         if item.get("mix"):
             self.open_mix(edit_id=item.get("id"))
+            return
+        if cat == "서식":
+            # 서식은 만들 때와 **같은 창**으로 고친다 (팔레트의 서식 조합 창)
+            from hwp_palette.ui import library_ui        # 순환 참조 회피
+            library_ui.edit_style_dialog(self.winfo_toplevel(), item,
+                                         on_saved=self.refresh)
             return
         from hwp_palette.ui import library_ui            # 순환 참조 회피 (library_ui → … → store_ui)
         library_ui.edit_item_dialog(self.winfo_toplevel(), cat, item,

@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""환경설정 창 — 커스텀 팔레트(탭 + 블럭)와 기본 서식을 관리한다.
+"""환경설정 창 — 커스텀 팔레트(탭 + 블럭)와 물감 창고를 관리한다.
 
 왼쪽: 탭 목록(추가/이름변경/삭제/순서). 오른쪽: 선택 탭의 블럭 목록
-(문자/템플릿/서식 조합 추가, 순서 이동, 칸수(span) 변경, 삭제) + 기본 서식 설정.
+(문자/템플릿/서식 조합 추가, 순서 이동, 칸수(span) 변경, 삭제) + 물감 창고.
 
 블럭 추가:
   문자   한글에서 복사한 문자/문구를 붙여넣거나 직접 입력 (1칸)
@@ -278,7 +278,7 @@ class FunctionDialog(tk.Toplevel):
     def __init__(self, master, block=None):
         super().__init__(master)
         self.result = None
-        self.title("서식 조합 블럭")
+        self.title("서식 만들기")
         self.configure(bg=BG)
         self.resizable(False, False)
         self.attributes("-topmost", True)
@@ -286,9 +286,13 @@ class FunctionDialog(tk.Toplevel):
         existing = {a["func"]: a.get("value") for a in (block or {}).get("actions", [])}
         name0 = (block or {}).get("name", "")
 
-        tk.Label(self, text="서식 조합 블럭 만들기", font=(FONT, theme.fs(11), "bold"),
+        # 창고의 '＋ 새 서식 만들기'와 팔레트 빈칸의 '서식 조합'이 **같은 이
+        # 창**을 쓴다 (2026-07-31, 사용자 결정: "팔레트가 기본이 되어야 합니다").
+        # 그래서 문구도 어느 쪽에서 열어도 맞는 말이어야 한다.
+        tk.Label(self, text="서식 만들기", font=(FONT, theme.fs(11), "bold"),
                  bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(12, 2))
-        tk.Label(self, text="체크한 것들이 이 블럭 하나에 병렬로 담깁니다. 글자를 선택하고 누르세요.",
+        tk.Label(self, text="체크한 것들이 서식 하나로 묶입니다. "
+                            "한글에서 글자를 선택한 뒤 누르면 한꺼번에 걸립니다.",
                  font=(FONT, theme.fs(FS["sub"])), bg=BG, fg=MUTED).pack(anchor="w", padx=16, pady=(0, 8))
 
         namef = tk.Frame(self, bg=BG, padx=16)
@@ -329,8 +333,10 @@ class FunctionDialog(tk.Toplevel):
             chk = tk.BooleanVar(value=key in existing)
             tk.Checkbutton(row, variable=chk, bg=BG, activebackground=BG,
                            selectcolor=CARD).pack(side="left")
+            # 13 — 가장 긴 이름('어절단위 줄바꿈')이 잘리지 않는 폭.
+            # (Tk 의 width 는 평균 글자 너비 단위라 한글은 두 칸쯤을 먹는다)
             tk.Label(row, text=key, font=(FONT, theme.fs(FS["head"])), bg=BG, fg=TEXT,
-                     width=8, anchor="w").pack(side="left")
+                     width=13, anchor="w").pack(side="left")
             val_widget, val_var = self._value_widget(row, f, existing.get(key))
             tk.Label(row, text=f.get("hint", ""), font=(FONT, theme.fs(FS["caption"])), bg=BG,
                      fg=MUTED).pack(side="left", padx=(6, 0))
@@ -363,8 +369,12 @@ class FunctionDialog(tk.Toplevel):
             if cur is None:
                 cur = func_catalog.DEFAULTS.get(f["key"])
             var = tk.StringVar(value="" if cur is None else str(cur))
-            w = tk.Entry(parent, textvariable=var, width=6, font=(FONT, theme.fs(FS["body"])),
-                         relief="solid", bd=1)
+            # 위아래 버튼을 단다 (사용자 요청 2026-07-31) — 값을 지우고 다시
+            # 치는 대신 눈금 단위로 올리고 내린다. 직접 입력도 그대로 된다.
+            lo, hi, step = func_catalog.SPIN.get(f["key"], (-999, 999, 1))
+            w = ttk.Spinbox(parent, textvariable=var, width=6,
+                            from_=lo, to=hi, increment=step,
+                            font=(FONT, theme.fs(FS["body"])))
             w.pack(side="left")
             tk.Label(parent, text=f.get("unit", ""), font=(FONT, theme.fs(FS["sub"])),
                      bg=BG, fg=MUTED).pack(side="left")
@@ -902,7 +912,7 @@ class SettingsWindow(tk.Toplevel):
         # 아래 버튼 줄을 통째로 없앴다 (2026-07-25):
         #   닫기        — 제목표시줄의 ✕ 가 이미 한다. 창을 닫는 방법이 둘일 이유가 없다
         #   되돌리기    — Ctrl+Z 로 충분 (위 bind_all)
-        #   기본 서식   — 다른 곳에서 다루기로 함
+        #   기본 서식   — 그 도구 자체를 없앴다 (2026-07-31, RETIRED_KEYS)
         #   변환 버튼 크기 — 이제 도구 블럭이라 끌어서 바꾼다
         # 버튼 줄이 사라지면서 아래 여백과 구분선도 함께 없앴다.
         self.protocol("WM_DELETE_WINDOW", self._close)   # ✕ 로 닫아도 저장 알림
@@ -1057,9 +1067,9 @@ class SettingsWindow(tk.Toplevel):
             return              # 고치는 중 — 판을 다른 내용으로 갈아끼우지 않는다
         # 물감 창고에서 고르면 격자 쪽 선택은 지운다 — 동시에 둘 다 파랗게
         # 보이던 버그 (사용자 지적 2026-07-31).
-        if self.sel_block is not None:
+        if item is not None and self.sel_block is not None:
             self._set_selection(None)
-        self._detail = (cat, item)
+        self._detail = (cat, item) if item is not None else None
         self._edit_form = None
         for w in self._zoom_body.winfo_children():
             w.destroy()
@@ -1067,7 +1077,23 @@ class SettingsWindow(tk.Toplevel):
             w.destroy()
         self._zoom_canvas.yview_moveto(0)   # 새 물감을 고르면 맨 위부터 보여준다
 
+        # 고른 것이 없으면 **빈 판**이다 (사용자 지적 2026-07-31: "미리 볼
+        # 내용이 없는 경우에는 미리보기가 떠서는 안됩니다"). 앞서 고른 물감의
+        # 그림이 남아 있으면 지금 고른 것의 내용으로 읽힌다.
+        if item is None:
+            self._zoom_title.config(text="물감 미리보기")
+            self.zoom_hint.config(text="")
+            tk.Label(self._zoom_body,
+                     text="창고에서 물감을 고르면\n여기에 내용이 보입니다.",
+                     justify="center", font=(FONT, theme.fs(FS["sub"])),
+                     bg=CARD, fg=MUTED).pack(pady=SP["xl"])
+            return
+
         self.zoom_hint.config(text=f"{item.get('name', '')} · #{cat}")
+
+        if cat == "도구":
+            self._show_tool_detail(item)
+            return
 
         photo = None
         if cat in ("템플릿", "양식"):
@@ -1142,6 +1168,72 @@ class SettingsWindow(tk.Toplevel):
         for w in self._zoom_foot.winfo_children():
             w.destroy()
         self._zoom_canvas.yview_moveto(0)
+
+    def _show_tool_detail(self, item):
+        r"""도구 카드를 고르면 — 이름·설명, 그리고 **설정이 있는 도구면 설정 단추**.
+
+        사용자 결정 2026-07-31: "물감창고에 있는 도구 중에서 설정이 필요한
+        도구(사진 등)의 경우에는 설정 버튼을 달아서 세팅을 변경할 수 있어야
+        합니다." 무슨 설정을 가진 도구인지는 builtin_actions 가 데이터로 말하고
+        (config), 실제로 어떤 창을 여는지는 여기서 정한다.
+        """
+        self._zoom_title.config(text="도구")
+        key = item.get("key")
+        tk.Label(self._zoom_body, text=item.get("name", ""),
+                 font=(FONT, theme.fs(FS["head"]), "bold"),
+                 bg=CARD, fg=TEXT, anchor="w").pack(
+                 fill="x", padx=SP["m"], pady=(SP["m"], 0))
+        tk.Label(self._zoom_body, text=item.get("hint", ""),
+                 font=(FONT, theme.fs(FS["sub"])), bg=CARD, fg=MUTED,
+                 justify="left", anchor="w", wraplength=ZOOM_W - 32).pack(
+                 fill="x", padx=SP["m"], pady=(2, SP["s"]))
+
+        config = builtin_actions.config_of(key)
+        if config == "photo_dirs":
+            dirs = library.photo_folders_summary()
+            if dirs:
+                lines = "\n".join(
+                    f"· {pathlib.Path(d['path']).name or d['path']}  "
+                    + (f"{d['count']}장" if d["exists"] else "폴더 없음")
+                    for d in dirs)
+            else:
+                lines = "· 연결된 폴더가 없습니다"
+            tk.Label(self._zoom_body,
+                     text="연결된 사진 폴더\n" + lines,
+                     font=(FONT, theme.fs(FS["caption"])), bg=CARD, fg=TEXT,
+                     justify="left", anchor="w", wraplength=ZOOM_W - 32).pack(
+                     fill="x", padx=SP["m"], pady=(0, SP["s"]))
+            if len(dirs) > 1:
+                tk.Label(self._zoom_body,
+                         text="폴더가 여럿이라, 사진 버튼을 누르면 "
+                              "어느 폴더에서 고를지 먼저 물어봅니다.",
+                         font=(FONT, theme.fs(FS["caption"])), bg=CARD,
+                         fg=MUTED, justify="left", anchor="w",
+                         wraplength=ZOOM_W - 32).pack(
+                         fill="x", padx=SP["m"], pady=(0, SP["s"]))
+
+        acts = tk.Frame(self._zoom_foot, bg=CARD)
+        acts.pack(fill="x", padx=SP["m"] - 2, pady=SP["s"])
+        if config:
+            RoundButton(acts, text="설정",
+                        command=lambda: self._open_tool_config(config),
+                        bg=ACCENT, fg="white", radius=theme.RADIUS["ctl"],
+                        font=(FONT, theme.fs(FS["body"]), "bold"),
+                        outline="", zone_bg=CARD).fit(
+                        pad_x=12, pad_y=5).pack(side="right")
+        tk.Label(acts, text="창고의 카드를 팔레트 빈 칸으로 끌어다 놓으세요",
+                 font=(FONT, theme.fs(FS["caption"])), bg=CARD,
+                 fg=MUTED).pack(side="left")
+
+    def _open_tool_config(self, config):
+        """도구의 [설정] — 그 도구가 가진 설정 화면을 연다."""
+        try:
+            if config == "photo_dirs":
+                # 사진 폴더 연결·해제는 '물감 설정'의 사진 탭이 이미 하는 일이다
+                library_ui.open_manager(self, on_saved=self._after_new_paint,
+                                        cat="사진")
+        except Exception as e:
+            applog.exc(f"도구 설정 열기 실패 — {config}", e)
 
     def _show_edit_form(self, cat, item):
         """[수정] — 미리보기 자리에 이름·태그 폼을 심는다 (창 없음)."""
@@ -2095,16 +2187,25 @@ class SettingsWindow(tk.Toplevel):
         # 창고에 켜 놓은 하위 분류가 등록 창의 기본값이 된다 (시안 K-1:
         # "＋ 줄로 만들면 지금 켜 놓은 하위 분류로 들어갑니다")
         sub = self.store.active_sub(cat)
+        # **그 분류의 만들기 창 하나만** 띄운다 (사용자 지적 2026-07-31:
+        # "특수기호를 추가하려고 버튼을 눌렀는데, 지금 다른 것들까지 다 뜨는
+        # 오류가 있습니다. … 각 에셋별로 한 곳에서 와야합니다"). 예전에는
+        # 템플릿만 전용 창이고 나머지는 '물감 설정' 창 통째로 열려서, 특수기호를
+        # 만들려는데 서식·양식·사진 탭이 함께 떴다 — 무엇을 만드는 중인지가
+        # 흐려지고 분류의 경계도 같이 흐려진다.
+        makers = {
+            "템플릿": library_ui.capture_template_dialog,
+            "문자":   library_ui.create_char_dialog,
+            "서식":   library_ui.create_style_dialog,
+            "양식":   library_ui.create_form_dialog,
+        }
+        maker = makers.get(cat)
+        if maker is None:
+            applog.warn(f"창고: '{cat}' 의 만들기 창이 없습니다")
+            return
         try:
-            if cat == "템플릿":
-                # 한글에서 지금 고른 것을 그 자리에서 등록 (라이브러리 창과 같은 코드)
-                if library_ui.capture_template_dialog(self, subcat=sub) is None:
-                    return
-            else:
-                # 나머지 분류는 라이브러리 창의 해당 탭이 만들기 화면이다
-                library_ui.open_manager(self, on_saved=self._after_new_paint,
-                                        cat=cat, subcat=sub)
-                return
+            if maker(self, subcat=sub) is None:
+                return                      # 취소 — 창고를 다시 그릴 것도 없다
         except Exception as e:
             applog.exc("창고: 새 물감 만들기 실패", e)
             return
@@ -2374,11 +2475,16 @@ class SettingsWindow(tk.Toplevel):
         # 2026-07-31: 윈도우 기본 회색 tk.Menu → 프로그램과 같은 얼굴(Popover).
         # 회색 메뉴는 디자인 문법과 달랐다는 지적. 가로/세로 ±1 네 항목도
         # 뺐다 — 크기는 오른쪽 아래 파란 손잡이를 끌면 한 번에 되는 일이라,
-        # 메뉴 아홉 줄이 다섯 줄로 준다. 메뉴는 그 블럭 바로 아래에 펼쳐진다.
+        # 메뉴 아홉 줄이 다섯 줄로 준다.
+        #
+        # 메뉴는 **커서 자리**에 펼친다 (사용자 지적 2026-07-31: "세부 조정탭이
+        # 엉뚱한 곳에 나옵니다"). 타일 위젯을 앵커로 삼았더니, 바로 앞에서
+        # _set_selection 이 타일을 다시 칠하는 사이 좌표가 창 밖 값으로 잡혀
+        # 메뉴가 바탕화면 구석에 떴다. 맥락 메뉴는 누른 자리에 뜨는 것이
+        # 운영체제 관례이기도 하다 (Popover.show_at 머리말 참고).
         blocks = palette.load_tabs()[self.sel_tab]["blocks"]
         btype = blocks[idx].get("type") if 0 <= idx < len(blocks) else None
-        anchor = self._tiles.get(idx) or self.tab_pick
-        pop = Popover(self, anchor)
+        pop = Popover(self)
         if btype != "builtin":
             # 도구 블럭은 편집할 내용물이 없다 (_edit_block 의 builtin 갈래)
             pop.add("편집  (더블클릭)", lambda: self._edit_block(idx))
@@ -2389,7 +2495,7 @@ class SettingsWindow(tk.Toplevel):
         pop.add("기본색으로", lambda: self._recolor(idx, reset=True))
         pop.separator()
         pop.add("삭제", self._del_selected)
-        pop.show()
+        pop.show_at(e.x_root, e.y_root)
 
     def _rename_block(self, idx):
         r"""블럭에 보일 이름을 정한다. **줄바꿈(Enter)이 그대로 들어간다.**
@@ -3114,7 +3220,6 @@ class SettingsWindow(tk.Toplevel):
             self._place({"type": "form", "ref": it["id"],
                          "form": it["name"], "span": span, "rows": rows})
 
-    # ── 기본 서식 ──
     # ── 실행 취소 / 다시 실행 ──
     def _undo(self):
         if not palette.undo():
@@ -3132,11 +3237,6 @@ class SettingsWindow(tk.Toplevel):
             self.sel_block = None
             self._reload_tabs()
             self._notify()
-
-    def _edit_default_format(self):
-        dlg = _DefaultFormatDialog(self)
-        self.wait_window(dlg)
-        self._notify()
 
     def _close(self):
         if self._edit_ctx is not None:
@@ -3481,64 +3581,9 @@ class _ChoiceDialog(tk.Toplevel):
         self.destroy()
 
 
-class _DefaultFormatDialog(tk.Toplevel):
-    """‘기본 서식으로 변환’이 적용할 기본 서식."""
-
-    def __init__(self, master):
-        super().__init__(master)
-        self.title("기본 서식 설정")
-        self.configure(bg=BG)
-        self.attributes("-topmost", True)
-        self.resizable(False, False)
-        fmt = palette.get_default_format()
-
-        tk.Label(self, text="기본 서식으로 변환 시 적용할 서식",
-                 font=(FONT, theme.fs(FS["head"]), "bold"), bg=BG, fg=TEXT).pack(
-                 anchor="w", padx=16, pady=(12, 8))
-        body = tk.Frame(self, bg=BG, padx=16)
-        body.pack(fill="x")
-
-        self.font_var = tk.StringVar(value=fmt["font"])
-        self.size_var = tk.StringVar(value=str(fmt["size_pt"]))
-        self.ls_var = tk.StringVar(value=str(fmt["line_spacing"]))
-        self.sp_var = tk.StringVar(value=str(fmt["spacing"]))
-
-        rows = [("글꼴", ttk.Combobox(body, textvariable=self.font_var, width=16,
-                                     values=func_catalog.COMMON_FONTS, font=(FONT, theme.fs(FS["body"])))),
-                ("크기(pt)", tk.Entry(body, textvariable=self.size_var, width=8,
-                                     font=(FONT, theme.fs(FS["body"])), relief="solid", bd=1)),
-                ("줄간격(%)", tk.Entry(body, textvariable=self.ls_var, width=8,
-                                     font=(FONT, theme.fs(FS["body"])), relief="solid", bd=1)),
-                ("자간", tk.Entry(body, textvariable=self.sp_var, width=8,
-                                font=(FONT, theme.fs(FS["body"])), relief="solid", bd=1))]
-        for i, (lbl, w) in enumerate(rows):
-            tk.Label(body, text=lbl, font=(FONT, theme.fs(FS["body"])), bg=BG, fg=TEXT).grid(
-                row=i, column=0, sticky="w", pady=3)
-            w.grid(row=i, column=1, sticky="w", padx=(8, 0), pady=3)
-
-        foot = tk.Frame(self, bg=BG, padx=16, pady=12)
-        foot.pack(fill="x")
-        _dialog_btn(foot, "저장", self._ok, primary=True).pack(side="right")
-        _dialog_btn(foot, "취소", self.destroy).pack(side="right", padx=(0, 6))
-        self.update_idletasks()
-        self.geometry(f"+{master.winfo_rootx()+50}+{master.winfo_rooty()+50}")
-        self.grab_set()
-        ui_fx.attach_all(self)   # 창 안 모든 버튼에 호버 보간
-
-    def _ok(self):
-        try:
-            fmt = {
-                "font": self.font_var.get().strip() or "함초롬바탕",
-                "size_pt": float(self.size_var.get()),
-                "line_spacing": int(float(self.ls_var.get())),
-                "spacing": int(float(self.sp_var.get())),
-                "align": palette.get_default_format().get("align", 0),
-            }
-        except ValueError:
-            messagebox.showwarning("값 오류", "크기·줄간격·자간은 숫자여야 합니다.", parent=self)
-            return
-        palette.save_default_format(fmt)
-        self.destroy()
+# '기본 서식 설정' 창(_DefaultFormatDialog)은 없앴다 (2026-07-31) —
+# '기본 서식' 도구를 폐지하면서 이 값을 쓰는 곳이 사라졌다.
+# 같은 일은 '서식' 물감을 하나 만들어 쓰면 된다 (builtin_actions.RETIRED_KEYS).
 
 
 class _CaptionDialog(tk.Toplevel):

@@ -550,28 +550,41 @@ def _fn_convert():
             _rescue_selection(selected, touched_document=touched)
 
 
-def fn_reset_format():
-    """선택 영역을 환경설정의 기본 서식으로 되돌림 (원문자 삭제 포함)."""
-    if not ensure_hwp(): return
+# '기본 서식' 도구(fn_reset_format)는 없앴다 — 사용자 결정 2026-07-31:
+# "기본서식이야 뭐 내가 서식에서 하나 골라서 만들 수 있는게 아닌가요?"
+# 글꼴·크기·줄간격을 되돌리는 일은 '서식' 물감 하나로 똑같이 만들 수 있어서
+# 붙박이 도구로 자리를 차지할 이유가 없다. 이미 팔레트에 놓여 있던 블럭은
+# palette._drop_retired_tools 가 걷어낸다.
+
+
+def fn_spacing_fit():
+    r"""자간 맞춤 — 단어가 줄 끝에서 잘리지 않게 다듬는다 (피드백 016).
+
+    두 단계다 (스파이크 실측, docs/SPIKE_자간보정.md):
+      ⓐ 어절 단위 줄나눔을 켠다 — 한글 기본값이 '글자 단위'라 **지금도 단어
+        중간에서 잘리고 있다.** 이것이 사용자가 말한 잘림의 진짜 원인이다.
+      ⓑ ⓐ 때문에 생긴 줄 끝 빈 폭을, 줄마다 자간을 조금 좁혀 메운다.
+    ⓐ만으로도 잘림은 사라지고, ⓑ는 헐렁해 보이는 것을 다듬는 마감이다.
+    """
+    if not ensure_hwp():
+        return
     try:
         if not hwp_engine.has_selection():
-            messagebox.showwarning("선택 없음",
-                "기본으로 되돌릴 영역을 드래그로 선택해주세요.")
+            messagebox.showwarning(
+                "선택 없음",
+                "자간을 맞출 문단을 드래그로 선택해주세요.\n"
+                "(선택한 문단들만 다듬습니다 — 문서 전체를 건드리지 않습니다)")
             return
-        selected = read_selected_text()
-        if not selected:
-            messagebox.showwarning("읽기 실패",
-                "선택 내용을 읽지 못했어요. 영역을 다시 드래그한 뒤 시도해주세요.")
-            return
-        cleaned = md_parser.strip_circled_markers(selected)
-        # 문서를 바꾸기 직전에 지점을 찍는다 (2026-07-31) — 이 작업은 대화상자
-        # 없이 곧장 끝나는 동기 작업이라, 여기서 찍고 바로 봉인하면 된다.
-        _mark_undo("기본 서식 변환")
-        engine_library.apply_default_format(palette.get_default_format(), text=cleaned)
-        _seal_undo()            # 성공 — 되돌리기 지점에 '작업 후' 지문을 찍는다
-        notify("ok", "기본 서식으로 변환")
+        _mark_undo("자간 맞춤")
+        r = engine_library.fit_line_spacing()
+        _seal_undo()
+        if r["paras"] == 0:
+            notify("warn", "다듬을 문단을 찾지 못했습니다 (표 안은 제외됩니다)")
+        else:
+            notify("ok", f"자간 맞춤 — 문단 {r['paras']}개 · 자간을 좁힌 줄 "
+                         f"{r['tightened']}개")
     except Exception as e:
-        report_error("기본 서식 변환 실패", e)
+        report_error("자간 맞춤 실패", e)
 
 
 def _render_palette_veiled():
@@ -612,13 +625,18 @@ def fn_pick_photo():
         return _pick_photo_file()
     if len(usable) == 1:
         return _pick_photo_in(usable[0]["path"])
-    pop = Popover(root, _gear)          # 톱니 아래 — 화면 왼쪽 위 고정 자리
+    # 폴더가 여럿이면 **어느 폴더를 열지 먼저 묻는다** (사용자 확인 2026-07-31).
+    # 메뉴는 눌린 '사진' 버튼 아래에 편다 — 톱니 아래 고정이던 것을 고쳤다
+    # (누른 곳과 뜨는 곳이 달라 "엉뚱한 곳"으로 읽혔다).
+    anchor = _builtin_btns.get("photo") or _gear
+    pop = Popover(root, anchor)
     for f in usable:
         name = pathlib.Path(f["path"]).name or f["path"]
         pop.add_check(f"{name}  ({f['count']}장)",
                       lambda p=f["path"]: _pick_photo_in(p))
     pop.separator()
     pop.add("파일에서 직접 고르기", _pick_photo_file, indent=True)  # 말줄임표 안 씀 (2026-07-31)
+    pop.add("사진 폴더 관리", lambda: fn_open_library(cat="사진"), indent=True)
     pop.show()
 
 
@@ -678,11 +696,29 @@ def _form_path_by_ref(block):
     return library.template_path(it) if it else None
 
 
+def _resolve_function_block(block):
+    r"""서식 물감을 가리키는 블럭이면 **창고의 지금 내용**으로 갈아 끼운다.
+
+    창고의 서식을 고치면 그것을 놓아 둔 팔레트 버튼이 전부 따라 바뀐다 —
+    템플릿·양식이 ref 로 이어져 있는 것과 같은 규칙이다 (2026-07-31, 창고
+    서식과 팔레트 '서식 조합'을 합치면서). ref 가 없는 옛 블럭은 자기 안의
+    actions 를 그대로 쓴다.
+    """
+    if block.get("type") != "function" or not block.get("ref"):
+        return block
+    it = library.get_item("서식", item_id=block["ref"])
+    if not it:
+        return block
+    out = dict(block)
+    out["actions"] = library.style_actions(it) or block.get("actions") or []
+    return out
+
+
 # 프로그램 기능 블럭('도구') → 실제 함수. 키는 builtin_actions 가 정한다.
 # 여기서 잇는 이유: builtin_actions 는 데이터만 갖고 UI 를 임포트하지 않는다.
 BUILTIN_DISPATCH = {
     "convert":      lambda: fn_convert(),
-    "reset_format": lambda: fn_reset_format(),
+    "spacing_fit":  lambda: fn_spacing_fit(),
     "photo":        lambda: fn_pick_photo(),
     "special":      lambda: fn_open_library(cat="문자"),
     "form_fill":    lambda: fn_open_form_fill(),
@@ -951,6 +987,7 @@ def _run_palette_block(block):
     if not ensure_hwp(): return
     # 여기부터가 문서를 실제로 고치는 갈래 — 지점은 이 갈래에서만 찍는다.
     _mark_undo(_block_label(block).replace("\n", " "))
+    block = _resolve_function_block(block)
     try:
         ok, msg = engine_library.run_block(
             block, template_path_fn=_template_path_by_ref,

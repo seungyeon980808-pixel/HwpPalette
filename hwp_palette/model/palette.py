@@ -166,6 +166,8 @@ def load_tabs():
         migrated = True
     if _ensure_protected_blocks(tabs):
         migrated = True
+    if _drop_retired_tools(tabs):
+        migrated = True
     for t in tabs:
         t.setdefault("cols", DEFAULT_COLS)
         # 최소 칸 수 도입(2026-07-25) 전에 만든 탭은 8칸 미만일 수 있다 — 올린다
@@ -195,6 +197,30 @@ def load_tabs():
     _tabs_cache["tok"] = settings.config_token()
     _tabs_cache["tabs"] = copy.deepcopy(tabs)
     return tabs
+
+
+def _drop_retired_tools(tabs):
+    """없어진 도구 블럭을 팔레트에서 걷어낸다. 하나라도 지웠으면 True.
+
+    도구를 카탈로그에서 빼는 것만으로는 이미 놓여 있는 블럭이 안 사라진다 —
+    이름도 실행도 없는 '모르는 키' 칸으로 남아 누르면 아무 일도 안 난다.
+    없앤 기능은 화면에서도 없어야 한다 (2026-07-31 '기본 서식' 폐지).
+    """
+    from hwp_palette.model import builtin_actions      # 데이터 전용 모듈
+    retired = set(builtin_actions.RETIRED_KEYS)
+    if not retired:
+        return False
+    changed = False
+    for t in tabs:
+        keep = [b for b in t.get("blocks", [])
+                if not (b.get("type") == "builtin" and b.get("key") in retired)]
+        if len(keep) != len(t.get("blocks", [])):
+            t["blocks"] = keep
+            changed = True
+    if changed:
+        applog.info("없어진 도구 블럭을 팔레트에서 정리했습니다 — "
+                    + ", ".join(sorted(retired)))
+    return changed
 
 
 def _migrate_block_color(block):
