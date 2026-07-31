@@ -22,6 +22,7 @@ from hwp_palette.design import theme
 from hwp_palette.design import ui_fx
 from hwp_palette.design.roundbtn import RoundButton
 from hwp_palette.hwp import hwp_engine        # [한글에 바로 넣기]
+from hwp_palette.model import excel_blocks    # 덩어리 틀(xlsm) — 형태 B
 from hwp_palette.model import excel_form
 from hwp_palette.model import excel_read
 
@@ -66,9 +67,9 @@ class ExcelWindow(tk.Toplevel):
                  font=(FONT, theme.fs(8), "bold"), bg=CARD, fg=TEXT
                  ).pack(anchor="w", padx=12, pady=(8, 2))
         tk.Label(guide, text=(
-            "· 합답형(ㄱㄴㄷ 고르기) · 정답형(오지선다) · 서술형 문항을 엑셀 표에 한 줄에 하나씩 적습니다\n"
-            "· [엑셀 양식 만들기] — 열이 미리 짜인 빈 엑셀을 만듭니다. 예시 문항을 넣어 형식을 보고 배울 수 있습니다\n"
-            "· [엑셀 파일 고르기] — 채워 온 엑셀을 읽어 시험지 마크다운과 정답표를 만듭니다. 잘못 쓴 칸은 읽기 결과가 짚어 줍니다\n"
+            "· [엑셀 틀 만들기] — 버튼이 든 엑셀(xlsm)을 만듭니다. 창고의 꾸러미·이름 붙은 템플릿이 드롭다운에 들어갑니다\n"
+            "· 엑셀에서: B1 드롭다운으로 꾸러미를 고르고 [＋ 덩어리 추가] — 빈칸 이름들이 깔리면 값 칸(B열)만 채웁니다\n"
+            "· [엑셀 파일 고르기] — 채워 온 엑셀을 읽어 시험지 마크다운과 정답표를 만듭니다 (예전 표 방식 파일도 읽힙니다)\n"
             "· [한글에 바로 넣기] 한 번이면 붙여넣기·선택·변환까지 이어집니다 — 등록해 둔 조각 서식 그대로 시험지가 완성됩니다"),
             font=(FONT, theme.fs(8)), bg=CARD, fg=MUTED, justify="left"
         ).pack(anchor="w", padx=12, pady=(0, 8))
@@ -84,43 +85,25 @@ class ExcelWindow(tk.Toplevel):
         ui_fx.attach_all(self)
         ui_fx.reveal(self, place=lambda: screens.place_beside(self, master))
 
-    # ── ① 양식 만들기 ────────────────────────────────────
+    # ── ① 문항 틀 만들기 (xlsm) ──────────────────────────
+    # 유형(합답형·정답형·서술형) 드롭다운 세 개는 없앴다 (2026-07-31, 형태 B
+    # 확정): 유형→템플릿 연결을 여기서 고르는 대신, **엑셀 안의 드롭다운**이
+    # 창고의 꾸러미·이름 붙은 템플릿을 전부 보여준다. 창이 할 일은 틀을
+    # 구워 주는 것뿐이다.
     def _build_make(self):
         box = tk.Frame(self, bg=BG, padx=16)
         box.pack(fill="x", pady=(12, 4))
-        tk.Label(box, text="① 양식 만들기", font=(FONT, theme.fs(9), "bold"),
+        tk.Label(box, text="① 문항 틀 만들기", font=(FONT, theme.fs(9), "bold"),
                  bg=BG, fg=TEXT).pack(anchor="w")
-        tk.Label(box, text="유형마다 어떤 틀로 뽑을지 고릅니다. "
-                           "(등록된 조각이 있는 것만 보입니다)",
+        tk.Label(box, text="버튼이 든 엑셀(xlsm)을 만듭니다 — 엑셀에서 꾸러미를 "
+                           "골라 [＋ 덩어리 추가]로 문항을 쌓으세요.",
                  font=(FONT, theme.fs(8)), bg=BG, fg=MUTED).pack(anchor="w",
                                                                  pady=(0, 6))
-
-        row = tk.Frame(box, bg=BG)
-        row.pack(fill="x")
-        self.style_vars = {}
-        for qtype in excel_form.QTYPES:
-            cell = tk.Frame(row, bg=BG)
-            cell.pack(side="left", padx=(0, 14))
-            tk.Label(cell, text=qtype, font=(FONT, theme.fs(8)),
-                     bg=BG, fg=MUTED).pack(anchor="w")
-            names = excel_form.styles_for(qtype)
-            var = tk.StringVar(value=names[0])
-            ttk.Combobox(cell, textvariable=var, values=names, state="readonly",
-                         width=14, font=(FONT, theme.fs(9))).pack()
-            self.style_vars[qtype] = var
-
         btns = tk.Frame(box, bg=BG)
-        btns.pack(fill="x", pady=(10, 0))
-        self.sample_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(btns, text="예시 문항 5개 넣기", variable=self.sample_var,
-                       font=(FONT, theme.fs(8)), bg=BG, fg=MUTED,
-                       activebackground=BG, selectcolor=CARD,
-                       bd=0, highlightthickness=0).pack(side="left")
-        RoundButton(btns, text="엑셀 양식 만들기", command=self._make,
+        btns.pack(fill="x", pady=(4, 0))
+        RoundButton(btns, text="엑셀 틀 만들기", command=self._make_blocks,
                     bg=ACCENT, fg="white", radius=theme.RADIUS["ctl"],
                     font=(FONT, theme.fs(9), "bold"), outline="",
-                    # fit() 이 없으면 Canvas 기본 크기(378x265)로 나온다 —
-                    # 버튼이 화면을 채우던 원인 (사용자 지적 2026-07-31)
                     zone_bg=BG).fit(pad_x=16, pad_y=6).pack(side="right")
 
     # ── ② 불러오기 ──────────────────────────────────────
@@ -174,17 +157,25 @@ class ExcelWindow(tk.Toplevel):
                     zone_bg=BG).fit(pad_x=14, pad_y=5).pack(side="right", padx=(0, 8))
 
     # ── 동작 ────────────────────────────────────────────
-    def _make(self):
+    def _make_blocks(self):
+        """[엑셀 틀 만들기] — 버튼(VBA)이 든 xlsm 을 굽고 바로 열어 준다."""
+        pack_list = excel_blocks.packs()
+        if not pack_list:
+            messagebox.showinfo(
+                "올릴 꾸러미가 없습니다",
+                "이름 붙은 빈칸(\\발문\\ \\선1\\ …)을 가진 템플릿이나 꾸러미가 "
+                "있어야 엑셀 드롭다운에 올라갑니다.\n"
+                "창고에서 템플릿을 등록하거나 물감을 섞어 만들어 주세요.",
+                parent=self)
+            return
         path = filedialog.asksaveasfilename(
-            parent=self, title="엑셀 양식 저장", defaultextension=".xlsx",
-            initialfile="문항작성양식.xlsx",
-            filetypes=[("엑셀 파일", "*.xlsx")])
+            parent=self, title="문항 틀 저장", defaultextension=".xlsm",
+            initialfile="문항틀.xlsm",
+            filetypes=[("매크로 엑셀", "*.xlsm")])
         if not path:
             return
-        styles = {q: v.get() for q, v in self.style_vars.items()}
         try:
-            excel_form.build_workbook(path, styles=styles,
-                                      with_samples=self.sample_var.get())
+            n = excel_blocks.build_xlsm(path, pack_list)
         except PermissionError:
             messagebox.showwarning(
                 "저장하지 못했습니다",
@@ -192,25 +183,36 @@ class ExcelWindow(tk.Toplevel):
                 "닫고 다시 눌러 주세요.", parent=self)
             return
         except Exception as e:
-            applog.exc("엑셀 양식 만들기 실패", e)
-            messagebox.showerror("엑셀 양식을 만들지 못했습니다", str(e), parent=self)
+            applog.exc("문항 틀 만들기 실패", e)
+            messagebox.showerror("문항 틀을 만들지 못했습니다", str(e), parent=self)
             return
-
-        self.status.set("만들었습니다 — 엑셀에서 채운 뒤 ②로 불러오세요.")
-        if messagebox.askyesno("만들었습니다", "지금 엑셀로 열어볼까요?", parent=self):
+        self.status.set(f"꾸러미 {n}개를 담아 만들었습니다 — 엑셀에서 채운 뒤 ②로 불러오세요.")
+        # 매크로 파일이라 처음 열면 엑셀이 노란 띠(콘텐츠 사용)를 띄운다 —
+        # 안내를 한 번은 해 줘야 버튼이 안 눌린다고 오해하지 않는다.
+        if messagebox.askyesno(
+                "만들었습니다",
+                "지금 엑셀로 열어볼까요?\n\n"
+                "처음 열면 위쪽 노란 띠의 [콘텐츠 사용]을 눌러야\n"
+                "[＋ 덩어리 추가] 버튼이 동작합니다.", parent=self):
             try:
                 os.startfile(path)
             except Exception as e:
-                applog.exc("엑셀 양식 열기 실패 (파일은 만들어졌다)", e)
+                applog.exc("문항 틀 열기 실패 (파일은 만들어졌다)", e)
 
     def _load(self):
         path = filedialog.askopenfilename(
             parent=self, title="채운 엑셀 고르기",
-            filetypes=[("엑셀 파일", "*.xlsx"), ("모든 파일", "*.*")])
+            filetypes=[("엑셀 파일", "*.xlsm *.xlsx"), ("모든 파일", "*.*")])
         if not path:
             return
         try:
-            md, report, answers = excel_read.read_workbook(path)
+            # 덩어리 틀(시험지 시트)인지 먼저 본다 — 아니면 예전 표 방식으로.
+            # 옛 파일을 버리지 않는다: 이미 채워 둔 학기 자료가 있을 수 있다.
+            blocks = excel_blocks.read_blocks(path)
+            if blocks is not None:
+                md, report, answers = excel_blocks.to_markdown(blocks)
+            else:
+                md, report, answers = excel_read.read_workbook(path)
         except Exception as e:
             applog.exc("문항 엑셀 읽기 실패", e)
             messagebox.showerror("엑셀을 읽지 못했습니다", str(e), parent=self)
