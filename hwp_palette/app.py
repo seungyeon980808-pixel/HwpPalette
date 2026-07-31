@@ -182,7 +182,10 @@ def fn_open_form_fill():
 
 def fn_open_excel():
     """문항 엑셀 — 엑셀 표에 채워 시험 문항을 만든다 (마크다운 안 치고)."""
-    return _single("exam_excel", lambda: excel_ui.open_excel(root))
+    # 변환 함수를 건네준다 — [한글에 바로 넣기] 가 넣은 뒤 이어서 부른다.
+    # ui 층은 app 을 임포트할 수 없으므로(층 규칙) 이렇게 넘긴다.
+    return _single("exam_excel",
+                   lambda: excel_ui.open_excel(root, on_convert=fn_convert))
 
 
 # ── 한컴 연결 ───────────────────────────────────────────
