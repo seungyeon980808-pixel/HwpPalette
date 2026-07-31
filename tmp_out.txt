@@ -1,0 +1,181 @@
+...............................................................................................................................EEE.............................................................................C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\app.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\core\\appinfo.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\core\\applog.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\core\\backup.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\core\\clipboard.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\core\\hotkey.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\core\\paths.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\core\\screens.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\core\\settings.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\design\\dialogs.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\design\\disclosure.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\design\\popover.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\design\\roundbtn.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\design\\theme.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\design\\ui_fx.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\hwp\\doc_scan.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\hwp\\engine_library.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\hwp\\exam_engine.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\hwp\\form_markdown.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\hwp\\hwp_dock.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\hwp\\hwp_engine.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\hwp\\preview.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\model\\builtin_actions.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\model\\builtin_chars.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\model\\chip.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\model\\excel_form.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\model\\excel_read.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\model\\form_fill.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\model\\func_catalog.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\model\\library.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\model\\palette.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\model\\parser.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\ui\\decompose_ui.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\ui\\dock_bar.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\ui\\excel_ui.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\ui\\form_fill_ui.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\ui\\form_table_ui.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\ui\\help_content.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\ui\\help_ui.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\ui\\library_ui.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\ui\\mix_ui.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\ui\\onboarding.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\ui\\palette_ui.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\ui\\store_ui.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\ui\\tutorial.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+C:\Users\user\Desktop\project\31_hwp_palette\tests\test_layers.py:68: ResourceWarning: unclosed file <_io.TextIOWrapper name='C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\hwp_palette\\ui\\tutorials.py' mode='r' encoding='utf-8'>
+  tree = ast.parse(io.open(path, encoding="utf-8").read())
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+......................................................................................................................................................................................................................................................................................................................................................................................................................................................................................
+======================================================================
+ERROR: test_실패하면_안내문을_붙이지_않는다 (test_edit_open_guard.OpenTemplateCopyTest.test_실패하면_안내문을_붙이지_않는다)
+핵심 회귀 테스트 \u2014 '빈 탭 + 고치세요 안내'가 데이터 손실의 입구였다.
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\user\Desktop\project\31_hwp_palette\tests\test_edit_open_guard.py", line 229, in tearDown
+    self.tmp.unlink(missing_ok=True)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\user\AppData\Local\Programs\Python\Python313\Lib\pathlib\_local.py", line 746, in unlink
+    os.unlink(self)
+    ~~~~~~~~~^^^^^^
+PermissionError: [WinError 32] 다른 프로세스가 파일을 사용 중이기 때문에 프로세스가 액세스 할 수 없습니다: 'C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\tests\\_frag_test.hwp'
+
+======================================================================
+ERROR: test_조각_파일이_없으면_예외 (test_edit_open_guard.OpenTemplateCopyTest.test_조각_파일이_없으면_예외)
+스테일 경로(덮어쓰기로 이미 지워진 옛 파일명)를 조용히 통과시키지 않는다.
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\user\Desktop\project\31_hwp_palette\tests\test_edit_open_guard.py", line 229, in tearDown
+    self.tmp.unlink(missing_ok=True)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\user\AppData\Local\Programs\Python\Python313\Lib\pathlib\_local.py", line 746, in unlink
+    os.unlink(self)
+    ~~~~~~~~~^^^^^^
+PermissionError: [WinError 32] 다른 프로세스가 파일을 사용 중이기 때문에 프로세스가 액세스 할 수 없습니다: 'C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\tests\\_frag_test.hwp'
+
+======================================================================
+ERROR: test_첫_삽입이_비면_한_번_다시_시도한다 (test_edit_open_guard.OpenTemplateCopyTest.test_첫_삽입이_비면_한_번_다시_시도한다)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\user\Desktop\project\31_hwp_palette\tests\test_edit_open_guard.py", line 229, in tearDown
+    self.tmp.unlink(missing_ok=True)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\user\AppData\Local\Programs\Python\Python313\Lib\pathlib\_local.py", line 746, in unlink
+    os.unlink(self)
+    ~~~~~~~~~^^^^^^
+PermissionError: [WinError 32] 다른 프로세스가 파일을 사용 중이기 때문에 프로세스가 액세스 할 수 없습니다: 'C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\tests\\_frag_test.hwp'
+
+----------------------------------------------------------------------
+Ran 677 tests in 10.616s
+
+FAILED (errors=3)
