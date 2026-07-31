@@ -163,9 +163,11 @@ def _single(key, make):
 def fn_open_library(cat=None):
     """라이브러리 창. cat 을 주면 그 탭으로 바로 연다 (특수기호 도구 → '문자')."""
     win = _single("library", lambda: library_ui.open_manager(root, cat=cat))
-    # 이미 떠 있던 창이라도 요청한 탭('내장' 등)으로는 이동시킨다.
+    # 이미 떠 있던 창이라도 요청한 탭('문자' 등)으로는 이동시킨다.
     # _switch_tab 이어야 탭 버튼 색·설명·동작바까지 함께 따라온다.
-    if cat:
+    # **같은 탭이면 건드리지 않는다** (2026-07-31) — 조건 없이 갈아타면
+    # 새로 만든 창까지 400여 칸짜리 격자를 곧바로 한 번 더 지었다.
+    if cat and getattr(win, "current_cat", None) != cat:
         try:
             win._switch_tab(cat)
         except Exception as e:
@@ -583,7 +585,11 @@ def fn_pick_photo():
     그 안의 그림 목록이 뜬다. 폴더를 안 쓰는 경우를 위해 '파일에서 직접
     고르기'도 남겨 둔다.
     """
-    if not ensure_hwp(): return
+    # 한글 연결 확인은 여기서 하지 않는다 (2026-07-31) — 연결(COM)은 한글이
+    # 바쁘면 몇 초씩 걸릴 수 있어, 버튼을 누르고 폴더 목록이 뜨기까지
+    # 화면이 통째로 멈춘 것처럼 보였다 ("사진 버튼을 누르니까 뜨는 창이
+    # 너무 느립니다"). 연결이 실제로 필요한 것은 사진을 **골라서 넣는
+    # 순간**이므로 _insert_photo_path 로 옮겼다.
     folders = library.photo_folders_summary()
     usable = [f for f in folders if f["exists"] and f["count"]]
     if not usable:
@@ -620,6 +626,8 @@ def _pick_photo_file():
 
 def _insert_photo_path(path):
     if not path:
+        return
+    if not ensure_hwp():        # 폴더 목록 대신 여기서 — 넣기 직전에만 필요하다
         return
     try:
         # 파일 대화상자가 **닫힌 뒤**, 넣기 직전에 지점을 찍는다 (2026-07-31) —

@@ -606,16 +606,21 @@ class TextInputDialog(tk.Toplevel):
 
 
 class LibraryManager(tk.Toplevel):
-    def __init__(self, master, on_saved=None):
+    def __init__(self, master, on_saved=None, cat=None):
         super().__init__(master)
         self.on_saved = on_saved
         self.title(appinfo.WINDOW_TITLE)
         self.configure(bg=BG)
         self.resizable(False, False)
         self.attributes("-topmost", True)
-        self.current_cat = "서식"
+        # 처음 보여줄 탭을 **만들 때 받는다** (2026-07-31). 예전에는 늘
+        # '서식'을 먼저 그린 뒤 open_manager 가 요청 탭으로 갈아탔다 —
+        # 특수기호 격자(400여 칸)를 열 때마다 안 볼 서식 목록을 만들고
+        # 부수는 값을 치렀고, 그것이 창 뜨는 버벅임의 한 축이었다.
+        self.current_cat = cat if any(c["key"] == cat for c in CATS) else "서식"
         self._sel = None                # 지금 선택된 행 {"cat","item","row"}
         self._builtin_group = "전체"     # 특수기호 탭의 묶음 칩 선택
+        self._grid_job = None           # 격자 나눠 그리기 예약 (_render_char_grid)
 
         tk.Label(self, text="물감 설정", font=(FONT, theme.fs(FS["title"]), "bold"),
                  bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(14, 2))
@@ -737,7 +742,7 @@ class LibraryManager(tk.Toplevel):
         self.bind("<Right>", lambda e: self._move_sel(1, horizontal=True))
         self.bind("<Return>", lambda e: self._act_selected())
 
-        self._switch_tab("서식")
+        self._switch_tab(self.current_cat)
         self.update_idletasks()
         screens.place_beside(self, master)
 
@@ -899,6 +904,13 @@ class LibraryManager(tk.Toplevel):
     def _refresh(self, cat=None):
         cat = cat or self.current_cat
         self._select(None)
+        # 나눠 그리기가 진행 중이면 멈춘다 — 부순 격자에 계속 그리면 안 된다
+        if self._grid_job is not None:
+            try:
+                self.after_cancel(self._grid_job)
+            except Exception:
+                pass
+            self._grid_job = None
         # 화살표 이동용 목록 — 그리면서 순서대로 쌓는다 (보이는 차례 그대로)
         self._nav = []
         self._nav_cols = 1
@@ -1059,6 +1071,15 @@ class LibraryManager(tk.Toplevel):
         return out
 
     def _render_char_grid(self, query):
+        r"""기호 격자 — 400여 칸을 **가볍게, 나눠서** 그린다 (2026-07-31).
+
+        버벅임을 잡은 두 가지 (사용자 지적: "특수기호 창이 너무 버벅거린다"):
+          · 칸 하나 = 위젯 하나. Frame 안에 Label 을 얹던 것을 Label 하나로
+            합쳤다 — 위젯 850개·바인딩 1,700개가 절반으로 준다. 정사각형은
+            pack_propagate 대신 grid 의 minsize 가 지킨다.
+          · 처음 몇 줄만 즉시 그리고 나머지는 after(1) 로 나눠 그린다 —
+            창이 한 프레임 안에 뜨고, 아래쪽 칸은 눈치채기 전에 채워진다.
+        """
         entries = self._char_entries(query)
         if not entries:
             self._empty_note("해당하는 기호가 없습니다.")
@@ -1069,34 +1090,48 @@ class LibraryManager(tk.Toplevel):
         cols = max(4, avail // (cell + 4))
         grid = tk.Frame(self.list_area, bg=BG)
         grid.pack(anchor="w")
-        self._cells = []
-        for i, e in enumerate(entries):
-            f = tk.Frame(grid, bg=ROWBG, width=cell, height=cell,
-                         highlightbackground=BORDER, highlightthickness=1)
-            f.pack_propagate(False)
-            f.grid(row=i // cols, column=i % cols, padx=2, pady=2)
-            # 문구가 긴 항목(자주 쓰는 문장)은 앞부분만 — 전체는 툴팁·아래 줄에서
+        for c in range(cols):
+            grid.columnconfigure(c, minsize=cell + 4)
+        for r in range((len(entries) + cols - 1) // cols):
+            grid.rowconfigure(r, minsize=cell + 4)
+        self._nav_cols = cols
+
+        def _make_cell(i, e):
+            # 문구가 긴 항목(자주 쓰는 문장)은 앞부분만 — 전체는 아래 줄에서
             shown = e["text"].replace("\n", " ")
             size = 13 if len(shown) <= 2 else (10 if len(shown) <= 4 else 8)
             if len(shown) > 6:
                 shown = shown[:5] + "…"
-            tk.Label(f, text=shown, font=(FONT, theme.fs(size)), bg=ROWBG,
-                     fg=TEXT).pack(expand=True)
-            e["row"] = f
+            lab = tk.Label(grid, text=shown, font=(FONT, theme.fs(size)),
+                           bg=ROWBG, fg=TEXT, cursor="hand2",
+                           highlightbackground=BORDER, highlightthickness=1)
+            lab.grid(row=i // cols, column=i % cols, padx=2, pady=2,
+                     sticky="nsew")
+            lab.bind("<Button-1>", lambda ev, en=e: self._select(en))
+            lab.bind("<Double-Button-1>", lambda ev: self._act_selected())
+            e["row"] = lab
             self._nav.append(e)
-            self._wire_cell(f, e)
-        self._nav_cols = cols
+
+        def _build(start):
+            self._grid_job = None
+            if not grid.winfo_exists():
+                return                  # 그 사이 탭·검색이 바뀌어 부서졌다
+            end = min(len(entries), start + cols * 3)
+            for i in range(start, end):
+                _make_cell(i, entries[i])
+            if end < len(entries):
+                self._grid_job = self.after(1, lambda: _build(end))
+
+        first = min(len(entries), cols * 6)     # 눈에 보일 여섯 줄은 바로
+        for i in range(first):
+            _make_cell(i, entries[i])
+        if first < len(entries):
+            self._grid_job = self.after(1, lambda: _build(first))
         # 내가 등록한 것과 내장 기호가 섞이므로, 무엇이 무엇인지 아래 줄이 말한다
         tk.Label(self.list_area,
                  text=f"{len(entries)}개  ·  누르면 아래에 부르는 법이 나옵니다",
                  font=(FONT, theme.fs(FS["sub"])), bg=BG, fg=MUTED).pack(anchor="w",
                                                                  pady=(6, 0))
-
-    def _wire_cell(self, f, entry):
-        for w in (f, *f.winfo_children()):
-            w.bind("<Button-1>", lambda e, en=entry: self._select(en))
-            w.bind("<Double-Button-1>", lambda e: self._act_selected())
-            w.config(cursor="hand2")
 
     def _render_photo_list(self, query):
         r"""사진 탭 = **폴더 관리** 화면 (사용자 결정 2026-07-26).
@@ -2110,13 +2145,12 @@ def _pop_topmost(win):
 
 
 def open_manager(master, on_saved=None, cat=None):
-    """라이브러리 창을 연다. cat 을 주면 그 탭으로 바로 연다 ('내장' 등)."""
-    win = LibraryManager(master, on_saved=on_saved)
+    """라이브러리 창을 연다. cat 을 주면 그 탭이 **처음부터** 그 탭으로 열린다.
+
+    2026-07-31: 만들고 나서 _switch_tab 으로 갈아타던 것을 생성자 인자로
+    바꿨다 — 갈아타기는 이미 그린 탭을 부수고 다시 그리는 일이라, 특수기호
+    격자를 열 때마다 같은 화면을 두 번 지었다.
+    """
+    win = LibraryManager(master, on_saved=on_saved, cat=cat)
     ui_fx.attach_all(win)              # 추가 버튼 등 tk.Button 에 호버 보간
-    if cat in TABS and cat != win.current_cat:
-        try:
-            # _refresh 가 아니라 _switch_tab — 탭 버튼 색·설명·동작바까지 함께
-            win._switch_tab(cat)
-        except Exception as e:
-            applog.exc(f"라이브러리 '{cat}' 탭으로 열기 실패 — 기본 탭으로 엽니다", e)
     return win

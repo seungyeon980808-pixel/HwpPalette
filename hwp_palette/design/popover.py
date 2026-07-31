@@ -180,6 +180,12 @@ class Popover(tk.Toplevel):
         if self._closed or not self.winfo_exists():
             return
         try:
+            if tries == 0:
+                # 창을 화면에 먼저 실어 **재시도 없이 한 번에** 잡는다
+                # (2026-07-31) — deiconify 직후에는 창이 안 떠 있어 30ms
+                # 재시도를 돌았고, 그 0.3초 동안 클릭이 어디에도 안 먹어
+                # 메뉴가 버벅이는 것처럼 느껴졌다.
+                self.update_idletasks()
             self.grab_set()
         except Exception:
             if tries < 10:

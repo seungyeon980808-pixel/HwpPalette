@@ -590,6 +590,13 @@ def _photo_lookup():
     return out
 
 
+# 폴더 세기 캐시 — {경로: (폴더 mtime_ns, count)}. 사진 블럭을 누를 때마다
+# 폴더의 파일 전체를 stat 하면(파일 하나당 한 번) OneDrive·수백 장짜리
+# 폴더에서 목록이 뜨기까지 화면이 멈춘 것처럼 보였다 (사용자 지적 2026-07-31).
+# 폴더의 mtime 은 파일 추가·삭제 때 바뀌므로, 그것이 같으면 지난 결과를 쓴다.
+_photo_count_cache = {}
+
+
 def photo_folders_summary():
     """UI 표시용 폴더 현황 — [{"path", "exists", "count"}] (등록 순서).
 
@@ -608,9 +615,15 @@ def photo_folders_summary():
             root = pathlib.Path(d)
             if root.is_dir():
                 info["exists"] = True
-                info["count"] = sum(
-                    1 for f in root.iterdir()
-                    if f.is_file() and f.suffix.lower() in PHOTO_EXTS)
+                stamp = root.stat().st_mtime_ns
+                hit = _photo_count_cache.get(d)
+                if hit and hit[0] == stamp:
+                    info["count"] = hit[1]
+                else:
+                    info["count"] = sum(
+                        1 for f in root.iterdir()
+                        if f.is_file() and f.suffix.lower() in PHOTO_EXTS)
+                    _photo_count_cache[d] = (stamp, info["count"])
         except OSError:
             pass
         rows.append(info)
