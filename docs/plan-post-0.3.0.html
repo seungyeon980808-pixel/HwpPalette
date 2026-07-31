@@ -62,10 +62,13 @@
 
 <h1>HwpPalette 수정 기획서 — v0.3.0 이후</h1>
 <div class="meta">
-  기준 판 <code>v0.3.0</code> (릴리즈 게시 완료 · 실행파일 배포 없음) ·
-  브랜치 <code>feedback/post-0.3.0</code> ·
-  근거 <code>docs/FEEDBACK_post_0.3.0.md</code> (피드백 001~018) ·
-  시안 <code>docs/mockups/store-reform-2026-07-31.html</code> (B·F·G·H 절)
+  기준 판 <code>v0.4.0-beta</code> ·
+  브랜치 <code>feat/post-0.3.0</code> ·
+  근거 <code>docs/FEEDBACK_post_0.3.0.md</code> (피드백 <b>001~034</b>) ·
+  시안 <code>docs/mockups/store-reform-2026-07-31.html</code> (B·F·G·H 절) ·
+  <code>docs/mockups/store-subcats.html</code> (하위 분류)<br>
+  <b>지금 상태</b> — 1차(001~018)와 2차(019~026) 반영 완료. <b>027~034 는 미착수</b>
+  (5·6·7 절 참고).
 </div>
 <div class="stamp">2026-07-31 사용자 승인 — 확정</div>
 <div class="card" style="border-left:3px solid #0a6b2e;margin-top:14px">
@@ -82,8 +85,24 @@
     <tr><td>7</td><td>문항 엑셀 (014)</td><td class="ok">열 지도·바로 넣기 완료 / 마법사 UI 는 남김</td></tr>
     <tr><td>탐</td><td>자간 보정 스파이크 (016)</td><td class="ok">완료 — 방식 A 구현 가능 판정</td></tr>
   </table>
-  <p style="margin-bottom:0">테스트 677개 통과. 자세한 것은 각 커밋 메시지와
+  <p>테스트 677개 통과. 자세한 것은 각 커밋 메시지와
     <code>docs/SPIKE_자간보정.md</code>.</p>
+
+  <h3>그 뒤 — 2026-07-31 ~ 08-01</h3>
+  <table>
+    <tr><th>차수</th><th>내용</th><th>상태</th></tr>
+    <tr><td>하위분류</td><td>물감 창고 하위 분류 (시안 store-subcats.html)</td>
+        <td class="ok">완료 · main 병합</td></tr>
+    <tr><td>2차</td><td>피드백 019~026 — 우클릭 위치 · 미리보기 잔상 ·
+        ‘기본 서식’ 폐지 · 만들기 입구 통일 · <b>자간 맞춤 구현</b> ·
+        수치 스핀 · 서식 통일</td>
+        <td class="ok">완료 · main 병합 (<code>18ca3bb</code>)</td></tr>
+    <tr><td>3차</td><td>피드백 027~034 — 접수·분석까지</td>
+        <td><b>미착수</b> (5·6·7 절)</td></tr>
+  </table>
+  <p style="margin-bottom:0">테스트 728개 통과 (2차 반영 시점).
+    <b>자간 맞춤은 한글 실기 확인이 남아 있다</b> — 스파이크는 실측했으나
+    구현 자체는 한글 없이 작성했다.</p>
 </div>
 
 
@@ -282,9 +301,157 @@
   </ul>
 </div>
 
+<h2>5. 2·3차 피드백 <small>027~034 — 접수 현황 (2026-07-31 ~ 08-01)</small></h2>
+<p class="lead">
+  1차(001~018)를 반영한 뒤 나온 것들이다. 019~026 은 이미 반영해 main 에 들어갔고
+  (커밋 <code>18ca3bb</code>), 아래 여덟 건은 <b>접수·분석까지만</b> 되어 있다.
+  세부 근거·원인 분석·수정 계획은 전부 <code>docs/FEEDBACK_post_0.3.0.md</code> 의
+  같은 번호 항목에 있다 — 이 표는 <b>무엇이 남았는지</b>만 말한다.
+</p>
+<table>
+  <tr><th class="num">번호</th><th>갈래</th><th>내용</th><th>상태</th></tr>
+  <tr><td class="num">027</td><td>아이디어</td>
+      <td>도구 판의 빈자리를 <b>사용법</b>으로 채우기</td><td>접수 · 설계 전</td></tr>
+  <tr><td class="num">028</td><td><b>회귀</b></td>
+      <td>특수기호 창에서 <b>종류별 분류</b>와 <b>내가 등록한 기호</b>가 사라짐<br>
+          <span class="ref">022 를 반영하며 기능이 적은 창으로 합친 것이 원인 — Claude 잘못</span></td>
+      <td>원인 확정 · 대기</td></tr>
+  <tr><td class="num">029</td><td>기능</td>
+      <td>사진 도구의 <b>폴더 연결을 판 안에서</b> (지금은 [설정]이 다섯 탭짜리 창을 통째로 연다)</td>
+      <td>검토 완료 · 대기</td></tr>
+  <tr><td class="num">030</td><td>디자인</td>
+      <td>서식 만들기 창이 프로그램의 다른 창과 <b>컨셉이 안 맞음</b> (기본 위젯 노출)</td>
+      <td>범위 결정 대기</td></tr>
+  <tr><td class="num">031</td><td><b>버그</b></td>
+      <td>양식 수정 — 버벅임 · 끝난 뒤 창이 커짐 · 빈 문서가 남음</td>
+      <td class="ok">다음 라운드</td></tr>
+  <tr><td class="num">032</td><td><b>버그</b></td>
+      <td>도킹 소유권 위계 — 한글 창의 주인이 둘이 되어 왕복하며 버벅임</td>
+      <td class="ok">다음 라운드</td></tr>
+  <tr><td class="num">033</td><td><b>버그</b></td>
+      <td>양식 빈칸 판독기 불일치(등록 2 vs 채우기 1) · 우클릭 ‘채워서 꽂기’ 미구현</td>
+      <td class="ok">다음 라운드</td></tr>
+  <tr><td class="num">034</td><td>기능</td>
+      <td>자간 맞춤이 <b>표 안</b>에서도 동작해야 함</td>
+      <td class="ok">다음 라운드</td></tr>
+</table>
+
+
+<h2>6. 다음 라운드 <small>버그 네 건 (031~034) — 한 라운드로 묶는다</small></h2>
+
+<div class="card" style="border-left:3px solid #0969da">
+  <h3 style="margin-top:0">작업 지시 <span class="ref">사용자, 2026-08-01</span></h3>
+  <p style="margin-bottom:0">
+    <code>docs/FEEDBACK_post_0.3.0.md</code> 의 <b>031·032·033·034</b> 를 읽고,
+    네 건을 <b>한 라운드로</b> 고쳐라. 각 항목에 원인 분석과 수정 계획이 이미
+    적혀 있다 — 그 계획을 따르되, <b>계획에 적힌 실측(스파이크)을 구현 전에 먼저</b>
+    하라. 032 는 <b>“양식 수정 &gt; 메인 도킹” 위계</b>가 핵심이고, 034 는
+    <b>여러 셀에 걸친 선택은 1차 제외</b>다. 끝나면 <b>테스트 전체 실행과 실기 검증</b>
+    (도킹 → 양식 수정 → 저장 → 복귀, 표 안 자간 맞춤)까지 하고 <b>main 에 병합·푸시</b>하라.
+    <b>버전은 올리지 마라.</b>
+  </p>
+</div>
+
+<p class="lead">
+  네 건을 한 라운드로 묶는 이유: <b>같은 파일을 만진다.</b> 031 과 032 는
+  <code>hwp_dock.py</code> · <code>palette_ui.py</code> · <code>app.py</code> 를 함께
+  건드리고, 033 과 034 는 각각 <code>form_fill</code> · <code>engine_library</code> 를
+  건드리되 실기 검증 경로(한글을 띄워 도킹·편집)가 겹친다. 따로 하면 같은 자리를
+  두 번 만지고 검증도 두 번 한다.
+</p>
+
+<div class="phase p0"><div class="no">1</div><div>
+  <h3>031 — 양식 수정의 세 증상</h3>
+  <p><b>a. 창이 커짐 (원인 확정)</b> — <code>_exit_dock_layout()</code> 이 접었던 판을
+     다시 편 <b>직후 동기로</b> <code>_fit_window()</code> 를 부른다. 그런데
+     <code>_fit_window</code> 는 “호출부가 전부 after_idle 로 미룬다”를 전제로
+     스스로 <code>update_idletasks()</code> 를 하지 않는다 — <b>그 전제가 이 한 곳에서만
+     깨져 있다.</b> 편집 때의 큰 값이 <code>minsize</code> 에 박혀 이후 줄일 수도 없다.</p>
+  <p><b>b. 빈 문서 남음</b> — <code>hide_window_if_ours</code> 는 “고치기 전에 없던
+     창일 때만” 숨긴다. 그 <code>빈 문서 1</code> 이 사용자 것인지 우리가 켜며 딸려온
+     바탕 문서인지부터 가른다. <b>032 를 고치면 상당 부분 함께 풀릴 가능성이 높다</b>
+     (메인 도킹이 제자리로 복귀하면 그 문서는 ‘주인 있는 문서’가 된다).</p>
+  <p><b>c. 버벅임</b> — 유력 원인이 032 다. 도킹 없이도 버벅이면
+     <code>hwp_dock._follow_loop</code> 의 훅/폴링(훅 실패 시 8ms) 쪽에 원인이 따로 남는다.</p>
+  <p class="why">031-a 는 바로 고칠 수 있다. 031-b·c 는 032 를 먼저 넣고 다시 본다.</p>
+</div></div>
+
+<div class="phase p0"><div class="no">2</div><div>
+  <h3>032 — 도킹 소유권 위계 <b>(이 라운드의 핵심)</b></h3>
+  <p>한글 창의 도킹 주인은 <b>한 번에 하나</b>. 겹치면 더 구체적인 작업이 이긴다 —
+     <b>양식 수정(편집 세션) &gt; 메인 도킹</b>.</p>
+  <p><code>hwp_dock</code> 에 소유권 대장(<code>claim</code>/<code>release</code>,
+     LIFO 스택)을 두고, 우선순위는 편집 세션 100 · 메인 도킹 10.
+     <b>pause 는 <code>stop_follow()</code> 만</b> — 창 복원은 하지 않는다(제자리로
+     튕겼다 다시 붙는 깜빡임 방지). resume 은 hwnd 유효성 확인 → <code>ensure_visible()</code>
+     → <code>start()</code>.</p>
+  <p>반대 방향(편집 중 메인 ◫)은 <b>뺏지 않고 안내</b>한다.</p>
+  <p class="why">지금은 Dock 인스턴스 둘이 같은 hwnd 를 서로 제 판으로 끌어
+     SetWindowPos 를 왕복시킨다 — 사용자가 말한 버벅임의 정체.</p>
+</div></div>
+
+<div class="phase"><div class="no">3</div><div>
+  <h3>033 — 빈칸 판독기 불일치 · 채워서 꽂기</h3>
+  <p><b>a.</b> 등록은 <code>GetTextFile</code>(빈칸 2), 채우기 창은 HWPX run 스캔(빈칸 1).
+     둘째 <code>\</code> 가 <b>글상자/그리기 개체 안</b>이라 <code>RUN_RE</code> 가 못 연다.
+     <code>\본문\</code> 충돌이 아니다(실측 확정).</p>
+  <p><b>실측 먼저</b>: 그 <code>\</code> 가 HWPX 의 어떤 요소 안인지 부모 태그를 추적하고,
+     <b>읽기를 넓혔을 때 재주입(되쓰기)도 같은 경로로 안전한지</b> 함께 잰다 —
+     읽기만 넓히고 쓰기가 못 따라가면 반쪽이다.</p>
+  <p><b>안전망(실측이 부정적이면 이것만이라도)</b>: 채우기 창 머리에 불일치를 그대로
+     말한다 — “등록된 빈칸 2개 중 1개는 글상자 안에 있어 여기서 못 채웁니다”
+     (<code>_hidden_token_count</code> 활용).</p>
+  <p><b>b.</b> <b>우클릭 ‘채워서 꽂기’ 가 아직 없다</b> — 잔결정 목록에만 있고 미구현.
+     “눌러도 반응이 없다”의 정체. 왼쪽 클릭 = 빈칸인 채로 실행이라는 규칙은 그대로 둔다.</p>
+</div></div>
+
+<div class="phase"><div class="no">4</div><div>
+  <h3>034 — 자간 맞춤을 표 안에서도</h3>
+  <p><code>_selected_para_range()</code> 가 <b>본문(list 0)</b> 일 때만 범위를 준다.
+     그 아래 배관도 <code>SetPos(0, …)</code> 로 list 0 을 박아 쓴다. 좌표 배관 문제일 뿐이다
+     — 실제 구현은 폭을 재지 않고 ‘해 보고 확인’ 방식이라 <b>셀 폭 우려는 해당하지 않는다</b>.</p>
+  <p>범위를 <code>(list_id, first, last)</code> 로 넓히고 배관 전체에 <code>list_id</code> 를
+     꿴다. 줄 끝에서 <b>다음 셀로 튀는 것</b>을 막는 경계 방어를 더한다
+     (<code>nxt[0] != list_id</code>).</p>
+  <p><b>여러 셀에 걸친 선택은 1차 제외</b> — “셀 하나씩 선택해 주세요” 안내로 막고
+     셀 순회는 후속으로 남긴다.</p>
+  <p><b>실측 먼저(3건)</b>: ① 셀 안에서 <code>MoveLineBegin</code>/<code>MoveSelLineEnd</code>/
+     <code>MoveRight</code> 가 본문과 같게 노는가 ② <code>SelectText</code> 가 셀 좌표에서
+     동작하는가 ③ 어절 단위(ParagraphShape) 적용이 셀 문단에도 먹는가.</p>
+</div></div>
+
+<h3>이 라운드의 검증 규약</h3>
+<div class="card">
+  <ul>
+    <li><b>스파이크가 구현보다 먼저다</b> — 033·034 의 실측을 끝내고 결과를 문서에 남긴 뒤 코드를 짠다.</li>
+    <li><b>테스트 전체 실행</b> (현재 728개 기준, 새 규칙은 테스트로 못박는다).</li>
+    <li><b>실기 검증 2종</b> — ① 도킹 → 양식 수정 → 저장 → <b>메인 자동 복귀</b>
+        (취소 경로도) ② 표 안(보기 박스) 문단에 자간 맞춤 → 잘림 해소 · ↺ 한 번에 원복.</li>
+    <li>끝나면 <b>main 에 병합·푸시</b>.</li>
+    <li><b>버전은 올리지 않는다</b> (기존 규약과 동일 — 사용자가 정한다).</li>
+  </ul>
+</div>
+
+
+<h2>7. 뒤로 미룬 것 <small>027~030 — 이번 라운드에 넣지 않는다</small></h2>
+<div class="later">
+  <b>왜 미루나</b> — 사용자 지시가 “기능 수정은 그만하고 버그를 잡자”이기 때문이다.
+  027(사용법)·029(사진 폴더)·030(디자인)은 기능·디자인 작업이고,
+  028(특수기호 분류 복원)은 회귀라 급하지만 <b>030 과 같은 창을 만진다</b> —
+  디자인 방향을 정하기 전에 손대면 두 번 만지게 된다.
+  <br><br>
+  <b>착수 순서 권함</b>: 031~034(버그) → 028(회귀 복원) → 029(사진 폴더) → 030(디자인 통일) → 027(사용법).
+  028·029·027 은 모두 <b>같은 판·같은 창</b>을 건드리므로 디자인(030)을 마지막에 두면 재작업이 준다.
+  <br><br>
+  <b>030 은 범위 결정이 먼저다</b> — ① 서식 창만 ② 서식 창 + 자체 부품(체크·수치칸)을
+  <code>design/</code> 에 ③ ② + 프로그램 전체 훑기. Claude 권함은 ②.
+</div>
+
+
 <footer>
-  HwpPalette 수정 기획서 · 2026-07-31 사용자 승인 · 근거: docs/FEEDBACK_post_0.3.0.md (001~018) ·
-  시안: docs/mockups/store-reform-2026-07-31.html<br>
+  HwpPalette 수정 기획서 · 2026-07-31 사용자 승인 (1차) · 2026-08-01 2·3차 피드백 반영<br>
+  근거: docs/FEEDBACK_post_0.3.0.md (001~034) ·
+  시안: docs/mockups/store-reform-2026-07-31.html · docs/mockups/store-subcats.html<br>
   이 문서가 기준이며, 세부 근거·검토 이력은 FEEDBACK 문서를 따른다.
 </footer>
 
