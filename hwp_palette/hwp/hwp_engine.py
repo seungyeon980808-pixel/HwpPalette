@@ -14,10 +14,12 @@ Tkinter/UI에 의존하지 않는다. 표/박스의 모든 치수·글꼴·테�
 — `from hwp_engine import hwp` 로 가져오면 재연결 시 낡은 객체를 붙들게 된다.
 
 지역 import 규칙 (개선안 24):
-  함수 안에서 import 하는 경우는 **두 가지뿐**이다.
+  함수 안에서 import 하는 경우는 **세 가지뿐**이다.
     1) 순환 참조 회피 — library ↔ palette 처럼 서로를 필요로 하는 경우
     2) 플랫폼/선택적 의존성 — win32gui, win32clipboard 처럼 없을 수도 있고
        ImportError 를 그 자리에서 다뤄야 하는 경우
+    3) 시작 시간 — pyhwpx 처럼 import 자체가 수 초 걸리는 무거운 의존성.
+       아래 _ensure_pyhwpx() 참조.
   그 외(표준 라이브러리 등)는 전부 파일 맨 위로 올린다.
 """
 
@@ -25,13 +27,40 @@ import os
 import re
 import time
 
-from pyhwpx import Hwp
-import pyhwpx.core as pyhwpx_core     # __init__ 우회 시 필요한 기본값(fonts)
 from hwp_palette.core import applog
 from hwp_palette.core import clipboard                        # 윈도우 클립보드 (Tk 클립보드 금지)
 from hwp_palette.core import settings
 
 hwp = None
+
+# pyhwpx 는 여기서 import 하지 않는다 — _ensure_pyhwpx() 가 첫 연결 때 채운다.
+# 테스트가 mock.patch.object(hwp_engine, "Hwp", ...) 로 갈아끼우므로
+# 모듈 속성 자체는 항상 있어야 한다 (None 이 '아직 안 불러옴' 표시).
+Hwp = None
+pyhwpx_core = None                    # __init__ 우회 시 필요한 기본값(fonts)
+
+
+def _ensure_pyhwpx():
+    r"""pyhwpx 를 실제로 쓰는 순간에야 불러온다 (지역 import 규칙 3).
+
+    왜 미루나 (실측 2026-07-31): 앱 시작 4.4초 중 **3.8초가 이 import** 였다
+    — pyhwpx 가 pandas(1.4초)와 한/글 typelib gencache(1.3초)를 끌고 온다.
+    모듈 최상단 import 는 그 비용을 **창이 뜨기도 전에** 내게 하므로,
+    첫 연결(connect / _attach_without_resize) 순간으로 옮겼다. 사용자는
+    어차피 한글에 붙는 첫 동작에서 잠깐 기다리는데, 거기에 합쳐지면
+    체감이 거의 없다.
+
+    테스트가 Hwp 를 가짜로 꽂아 둔 상태면(None 이 아님) 아무것도 안 한다
+    — 진짜 pyhwpx 를 불러 가짜를 덮어쓰면 안 된다.
+    """
+    global Hwp, pyhwpx_core
+    if Hwp is not None:
+        return
+    from pyhwpx import Hwp as _Hwp
+    import pyhwpx.core as _core
+    Hwp = _Hwp
+    pyhwpx_core = _core
+
 
 # 활성 스펙(프리셋). main.py가 시작 시 set_active_spec()으로 주입한다.
 S = settings.default_spec()
@@ -348,6 +377,7 @@ def _attach_without_resize():
         com = _running_hwp_com()
         if com is None:
             return None                 # 한글이 안 떠 있음 — 새로 실행해야 한다
+        _ensure_pyhwpx()                # 첫 연결이면 여기서야 pyhwpx 를 불러온다
         h = Hwp.__new__(Hwp)            # __init__ 을 건너뛴다 (Visible 대입 회피)
         h.hwp = com
         h.on_quit = False
@@ -407,6 +437,7 @@ def connect():
         applog.exc("창 배치 저장 실패 — 최대화가 풀릴 수 있음", e)
         saved = []
 
+    _ensure_pyhwpx()                    # 첫 연결이면 여기서야 pyhwpx 를 불러온다
     hwp = Hwp()
     _diag("connect: Hwp() 생성 직후")
 

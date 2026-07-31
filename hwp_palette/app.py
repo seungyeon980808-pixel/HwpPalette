@@ -571,9 +571,22 @@ def fn_reset_format():
         report_error("기본 서식 변환 실패", e)
 
 
+def _render_palette_veiled():
+    """설정 저장 알림 경로 **전용** 재빌드 — 다시 그리는 동안 창을 살짝 가린다.
+
+    설정 창에서 고치면 400ms 뒤 on_saved → render_palette 가 오는데, 판 전체를
+    부수고 다시 그리는 동안 **그리다 만 화면**이 메인 창에 비쳐 눈에 띄게
+    걸렸다 (2026-07-31). 옅은 흐림(dim=0.75)으로 감싸면 번쩍임이 아니라
+    부드러운 깜빡임으로 읽힌다. 시작 시의 render_palette 는 이 경로를 타지
+    않는다 — 그때는 창이 아직 숨겨져 있어 가릴 것이 없다.
+    """
+    ui_fx.veil(root, work=render_palette, dim=0.75, out_ms=90, in_ms=120)
+
+
 def fn_open_palette_settings():
     return _single("settings",
-                   lambda: palette_ui.open_settings(root, on_saved=render_palette))
+                   lambda: palette_ui.open_settings(
+                       root, on_saved=_render_palette_veiled))
 
 
 def fn_pick_photo():
@@ -942,6 +955,10 @@ def _font(size, weight=None):
 
 
 root = tk.Tk()
+# 다 그릴 때까지 창을 숨긴다 (2026-07-31 성능) — 이 아래로 위젯을 수백 개
+# 만들며 중간중간 update_idletasks 를 부르는데, 그때마다 **그리다 만 화면**이
+# 잠깐씩 내비쳤다. 완성된 판을 파일 끝(mainloop 직전)에서 한 번에 보여준다.
+root.withdraw()
 root.title(appinfo.WINDOW_TITLE)
 root.configure(bg=BG)
 root.resizable(False, False)
@@ -1824,6 +1841,19 @@ def _render_block_grid(parent, tab, show_icon=True):
 
 
 def render_palette():
+    """전체 재빌드 — 한 판 동안 라이브러리 색인을 켜서 창고 복사를 아낀다.
+
+    본체는 _render_palette_pass. 색인(_lib_index)은 **반드시** 끄고 나간다 —
+    켜진 채 남으면 이후 탭 전환·검색이 묵은 창고를 보게 된다.
+    """
+    _lib_index_build()
+    try:
+        _render_palette_pass()
+    finally:
+        _lib_index_clear()
+
+
+def _render_palette_pass():
     # 전체 재빌드 (설정 저장·시작 시). 탭 격자 캐시도 여기서 비운다 —
     # 블럭이 바뀌었을 수 있으므로 묵은 격자를 재사용하면 안 된다.
     _pal_state["tab_frames"] = {}
@@ -1992,6 +2022,45 @@ def _char_px(size):
     return theme.fs(size) * 4 / 3
 
 
+# ── 렌더 한 판용 라이브러리 색인 (2026-07-31 성능) ──────
+# _block_label/_block_tooltip 이 블럭마다 library.get_item 을 부르는데, get_item
+# 은 매번 **창고 전체를 deepcopy** 한다 — 블럭당 2~3회 × 블럭 수십 개라
+# 전체 재빌드(render_palette)가 눈에 띄게 느렸다. 재빌드 첫머리에서 한 번만
+# 읽어 색인을 만들고 끝나면 비운다. 색인이 꺼져 있을 때(탭 첫 전환·검색·
+# 툴팁처럼 렌더 밖)는 예전처럼 get_item 으로 가서 최신 창고를 본다.
+_lib_index = {"on": False, "by_id": {}, "by_name": {}}
+
+
+def _lib_index_build():
+    """템플릿·양식을 한 번만 읽어 (분류, id)·(분류, 이름) 색인을 만든다."""
+    _lib_index["by_id"].clear()
+    _lib_index["by_name"].clear()
+    for cat in ("템플릿", "양식"):
+        for it in library.list_items(cat):
+            if it.get("id"):
+                _lib_index["by_id"][(cat, it["id"])] = it
+            # 같은 이름이 둘이면 먼저 것 — get_item 의 '먼저 만난 것' 규칙과 같다
+            if it.get("name") and (cat, it["name"]) not in _lib_index["by_name"]:
+                _lib_index["by_name"][(cat, it["name"])] = it
+    _lib_index["on"] = True
+
+
+def _lib_index_clear():
+    _lib_index["on"] = False
+    _lib_index["by_id"].clear()
+    _lib_index["by_name"].clear()
+
+
+def _lib_item(cat, item_id=None, name=None):
+    """get_item 과 같은 규칙(id 우선, 없으면 이름) — 렌더 중엔 색인에서 찾는다."""
+    if not _lib_index["on"]:
+        return library.get_item(cat, item_id=item_id, name=name)
+    it = _lib_index["by_id"].get((cat, item_id)) if item_id else None
+    if it is None and name:
+        it = _lib_index["by_name"].get((cat, name))
+    return it
+
+
 def _block_label(blk):
     """블럭에 표시할 이름. 템플릿·양식은 라이브러리의 '현재' 이름을 따라간다."""
     # 사용자가 직접 지은 표시 이름이 있으면 그것이 우선 (줄바꿈 포함 가능).
@@ -2008,7 +2077,7 @@ def _block_label(blk):
     if btype in ("template", "form"):
         cat = "양식" if btype == "form" else "템플릿"
         key = "form" if btype == "form" else "template"
-        it = library.get_item(cat, item_id=blk.get("ref"), name=blk.get(key))
+        it = _lib_item(cat, item_id=blk.get("ref"), name=blk.get(key))
         return it["name"] if it else f"{blk.get(key, '?')} (삭제됨)"
     return blk.get("name", "")
 
@@ -2037,8 +2106,8 @@ def _block_tooltip(blk):
         return f"서식 조합 · {name}\n" + (" + ".join(parts) or "(비어 있음)")
     if btype in ("template", "form"):
         cat = "양식" if btype == "form" else "템플릿"
-        it = library.get_item(cat, item_id=blk.get("ref"),
-                              name=blk.get("form" if btype == "form" else "template"))
+        it = _lib_item(cat, item_id=blk.get("ref"),
+                       name=blk.get("form" if btype == "form" else "template"))
         if not it:
             return f"{cat} · {name}\n라이브러리에서 삭제된 항목입니다"
         n = int(it.get("slot_count") or 0)
@@ -2060,6 +2129,11 @@ def _add_tooltip(widget, text, force=False):
     블럭 이름은 칸 폭 때문에 잘릴 수밖에 없는데, 잘린 채로는 비슷한 이름을
     구별할 수 없었다. 지금은 이름이 안 잘려도 '내용'을 보여주므로 늘 붙인다.
     force: 문구만 갈아끼우고 싶을 때(연결 표시등처럼 상태가 바뀌는 위젯).
+
+    text 는 문자열 또는 **인자 없는 함수** (2026-07-31 성능) — 함수면 말풍선이
+    실제로 뜨는 순간(450ms 머문 뒤)에야 평가한다. 블럭 툴팁은 라이브러리
+    조회가 든 문구라, 렌더 때 수십 개를 미리 만들면 그 비용이 전부 재빌드에
+    얹혔다. 마우스가 안 가는 블럭의 문구는 영영 만들 일이 없다.
     """
     tip = {"win": None, "text": text, "job": None}
     if force:
@@ -2088,7 +2162,9 @@ def _add_tooltip(widget, text, force=False):
                         f"+{widget.winfo_rooty() + widget.winfo_height() + 4}")
         # 메인 창이 topmost라 말풍선도 올려주지 않으면 뒤로 숨는다
         win.attributes("-topmost", True)
-        tk.Label(win, text=tip["text"], font=_font(8), fg=TEXT, bg="#ffffe0",
+        # 함수로 받은 문구는 지금에서야 만든다 (위 docstring — 뜰 때만 비용)
+        body = tip["text"]() if callable(tip["text"]) else tip["text"]
+        tk.Label(win, text=body, font=_font(8), fg=TEXT, bg="#ffffe0",
                  bd=1, relief="solid", padx=6, pady=3,
                  justify="left").pack()
         tip["win"] = win
@@ -2236,8 +2312,9 @@ def _make_block_button(parent, blk, span=1, show_icon=True, cell_px=None):
     # 짚으려면 그 위젯을 찾을 수 있어야 한다 (2026-07-26).
     if blk.get("type") == "builtin" and blk.get("key"):
         _builtin_btns[blk["key"]] = btn
-    # 이름이 안 잘려도 '무엇이 들었는지'를 보여주므로 늘 붙인다 (UI 제안 6)
-    _add_tooltip(btn, _block_tooltip(blk))
+    # 이름이 안 잘려도 '무엇이 들었는지'를 보여주므로 늘 붙인다 (UI 제안 6).
+    # 문구는 함수로 넘긴다 — 실제로 마우스가 머무는 순간에만 만든다 (2026-07-31)
+    _add_tooltip(btn, lambda b=blk: _block_tooltip(b))
     return btn
 
 
@@ -2463,13 +2540,15 @@ def _pump_hotkey():
             fn_convert()
     except Exception as e:
         applog.exc("전역 단축키 처리 실패", e)
-    root.after(80, _pump_hotkey)
+    # 120ms — 단축키를 누르고 0.1초쯤의 지연은 사람이 못 느끼는데,
+    # 80ms 에서 늦추면 영원히 도는 이 확인의 깨어남이 1/3 줄어든다 (2026-07-31).
+    root.after(120, _pump_hotkey)
 
 
 def _start_global_hotkey():
     ok, err = _convert_hotkey.start()
     if ok:
-        root.after(80, _pump_hotkey)
+        root.after(120, _pump_hotkey)
     else:
         # 조용히 실패하면 "왜 안 되지"만 남는다 — 반드시 알린다
         notify("warn", f"전역 단축키를 못 켰습니다 ({CONVERT_HOTKEY}) — 눌러서 보기",
@@ -2774,7 +2853,10 @@ if _saved_pos and _pos_on_screen(*_saved_pos):
     root.geometry(f"+{_saved_pos[0]}+{_saved_pos[1]}")
 else:
     # 처음 실행 — 주 모니터 오른쪽 위 (한글 창을 가리지 않는 자리)
-    root.geometry(f"+{root.winfo_screenwidth() - root.winfo_width() - 20}+80")
+    # winfo_width 가 아니라 winfo_reqwidth (2026-07-31): 창을 withdraw 로
+    # 숨겨 두는 동안은 winfo_width 가 1을 돌려줘 창이 화면 오른쪽 밖에 뜬다.
+    # reqwidth(내용이 요구하는 폭)는 숨긴 창에서도 정확하다.
+    root.geometry(f"+{root.winfo_screenwidth() - root.winfo_reqwidth() - 20}+80")
 
 
 def _remember_pos(quit_after=True):
@@ -2855,5 +2937,19 @@ try:
     settings.set_save_error_notifier(_on_save_config_error)
 except Exception as e:
     applog.exc("설정 저장 실패 알림 연결 실패", e)
+
+# ── 창 공개 (2026-07-31 성능) ───────────────────────────
+# 맨 위에서 withdraw 해 뒀던 창을 여기서야 보여준다 — 배치·크기·위치가 전부
+# 끝난 뒤라(위 '창 위치 기억'의 update_idletasks 가 _fit_window 까지 처리한다)
+# 그리다 만 화면이 비칠 틈이 없다. 흐림에서 스르륵 나타나게 하되(-alpha),
+# 지원 안 되는 환경이면 그냥 바로 보여준다 — 전환은 장식이다.
+try:
+    root.attributes("-alpha", 0.0)
+    _fade_in_ok = True
+except Exception:
+    _fade_in_ok = False
+root.deiconify()
+if _fade_in_ok:
+    ui_fx.fade(root, to=1.0, ms=140)
 
 root.mainloop()
