@@ -30,7 +30,8 @@ _C = theme.colors()
 
 class Popover(tk.Toplevel):
 
-    def __init__(self, parent, anchor, on_close=None):
+    def __init__(self, parent, anchor=None, on_close=None):
+        # anchor 는 show() 에만 필요하다 — show_at(커서 자리)로 열 때는 없어도 된다
         super().__init__(parent)
         self._parent = parent
         self._anchor = anchor
@@ -115,6 +116,38 @@ class Popover(tk.Toplevel):
         # 떠 있는 창의 메뉴가 다른 화면으로 순간이동한다 (2026-07-26 버그).
         if not screens.fits_below(self, y, h):
             y = self._anchor.winfo_rooty() - h - 2      # 자리가 없으면 위로
+        x, y = screens.clamp_window(self, x, y, w, h)
+        self.geometry(f"{w}x{h}+{x}+{y}")
+        self.deiconify()
+        self.lift()
+        self.bind("<ButtonPress-1>", self._maybe_close_outside)
+        self.bind("<Escape>", lambda e: self.close())
+        try:
+            self.focus_set()
+        except Exception:
+            pass
+        self._grab()
+        return self
+
+    def show_at(self, x, y, min_width=None):
+        r"""**커서 자리**에 펼친다 — 우클릭(맥락) 메뉴 전용 (2026-07-31).
+
+        왜 앵커 위젯이 아니라 커서인가 (사용자 지적: "물감의 오른쪽 버튼을
+        눌렀을 때 나오는 세부 조정탭이 엉뚱한 곳에 나옵니다"):
+            show() 는 앵커 위젯의 winfo_rootx/rooty 로 자리를 잡는다. 그런데
+            우클릭 메뉴의 앵커는 격자 안 타일이라, 판이 다시 그려지는 중이거나
+            (선택 표시·접기·스크롤) 아직 화면에 실리기 전이면 그 좌표가
+            창 밖의 엉뚱한 값으로 나온다. 맥락 메뉴는 **누른 자리**에 뜨는 것이
+            운영체제 관례이기도 하므로, 위젯 기하에 아예 기대지 않는다.
+
+        아래로 자리가 없으면 커서 위로 펼친다. 화면 밖은 늘 안으로 민다.
+        """
+        self.update_idletasks()
+        w = max(self.winfo_reqwidth(), min_width or 0)
+        h = self.winfo_reqheight()
+        x, y = int(x), int(y)
+        if not screens.fits_below(self, y, h):
+            y = y - h                       # 아래에 자리가 없으면 커서 위로
         x, y = screens.clamp_window(self, x, y, w, h)
         self.geometry(f"{w}x{h}+{x}+{y}")
         self.deiconify()

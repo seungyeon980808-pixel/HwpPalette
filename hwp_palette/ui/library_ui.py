@@ -162,50 +162,10 @@ def _ensure_hwp(parent):
         return False
 
 
-class StyleFieldDialog(tk.Toplevel):
-    """서식 캡처 시 '체크한 항목만' 담기 위한 체크리스트."""
-
-    def __init__(self, master):
-        super().__init__(master)
-        self.result = None
-        self.title("캡처할 항목 선택")
-        self.configure(bg=BG)
-        self.resizable(False, False)
-        self.attributes("-topmost", True)
-
-        tk.Label(self, text="선택 영역에서 어떤 항목을 저장할까요?",
-                 font=(FONT, theme.fs(FS["head"]), "bold"), bg=BG, fg=TEXT).pack(
-                 anchor="w", padx=16, pady=(14, 2))
-        tk.Label(self, text="체크한 항목만 저장돼, 나중에 그 항목만 다른 글자에 입혀집니다.",
-                 font=(FONT, theme.fs(FS["sub"])), bg=BG, fg=MUTED).pack(anchor="w", padx=16, pady=(0, 10))
-
-        self.vars = {}
-        body = tk.Frame(self, bg=BG, padx=16)
-        body.pack(fill="x")
-        for label in engine_library.CHARSHAPE_FIELD_LABELS:
-            v = tk.BooleanVar(value=False)
-            self.vars[label] = v
-            tk.Checkbutton(body, text=label, variable=v, font=(FONT, theme.fs(FS["head"])),
-                           bg=BG, fg=TEXT, activebackground=BG,
-                           selectcolor=CARD, cursor="hand2").pack(anchor="w", pady=2)
-
-        foot = tk.Frame(self, bg=BG, padx=16, pady=14)
-        foot.pack(fill="x")
-        _dialog_btn(foot, "다음", self._ok, primary=True).pack(side="right")
-        _dialog_btn(foot, "취소", self.destroy).pack(side="right", padx=(0, 6))
-
-        self.update_idletasks()
-        self.geometry(f"+{master.winfo_rootx()+40}+{master.winfo_rooty()+40}")
-        self.grab_set()
-        ui_fx.attach_all(self)   # 창 안 모든 버튼에 호버 보간
-
-    def _ok(self):
-        checked = [k for k, v in self.vars.items() if v.get()]
-        if not checked:
-            messagebox.showwarning("선택 없음", "하나 이상 체크해주세요.", parent=self)
-            return
-        self.result = checked
-        self.destroy()
+# StyleFieldDialog('캡처할 항목 선택') 은 없앴다 (2026-07-31).
+# 서식 만들기를 팔레트의 '서식 조합' 창 하나로 합치면서(create_style_dialog)
+# 한글에서 뽑아 오는 일은 그 창 안의 [한글에서 가져오기] 가 맡는다 —
+# 캡처할 항목을 미리 고르게 하던 이 앞단계는 그래서 사라졌다.
 
 
 class SubcatPicker(ttk.Combobox):
@@ -610,6 +570,138 @@ def capture_template_dialog(parent, subcat=""):
         library.cleanup_temp_fragments()
     except Exception as e:
         applog.exc("임시 파일 청소 실패 (무해)", e)
+    return item_id
+
+
+def create_style_dialog(parent, subcat=""):
+    r"""서식 물감 만들기 — **팔레트의 '서식 조합' 창을 그대로 쓴다** (2026-07-31).
+
+    사용자 지적: "물감창고에서 서식 기능을 추가할떄랑 팔레트에서 드래그해서
+    서식을 추가할때랑 전혀 다르게 뜨는데 팔레트가 기본이 되어야 합니다."
+    예전 창고 쪽 길은 [캡처할 항목 고르기] → 한글에서 캡처 → 이름 이었고,
+    팔레트 쪽은 조작 목록을 체크하는 창이었다. 같은 것을 만드는 두 창이 서로
+    닮은 데가 없었다. 이제 창은 하나이고, 한글에서 뽑아 오고 싶으면 그 창 안의
+    [한글에서 가져오기] 를 누른다.
+
+    반환: 등록된 항목 id (취소하면 None).
+    """
+    from hwp_palette.ui import palette_ui                # 순환 참조 회피 (지연)
+    dlg = palette_ui.FunctionDialog(parent)
+    parent.wait_window(dlg)
+    if not dlg.result:
+        return None
+    blk = dlg.result
+    meta = MetaDialog(parent, title="서식 등록", name=blk.get("name", ""),
+                      category="서식", subcat=subcat)
+    parent.wait_window(meta)
+    if not meta.result:
+        return None
+    name, label, tags = meta.result
+    return library.add_style(name, label=label, tags=tags,
+                             subcat=meta.subcat, actions=blk.get("actions"))
+
+
+def edit_style_dialog(parent, item, on_saved=None):
+    """서식 물감 고치기 — 만들 때와 같은 창(FunctionDialog)에 지금 값을 얹는다."""
+    from hwp_palette.ui import palette_ui                # 순환 참조 회피 (지연)
+    dlg = palette_ui.FunctionDialog(
+        parent, block={"name": item.get("name", ""),
+                       "actions": library.style_actions(item)})
+    parent.wait_window(dlg)
+    if not dlg.result:
+        return
+    blk = dlg.result
+    library.update_style_actions(item["id"], name=blk.get("name"),
+                                 actions=blk.get("actions"))
+    # 이름을 바꿨는데 라벨이 옛 이름으로 남는 것을 막는다 (템플릿과 같은 규칙)
+    label = library.resolve_edited_label(
+        item["name"], item.get("label", ""), blk.get("name", ""),
+        item.get("label", ""))
+    library.update_item("서식", item["id"], label=label)
+    if on_saved:
+        on_saved()
+
+
+def create_char_dialog(parent, subcat=""):
+    r"""특수기호/문구 물감 만들기 — 팔레트 빈칸이 쓰는 그 창(_CharDialog)으로.
+
+    창고의 ＋ 가 '물감 설정' 창 전체를 띄우던 것을 고쳤다 (사용자 지적
+    2026-07-31: "특수기호를 추가하려고 버튼을 눌렀는데, 지금 다른 것들까지
+    다 뜨는 오류가 있습니다 … 각 에셋별로 한 곳에서 와야합니다"). 특수기호를
+    만들겠다고 눌렀는데 서식·템플릿·양식·사진 탭이 함께 뜨면, 지금 무엇을
+    만드는 중인지가 흐려진다.
+    """
+    from hwp_palette.ui import palette_ui                # 순환 참조 회피 (지연)
+    prefill = ""
+    try:
+        if hwp_engine.is_connected() and hwp_engine.has_selection():
+            prefill = hwp_engine.read_selection_text(retries=4)
+    except Exception as e:
+        applog.exc("특수기호 만들기: 선택 읽기 실패 (빈 칸으로 시작)", e)
+    dlg = palette_ui._CharDialog(parent, prefill=prefill)
+    parent.wait_window(dlg)
+    if not dlg.result:
+        return None
+    content = dlg.result
+    default_name = content.strip().replace("\n", " ")[:AUTO_NAME_MAX]
+    meta = MetaDialog(parent, title="특수기호/문구 등록", name=default_name,
+                      category="문자", subcat=subcat)
+    parent.wait_window(meta)
+    if not meta.result:
+        return None
+    name, label, tags = meta.result
+    return library.add_char(name, content, label=label, tags=tags,
+                            subcat=meta.subcat)
+
+
+def create_form_dialog(parent, subcat=""):
+    """양식 물감 만들기 — hwp 파일을 골라 통째로 등록한다 (창고의 ＋ 전용)."""
+    path = filedialog.askopenfilename(
+        title="양식으로 등록할 한글 파일 선택",
+        filetypes=[("한글 파일", "*.hwp *.hwpx"), ("모든 파일", "*.*")],
+        parent=parent)
+    if not path:
+        return None
+    slot_count, slot_names = None, []
+    # 빈칸 세기는 한글이 **이미 연결돼 있을 때만** — 여기서 connect() 를 부르면
+    # 한글이 꺼져 있을 때 창이 멈춘 것처럼 보인다 (LibraryManager._add_form 과
+    # 같은 이유·같은 실측).
+    if hwp_engine.is_connected():
+        try:
+            slot_names = engine_library.slot_tokens_in_file(path)
+            slot_count = len(slot_names)
+        except Exception as e:
+            applog.exc(f"양식 등록: 빈칸 세기 실패 — {path}", e)
+    if slot_count:
+        note = (f"자리 {slot_count}개 발견 — \\라벨\\ 변환 시 아랫줄 "
+                f"{slot_count}줄이 순서대로 채워집니다. (비울 칸엔 '-')")
+        names = [t for t in slot_names if t]
+        if names:
+            note += ("\n칸 이름: " + " · ".join(dict.fromkeys(names))
+                     + " — 누르면 채우기 표가 뜹니다.")
+    elif slot_count == 0:
+        note = ("빈칸(\\)이 없습니다. 양식에 \\ 를 넣어두면 변환 때 채울 수 있습니다.\n"
+                "지금 등록해도 '새 문서로 열기'는 됩니다.")
+    else:
+        note = ("한글에 연결돼 있지 않아 빈칸(\\) 수를 세지 못했습니다.\n"
+                "등록과 '새 문서로 열기'는 그대로 됩니다. 빈칸 채우기까지 쓰려면\n"
+                "한글을 켠 뒤 다시 등록해주세요.")
+    meta = MetaDialog(parent, title="양식 등록",
+                      name=pathlib.Path(path).stem, extra_note=note,
+                      category="양식", subcat=subcat)
+    parent.wait_window(meta)
+    if not meta.result:
+        return None
+    name, label, tags = meta.result
+    try:
+        item_id = library.add_form_from_file(
+            name, path, label=label, tags=tags, slot_count=slot_count,
+            slot_names=slot_names, subcat=meta.subcat)
+    except Exception as e:
+        applog.exc("양식 등록 실패", e)
+        messagebox.showerror("등록 실패", str(e), parent=parent)
+        return None
+    make_clean_preview("양식", item_id)
     return item_id
 
 
@@ -1280,7 +1372,10 @@ class LibraryManager(tk.Toplevel):
     def _summary(self, cat, item):
         """행 요약 한 줄 — 라벨·분류는 다른 곳에서 보이므로 **내용만** 말한다."""
         if cat == "서식":
-            text = ", ".join(f"{k}:{v}" for k, v in item["fields"].items())
+            text = ", ".join(
+                a["func"] if a.get("value") in (None, "")
+                else f"{a['func']} {a['value']}"
+                for a in library.style_actions(item))
         elif cat == "문자":
             # 제목이 내용이므로, 이름이 내용과 다를 때만 보탠다
             text = item["name"] if item["name"] not in item["text"] else ""
@@ -1368,7 +1463,10 @@ class LibraryManager(tk.Toplevel):
                     messagebox.showwarning("선택 없음",
                         "서식을 입힐 글자를 한글에서 먼저 선택해주세요.", parent=self)
                     return
-                engine_library.apply_charshape_delta(item["fields"])
+                # 팔레트의 서식 조합 블럭과 **같은 실행 경로**를 쓴다 —
+                # 문단 조작(줄간격·여백)까지 그대로 걸린다.
+                engine_library.execute_function_block(
+                    library.style_actions(item))
             elif cat == "문자":
                 hwp_engine.insert_plain(item["text"])
             elif cat == "양식":
@@ -1488,28 +1586,11 @@ class LibraryManager(tk.Toplevel):
 
     # ── 서식 ─────────────────────────────────────────
     def _add_style(self):
-        if not _ensure_hwp(self):
+        # 창고의 ＋ 와 **같은 창**을 쓴다 (2026-07-31) — 만드는 곳이 둘인데
+        # 화면이 다르면 같은 물감인지조차 알 수 없다. 한글에서 뽑아 오고 싶으면
+        # 그 창 안의 [한글에서 가져오기] 를 누른다.
+        if create_style_dialog(self, subcat=self.default_subcat) is None:
             return
-        if not hwp_engine.has_selection():
-            messagebox.showwarning("선택 없음",
-                "한글에서 저장할 서식이 적용된 글자를 먼저 선택해주세요.", parent=self)
-            return
-        dlg = StyleFieldDialog(self)
-        self.wait_window(dlg)
-        if not dlg.result:
-            return
-        delta = engine_library.capture_charshape(dlg.result)
-        if not delta:
-            messagebox.showwarning("캡처 실패", "선택한 항목을 읽지 못했습니다.", parent=self)
-            return
-        meta = MetaDialog(self, title="서식 등록", category="서식",
-                          subcat=self.default_subcat)
-        self.wait_window(meta)
-        if not meta.result:
-            return
-        name, label, tags = meta.result
-        library.add_style(name, delta, label=label, tags=tags,
-                          subcat=meta.subcat)
         self._refresh("서식")
         self._notify()
 
@@ -1518,23 +1599,12 @@ class LibraryManager(tk.Toplevel):
         return hwp_engine.read_selection_text()
 
     def _add_char(self):
-        if not _ensure_hwp(self):
+        # 창고의 ＋ 와 **같은 창**을 쓴다 (2026-07-31) — 예전에는 이쪽이 빈
+        # 글상자 하나였고 창고 쪽은 내장 기호 격자가 붙은 창이라, 같은 물감을
+        # 만드는데 화면이 딴판이었다. 한글 연결도 요구하지 않는다: 내장 기호를
+        # 고르는 데는 한글이 필요 없다.
+        if create_char_dialog(self, subcat=self.default_subcat) is None:
             return
-        prefill = self._read_selected_text() if hwp_engine.has_selection() else ""
-        dlg = TextInputDialog(self, prefill)
-        self.wait_window(dlg)
-        if dlg.result is None or not dlg.result.strip():
-            return
-        content = dlg.result
-        default_name = content.strip().replace("\n", " ")[:AUTO_NAME_MAX]
-        meta = MetaDialog(self, title="문자/문구 등록", name=default_name,
-                          category="문자", subcat=self.default_subcat)
-        self.wait_window(meta)
-        if not meta.result:
-            return
-        name, label, tags = meta.result
-        library.add_char(name, content, label=label, tags=tags,
-                         subcat=meta.subcat)
         self._refresh("문자")
         self._notify()
 
@@ -1548,61 +1618,10 @@ class LibraryManager(tk.Toplevel):
 
     # ── 양식 ─────────────────────────────────────────
     def _add_form(self):
-        """hwp 파일을 통째로 양식으로 등록 (한글을 안 열어도 됨)."""
-        path = filedialog.askopenfilename(
-            title="양식으로 등록할 한글 파일 선택",
-            filetypes=[("한글 파일", "*.hwp *.hwpx"), ("모든 파일", "*.*")],
-            parent=self)
-        if not path:
+        # 창고의 ＋ 와 같은 창을 쓴다 (2026-07-31) — 같은 물감을 만드는
+        # 길이 둘인데 화면과 안내 문구가 따로 놀지 않게.
+        if create_form_dialog(self, subcat=self.default_subcat) is None:
             return
-        # 빈칸(\) 개수 세기 — 한글이 **이미 연결돼 있을 때만** 시도한다.
-        #
-        # 여기서 connect() 를 부르면 안 된다 (실측 2026-07-24): 한글이 꺼져 있으면
-        # 실행·연결을 기다리는 동안 Tkinter 단일 스레드가 통째로 묶여 **창이 멈춘
-        # 것처럼** 보인다. "양식 추가를 눌러도 무반응"의 원인이 이것이었다.
-        # 빈칸 개수는 안내용일 뿐 등록에 필수가 아니므로, 못 세면 그냥 넘어간다.
-        # (예전엔 except: pass 라 실패해도 아무 단서가 안 남았다 → 반드시 기록한다)
-        slot_count = None               # None = 못 셈, 0 = 세어 봤더니 없음
-        slot_names = []
-        if hwp_engine.is_connected():
-            try:
-                tokens = engine_library.slot_tokens_in_file(path)
-                slot_names = tokens
-                slot_count = len(tokens)
-            except Exception as e:
-                applog.exc(f"양식 등록: 빈칸 세기 실패 — {path}", e)
-        if slot_count:
-            note = (f"자리 {slot_count}개 발견 — \\라벨\\ 변환 시 아랫줄 "
-                    f"{slot_count}줄이 순서대로 채워집니다. (비울 칸엔 '-')")
-            names = [t for t in slot_names if t]
-            if names:
-                note += ("\n칸 이름: " + " · ".join(dict.fromkeys(names))
-                         + " — 누르면 채우기 표가 뜹니다.")
-        elif slot_count == 0:
-            note = ("빈칸(\\)이 없습니다. 양식에 \\ 를 넣어두면 변환 때 채울 수 있습니다.\n"
-                    "지금 등록해도 '새 문서로 열기'는 됩니다.")
-        else:
-            note = ("한글에 연결돼 있지 않아 빈칸(\\) 수를 세지 못했습니다.\n"
-                    "등록과 '새 문서로 열기'는 그대로 됩니다. 빈칸 채우기까지 쓰려면\n"
-                    "한글을 켠 뒤 다시 등록해주세요.")
-        default_name = pathlib.Path(path).stem
-        meta = MetaDialog(self, title="양식 등록", name=default_name,
-                          extra_note=note, category="양식",
-                          subcat=self.default_subcat)
-        self.wait_window(meta)
-        if not meta.result:
-            return
-        name, label, tags = meta.result
-        try:
-            item_id = library.add_form_from_file(name, path, label=label,
-                                                 tags=tags,
-                                                 slot_count=slot_count,
-                                                 slot_names=slot_names,
-                                                 subcat=meta.subcat)
-        except Exception as e:
-            messagebox.showerror("등록 실패", str(e), parent=self)
-            return
-        make_clean_preview("양식", item_id)
         self._refresh("양식")
         self._notify()
 
