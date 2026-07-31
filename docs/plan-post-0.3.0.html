@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HwpPalette 수정 기획서 — v0.3.0 이후 (2026-07-31 확정)</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;padding:0;background:#f6f8fa;color:#0d1117;
+    font-family:"IBM Plex Sans KR","Pretendard","맑은 고딕",sans-serif;line-height:1.75}
+  .wrap{max-width:880px;margin:0 auto;padding:36px 22px 90px}
+
+  h1{font-size:23px;margin:0 0 4px;letter-spacing:-.3px}
+  .meta{font-size:12.5px;color:#57606a;margin-bottom:6px}
+  .meta code{background:#fff;border:1px solid #d0d7de;border-radius:4px;padding:1px 6px;font-size:11.5px;
+    font-family:"IBM Plex Mono",Consolas,monospace}
+  .stamp{display:inline-block;background:#0969da;color:#fff;font-size:12px;font-weight:700;
+    border-radius:4px;padding:3px 10px;letter-spacing:.5px;margin:8px 0 0}
+
+  h2{font-size:17px;margin:44px 0 4px;padding-bottom:8px;border-bottom:2px solid #0d1117;letter-spacing:-.2px}
+  h2 small{font-weight:400;font-size:12px;color:#57606a;margin-left:8px}
+  h3{font-size:14px;margin:24px 0 8px}
+  p{margin:8px 0;font-size:13.5px}
+  .lead{color:#57606a;font-size:13px;margin:2px 0 14px}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;background:#fff;margin:10px 0}
+  th,td{border:1px solid #d0d7de;padding:8px 11px;text-align:left;vertical-align:top}
+  th{background:#eef1f4;font-weight:600;white-space:nowrap}
+  td b{color:#0d1117}
+  .num{white-space:nowrap;color:#57606a;font-size:12px}
+
+  .card{background:#fff;border:1px solid #d0d7de;border-radius:8px;padding:16px 18px;margin:12px 0}
+  .card h3{margin-top:0}
+  .card ul{margin:6px 0 0;padding-left:20px}
+  .card li{margin:5px 0;font-size:13.5px}
+
+  .ok{color:#0a6b2e;font-weight:700}
+  .ref{font-size:11.5px;color:#8b939c}
+  kbd{background:#fff;border:1px solid #b6bcc4;border-bottom-width:2px;border-radius:4px;
+    padding:1px 6px;font-size:12px;font-family:"IBM Plex Mono",Consolas,monospace}
+  code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px;
+    font-family:"IBM Plex Mono",Consolas,monospace}
+
+  .phase{display:flex;gap:14px;background:#fff;border:1px solid #d0d7de;border-radius:8px;
+    padding:14px 16px;margin:10px 0;align-items:flex-start}
+  .phase .no{flex:0 0 40px;height:40px;border-radius:8px;background:#0d1117;color:#fff;
+    display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700}
+  .phase.p0 .no{background:#d1242f}
+  .phase.spike .no{background:#bf8700}
+  .phase h3{margin:0 0 3px;font-size:14px}
+  .phase p{margin:2px 0;font-size:13px;color:#3d444d}
+  .phase .why{font-size:12px;color:#8b939c}
+
+  .later{background:#fffaf0;border:1px solid #f0dcb0;border-radius:8px;padding:13px 16px;margin:14px 0;font-size:13px}
+  .later b{color:#8a5300}
+
+  footer{margin-top:56px;border-top:1px solid #d0d7de;padding-top:14px;font-size:11.5px;color:#8b939c;line-height:1.9}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>HwpPalette 수정 기획서 — v0.3.0 이후</h1>
+<div class="meta">
+  기준 판 <code>v0.3.0</code> (릴리즈 게시 완료 · 실행파일 배포 없음) ·
+  브랜치 <code>feedback/post-0.3.0</code> ·
+  근거 <code>docs/FEEDBACK_post_0.3.0.md</code> (피드백 001~018) ·
+  시안 <code>docs/mockups/store-reform-2026-07-31.html</code> (B·F·G·H 절)
+</div>
+<div class="stamp">2026-07-31 사용자 승인 — 확정</div>
+
+
+<h2>1. 무엇을 만드는가 <small>한 문단 요약</small></h2>
+<p>
+  창고를 <b>진짜 분류의 집</b>으로 개편하고(해시태그 폐지), 물감을 만드는 길을 넓힌다 —
+  손으로 만들기 · 한글에서 가져오기 · <b>문서 해체</b>(완성된 시험지에서 부품 꺼내기).
+  꺼낸 부품은 <b>섞어서</b>(꾸러미) 문항 유형이 되고, <b>겹쳐서</b>(폴더) 팔레트 자리를 아낀다.
+  최종 목표: <b>다음 시험지부터는 만드는 게 아니라 조립한다.</b>
+</p>
+
+
+<h2>2. 확정 사항 <small>분야별 전체 목록</small></h2>
+
+<h3>2-1. 단축키와 툴팁 <span class="ref">피드백 001~006</span></h3>
+<table>
+  <tr><th>버튼</th><th>단축키</th><th>비고</th></tr>
+  <tr><td>◫ 한글과 도킹</td><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>도킹 중 문구(“도킹 떼기”)에도 병기</td></tr>
+  <tr><td>⇧ 항상 위</td><td><kbd>PageUp</kbd></td><td>단독키 — 입력칸 포커스 시 비켜줄지 구현 때 확인</td></tr>
+  <tr><td>⌕ 통합 찾기</td><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td><td><b>Ctrl+K 폐기</b> — 바인딩·툴팁·도움말 3곳·온보딩 모두 정리</td></tr>
+  <tr><td>⚙ 설정</td><td><kbd>Ctrl</kbd>+<kbd>+</kbd></td><td>한국어 자판에선 Ctrl+Shift+= — Tk 바인딩 실기 확인</td></tr>
+  <tr><td>↺ 되돌리기</td><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Z</kbd></td><td>Ctrl+Z 는 쓰지 않음(환경설정 창과 충돌·오발 위험 — 003 검토)</td></tr>
+</table>
+<p>툴팁 표기는 <code>한글과 도킹 (Ctrl+D)</code> 형태로 통일. 어떤 단축키도 전역으로 잡지 않는다(예외: 기존 Ctrl+Alt+T 하나).</p>
+
+<h3>2-2. 창고 개편 <span class="ref">피드백 007~010 · 시안 B</span></h3>
+<div class="card">
+  <ul>
+    <li><b>해시태그 폐지.</b> 창고의 분류가 진짜 분류, 팔레트는 배치일 뿐.</li>
+    <li>창고 구조(위에서부터): <b>제목 + 상태 필터</b>(쓰는 중·이 팔레트·고른 것) → <b>분류 다섯 탭</b>(특수기호·템플릿·서식·양식·도구, 개수 표시) → <b>＋ 고정 줄</b> → 목록.</li>
+    <li><b>‘전체’ 분류 없음.</b> ‘서식 조합’ → <b>‘서식’</b> 개명(탭 줄바꿈 제거). ‘도구’는 읽기 전용 분류로 정식 편입.</li>
+    <li>＋ 줄은 켜 놓은 분류를 따라 글씨가 바뀜(“＋ 새 서식 만들기”). <b>팔레트 빈칸에서 만드는 기존 길은 그대로 유지.</b></li>
+    <li>세 판(팔레트 설정·창고·미리보기) <b>폭 고정</b> — 가득 찬 상태 기준, 스크롤바 자리 상시 확보.</li>
+    <li>창고 ↔ 미리보기 사이 <b>간격+세로선</b>으로 위계 분리. 미리보기는 좁게, 펼치기/접기 없음.</li>
+    <li>팔레트에 못 놓는 물감은 분류가 아니라 <b>물감 단위 표시</b>로.</li>
+  </ul>
+</div>
+
+<h3>2-3. 만들기 창 <span class="ref">피드백 012·013 · 시안 D</span></h3>
+<div class="card">
+  <ul>
+    <li>서식 만들기 창의 수치 칸에 <b>기본값을 미리 채움</b>(체크는 꺼진 채) — 빈칸을 없앤다.</li>
+    <li><b>[한글에서 가져오기]</b> 단추 — 커서 자리의 글꼴·크기·자간·줄간격·여백을 읽어 칸을 채우고 체크까지 켬. 한글의 ‘모양 복사(Alt+C)’와 같은 갈래(글자만/문단만/둘 다).</li>
+    <li>이름과 <b>마크다운 명령</b>(라벨)도 이 창에서 함께 지정.</li>
+    <li><b>빈칸 이름표</b> — 빈칸에 이름(번호·발문·보기1·선1…)을 달 수 있게 한다. 섞기·해체·문항 엑셀 전부의 바닥이 되는 결정.</li>
+  </ul>
+</div>
+
+<h3>2-4. 문서 해체 <span class="ref">피드백 015 · 시안 F</span></h3>
+<div class="card">
+  <p style="margin-top:0">완성된 시험지(hwp)를 부품으로 분해해 물감으로 등록 — <b>다음부터는 조립만.</b></p>
+  <ul>
+    <li>입구: 창고 ‘양식’에서 <b>파일이 선택된 상태에서 [문서 해체]</b> — 즉시 시작.</li>
+    <li>항상 <b>복사본</b>을 열어 도킹. 원본은 손대지 않는다.</li>
+    <li><b>도킹된 채 조작</b>: 오른쪽에 ‘골라 담기’ 판이 임시로 나타남. 표 하나 = 조각 하나 · 문단 하나 = 조각 하나로 자동 나열(빈 문단 제외 · 표 안 문단은 표에 포함).</li>
+    <li>행 클릭 → 한글에서 <b>실물 하이라이트</b>. 한글에서 자유 편집(지우기 · [빈칸 넣기]).</li>
+    <li>필요한 행만 체크 → 잇닿은 행은 <b>[묶어 담기]</b> — “낱개+꾸러미로(권장) / 한 덩어리로” 선택.</li>
+    <li>[고른 N개 담기] — 담기 직전 <b>재탐색</b>으로 편집으로 밀린 위치 보정.</li>
+    <li>끝나면 “담은 N개로 새 팔레트 탭을 만들까요?” — 시험지 전용 팔레트 완성.</li>
+  </ul>
+</div>
+
+<h3>2-5. 물감 섞기 <span class="ref">피드백 017 · 시안 H</span></h3>
+<div class="card">
+  <p style="margin-top:0"><b>여러 물감을 섞어 하나의 물감으로.</b> 요소와 조합을 분리해 “조합마다 조각 하나” 폭발을 없앤다.</p>
+  <ul>
+    <li>입구 둘: 창고 다중 선택 → [섞기] / [섞기]부터 눌러 <b>[＋ 물감 추가]</b>로 배열. 창 안에서 순서 끌기 + 이름.</li>
+    <li><b>참조 방식</b> — 꾸러미는 요소를 가리키기만. 요소를 고치면 모든 꾸러미 반영, 요소 삭제는 경고로 막음.</li>
+    <li>1차는 <b>템플릿끼리만</b> 섞는다.</li>
+    <li>카드 표시: <b>칸 오른쪽 세로 MIX 리본</b> — 칸 높이 불변. 새 분류 없이 템플릿 분류 안에.</li>
+    <li>출력: <b>왼쪽 클릭 = 빈칸으로 꽂기.</b> 마크다운은 기존 문법 그대로 — <code>\이름\</code> 단독 줄 + 아래 채울 줄, 값은 앞에서부터 순서대로(물감 1·2·3 빈칸 2개씩 + 여섯 줄 → 1↦①②, 2↦③④, 3↦⑤⑥). 이름표 빈칸은 <code>이름={값}</code>으로 자리지정 가능.</li>
+    <li>빈칸 채우기 창은 기존 ‘양식 채우기’ 재사용.</li>
+  </ul>
+</div>
+
+<h3>2-6. 물감 겹치기 <span class="ref">피드백 018 · 시안 G</span></h3>
+<div class="card">
+  <p style="margin-top:0"><b>팔레트 한 칸에 여러 물감</b>(애플 폴더식) — 섞기와는 완전히 다른 개념: <b>겹치기 = 택일, 섞기 = 합체.</b></p>
+  <ul>
+    <li>환경설정에서 블럭을 블럭 위로 끌면 “물감을 겹치겠습니까?” → 겹친 이름 지정.</li>
+    <li>겹친 칸은 겹친 종이 모양 + 개수 배지. 누르면 <b>팝오버에서 골라 실행</b>(특수기호 팝오버 재사용).</li>
+    <li>이미 겹친 칸에 또 끌면 확인 없이 추가, 밖으로 끌면 낱개 복귀. 겹침은 배치 — 창고에는 낱개 그대로.</li>
+  </ul>
+</div>
+
+<h3>2-7. 문항 엑셀 <span class="ref">피드백 014·017</span></h3>
+<div class="card">
+  <ul>
+    <li><b>단계 화면(마법사)</b>으로 재구성 — 창 밖 단계(엑셀에서 채우기)도 정식 단계로 안내.</li>
+    <li>하드코딩된 유형 지도(<code>excel_form.py:38</code>)를 <b>빈칸 이름표 데이터로 대체</b> — 사용자가 만든 템플릿·꾸러미도 엑셀에 참여.</li>
+    <li>지향(상세는 섞기 구현 뒤 재설계): 행마다 <b>꾸러미 드롭다운</b> + 내용 칸 + <b>옆 셀에 마크다운 자동 조립</b>(수식 내장). ‘한글에 바로 넣기’ 등 자동화 폭은 그때 확정.</li>
+  </ul>
+</div>
+
+<h3>2-8. 자간 자동 보정 <span class="ref">피드백 016</span></h3>
+<div class="card">
+  <ul>
+    <li>목적: 단어가 줄 끝에서 잘리지 않으면서 줄도 헐렁하지 않게 — 줄 단위 자간 미세 조정.</li>
+    <li><b>방식 A 확정</b>: 어절 단위 켜고, 헐렁한 줄만 자간을 좁혀 당김. 위에서 아래로 한 줄씩(재흐름 파급 회피 — 사용자 제시 순서). 스파이크에서 줄 폭 측정이 잘 되면 양방향(방식 B)으로 상향.</li>
+    <li>자간 한도(−8%~+4% 제안) · 한도 내 불가 줄은 그냥 둠 · 되돌리기(↺) 묶음에 편입.</li>
+  </ul>
+</div>
+
+<h3>2-9. 버그 <span class="ref">피드백 011</span></h3>
+<div class="card">
+  <ul>
+    <li><code>palette_ui.py</code> 에 <b>같은 이름 클래스 <code>_ToolPickDialog</code> 가 두 개</b>(2843·3137줄) — 나중 정의가 앞을 덮어써 ‘도구’ 선택 시 창이 깨짐. 이름을 갈라 수정. <b>모든 작업보다 먼저.</b></li>
+  </ul>
+</div>
+
+
+<h2>3. 작업 순서 <small>묶음별 — 앞이 뒤의 바닥이 되도록</small></h2>
+
+<div class="phase p0"><div class="no">0</div><div>
+  <h3>버그 수정 — 011 클래스 이름 충돌</h3>
+  <p>30분급. 창고 개편이 이 창들을 재사용하므로 무조건 먼저.</p>
+</div></div>
+
+<div class="phase"><div class="no">1</div><div>
+  <h3>단축키 묶음 — 2-1 전부</h3>
+  <p>Ctrl+D · PageUp · Ctrl+F(Ctrl+K 폐기) · Ctrl+ + · Ctrl+Alt+Z + 툴팁 병기.</p>
+  <p class="why">서로 얽힌 게 없어 개편 전에 끝내 두면 손이 가볍다.</p>
+</div></div>
+
+<div class="phase"><div class="no">2</div><div>
+  <h3>창고 개편 — 2-2 (시안 B)</h3>
+  <p>분류 5탭 · ＋ 고정 줄 · 상태 필터 이동 · 폭 고정 · 미리보기 분리 · 서식 개명.</p>
+  <p class="why">폭 배분을 한 번에 정해야 레이아웃을 두 번 안 만진다. ※ 기존 ‘서식’ 분류와 ‘서식 조합’이 같은 것인지 코드 확인 선행.</p>
+</div></div>
+
+<div class="phase"><div class="no">3</div><div>
+  <h3>만들기 창 + 빈칸 이름표 — 2-3 (시안 D)</h3>
+  <p>기본값 · [한글에서 가져오기] · 이름/명령 지정 · <b>빈칸 이름표 저장 구조.</b></p>
+  <p class="why">이름표가 4·5·6차의 바닥이다. 스파이크: 커서 자리 서식 읽기(빈 문단·표 안·글상자).</p>
+</div></div>
+
+<div class="phase"><div class="no">4</div><div>
+  <h3>물감 섞기 — 2-5 (시안 H)</h3>
+  <p>참조 구조 · 섞기 창(두 입구) · MIX 리본 · 왼쪽 클릭 꽂기 · <code>\이름\</code> 순차 붓기 · 이름표 자리지정.</p>
+</div></div>
+
+<div class="phase"><div class="no">5</div><div>
+  <h3>물감 겹치기 — 2-6 (시안 G)</h3>
+  <p>끌어 겹치기 · 팝오버 실행. 독립 기능이라 4차와 순서를 바꿔도 무방.</p>
+</div></div>
+
+<div class="phase"><div class="no">6</div><div>
+  <h3>문서 해체 — 2-4 (시안 F)</h3>
+  <p>골라 담기 판 → 담기(재탐색) → 묶어 담기(꾸러미 연계) → 팔레트 생성.</p>
+  <p class="why">3차의 서식 읽기·4차의 꾸러미를 물려받는다. 스파이크: 문단 순회, 조각 저장, 재탐색.</p>
+</div></div>
+
+<div class="phase"><div class="no">7</div><div>
+  <h3>문항 엑셀 재설계 — 2-7</h3>
+  <p>마법사 + 이름표 기반 열 지도 + 꾸러미 드롭다운. 상세 기획은 4·6차가 끝난 자리에서 확정.</p>
+</div></div>
+
+<div class="phase spike"><div class="no">탐</div><div>
+  <h3>탐색 과제 — 자간 보정 (2-8)</h3>
+  <p>줄 선택·줄 폭 측정 스파이크 → 결과 보고 방식 A 구현 착수. 실패 가능성이 있는 과제라 본 흐름과 분리.</p>
+</div></div>
+
+<h2>3-1. 무인 진행 규약 <small>2026-07-31 승인 — 중간 확인 없이 완주</small></h2>
+<div class="card">
+  <p style="margin-top:0">사용자 확인을 기다리지 않고 끝까지 진행한다. 아래 기본값으로 결정하고, 사후에 일괄 검수한다.</p>
+  <table>
+    <tr><th>잔결정</th><th>기본값</th></tr>
+    <tr><td>도구 분류 화면</td><td>읽기 전용, ＋ 없음</td></tr>
+    <tr><td>PageUp</td><td>입력칸 포커스 시 비켜줌</td></tr>
+    <tr><td>겹친 칸 + Ctrl+1~9</td><td>팝오버 열기</td></tr>
+    <tr><td>겹친 칸 겉면</td><td>그룹 이름만</td></tr>
+    <tr><td>도킹 칩의 겹침</td><td>이번 라운드 미적용</td></tr>
+    <tr><td>섞기 이름 겹침</td><td>나온 순서대로 배분</td></tr>
+    <tr><td>채워서 꽂기 입구</td><td>우클릭 메뉴 (기존 양식 채우기 창 재사용)</td></tr>
+    <tr><td>카드 ‘빈칸 N’</td><td>서식=수치 요약 · 특수기호=문자 미리보기 · 도구=한 줄 설명</td></tr>
+    <tr><td>실측 실패 시</td><td>그 묶음은 조사 보고서만 남기고 다음으로 진행</td></tr>
+    <tr><td>버전</td><td><b>올리지 않는다</b> — 사용자가 결정</td></tr>
+  </table>
+</div>
+
+<div class="later">
+  <b>구현 중에 정하면 되는 잔결정</b> — 도구 분류 화면(읽기 전용, ＋ 없음 · C-5 안 1) ·
+  미리보기 폭 · 카드 ‘빈칸 N’의 분류별 표기 · PageUp 입력칸 회피 ·
+  겹친 칸의 Ctrl+1~9 동작 / 겉면 표시 / 도킹 칩 적용 ·
+  섞기 이름 겹침 규칙(순서 배분 제안) · ‘채워서 꽂기’ 입구.
+  막히면 그 자리에서 물어 정한다.
+</div>
+
+
+<h2>4. 진행 방식</h2>
+<div class="card">
+  <ul>
+    <li>이 브랜치(<code>feedback/post-0.3.0</code>)를 main 에 합친 뒤, <b>묶음마다 새 세션</b>(/clear)에서 이 기획서와 FEEDBACK 문서를 지도 삼아 진행.</li>
+    <li>버그(0차)는 <code>v0.3.1</code> 감. 나머지 묶음은 완료 시점마다 사용자가 버전을 정한다(Claude 임의 범프 금지).</li>
+    <li>실행파일 배포는 큰 묶음이 완성된 판에서 재개.</li>
+  </ul>
+</div>
+
+<footer>
+  HwpPalette 수정 기획서 · 2026-07-31 사용자 승인 · 근거: docs/FEEDBACK_post_0.3.0.md (001~018) ·
+  시안: docs/mockups/store-reform-2026-07-31.html<br>
+  이 문서가 기준이며, 세부 근거·검토 이력은 FEEDBACK 문서를 따른다.
+</footer>
+
+</div>
+</body>
+</html>
