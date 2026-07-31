@@ -97,6 +97,10 @@ SEL_BG, SEL_LINE, SEL_FG = ACCENT_SOFT, "#54aeff", "#0550ae"
 # 바깥의 무채색을 쓴다.
 CHIP_ON_BG, CHIP_ON_LINE, CHIP_ON_FG = "#e6e6ea", "#9a9aa0", "#3c3c40"
 
+# 꾸러미(섞은 물감) 리본 — 상태 색(파랑·초록·코랄) 어느 것과도 안 겹치는
+# 보라 계열이다. 이건 '상태'가 아니라 '무엇인가'를 말하는 표시라서다.
+MIX_BG, MIX_FG = "#f3eefc", "#6639ba"
+
 SHARE_GLYPH = theme.SHARE_GLYPH
 
 # 분류 다섯 — 이 차례가 화면의 탭 차례다. '전체'는 없다(위 머리말 참고).
@@ -430,6 +434,8 @@ class StorePanel(tk.Frame):
         if cat == "서식":
             return self._func_summary(item)
         slots = int(item.get("slot_count") or 0)
+        if item.get("mix"):
+            return f"빈칸 {slots} · {len(item['mix'])}개"
         return f"빈칸 {slots}" if slots else " "
 
     @staticmethod
@@ -463,6 +469,16 @@ class StorePanel(tk.Frame):
                        font=(FONT, theme.fs(FS["caption"])),
                        anchor="center", justify="center")
         sub.pack(fill="x", padx=6, pady=(0, 5))
+        # 꾸러미(섞은 물감)는 오른쪽 끝에 세로 MIX 리본을 단다 (사용자 결정
+        # 2026-07-31: "섞음 배지를 아래에 달아서 칸의 높이가 늘어나지 않게
+        # 하십시오. 옆에 세로로 MIX라고 표현해주어야 합니다"). 아랫줄에 배지를
+        # 더하면 카드가 낱개보다 높아져 목록이 들쭉날쭉해진다.
+        if item.get("mix"):
+            rib = tk.Label(tile, text="\n".join("MIX"), bg=MIX_BG, fg=MIX_FG,
+                           font=(FONT, max(6, theme.fs(FS["caption"]) - 2), "bold"),
+                           padx=1, pady=0)
+            rib.place(relx=1.0, rely=0.5, anchor="e", relheight=0.86)
+            tile._rib = rib
         tile._parts = (nm, sub)
         tile._state = state
         # 누르면 고르고, 그대로 끌면 팔레트 격자로 가져간다 (사용자 결정
@@ -595,6 +611,27 @@ class StorePanel(tk.Frame):
                 pairs.append((cat, it))
         return pairs
 
+    def _mix_selected(self):
+        """Ctrl+클릭으로 담은 템플릿들을 섞는다 — 입구 ①."""
+        pairs = [(c, i) for c, i in self._multi_pairs() if c == "템플릿"]
+        self.open_mix([i["id"] for i in (p[1] for p in pairs)])
+
+    def open_mix(self, member_ids=None, edit_id=None):
+        r"""섞기 창 — 요소를 골라 차례를 정하고 이름을 붙인다.
+
+        입구가 둘이다 (사용자 결정 2026-07-31): 창고에서 Ctrl+클릭으로 고른 뒤
+        [섞기], 또는 그냥 [섞기]를 눌러 빈 창에서 **[＋ 물감 추가]** 로 하나씩
+        골라 배열. 어느 쪽으로 들어와도 창 안에서 추가·빼기·차례 바꾸기가 된다.
+        """
+        from hwp_palette.ui import mix_ui               # 순환 참조 회피
+        mix_ui.open_mix_dialog(self.winfo_toplevel(), member_ids=member_ids,
+                               edit_id=edit_id, on_saved=self._after_mix)
+
+    def _after_mix(self):
+        self.clear_multi()
+        self.filter = "템플릿"
+        self.refresh()
+
     def _share_menu(self):
         r"""↗ — 주고받기. **누르자마자 파일창이 뜨지 않는다** (사용자 결정
         2026-07-28): 내보내기와 불러오기 중 어느 쪽인지 먼저 고르게 한다.
@@ -612,6 +649,13 @@ class StorePanel(tk.Frame):
                         self.winfo_toplevel(), pairs, on_done=self.clear_multi))
         else:
             pop.add("내보낼 물감을 Ctrl+클릭으로 고르세요", lambda: None)
+        pop.separator()
+        # 물감 섞기 (2026-07-31) — 담아 둔 템플릿이 있으면 그것들을 안고
+        # 열리고, 없으면 빈 창에서 [＋ 물감 추가]로 고른다. 입구 둘이 여기서
+        # 하나로 만난다.
+        picked = len([p for p in pairs if p[0] == "템플릿"])
+        pop.add(f"물감 섞기 ({picked}개 담음)" if picked else "물감 섞기",
+                self._mix_selected)
         pop.separator()
         pop.add("불러오기",
                 lambda: library_ui.import_flow(self.winfo_toplevel(),
@@ -732,6 +776,10 @@ class StorePanel(tk.Frame):
         return None
 
     def edit_item(self, cat, item):
+        # 꾸러미는 파일이 아니라 '요소 목록'이라 고치는 창이 다르다
+        if item.get("mix"):
+            self.open_mix(edit_id=item.get("id"))
+            return
         from hwp_palette.ui import library_ui            # 순환 참조 회피 (library_ui → … → store_ui)
         library_ui.edit_item_dialog(self.winfo_toplevel(), cat, item,
                                     on_saved=self.refresh)

@@ -46,8 +46,13 @@ PARAS = [
     "전자기유도현상은 코일을 통과하는 자기력선의 개수가 변할 때 코일에 유도전류가 "
     "흐르는 현상으로, 발전기와 변압기의 작동 원리를 설명하는 데에 핵심적으로 사용된다.",
     "짧은 문단.",
+    # 마지막 문단은 일부러 길게 — 방식 A 예행(M5)에서 여러 줄을 훑어야 한다
     "지구온난화로 인하여 극지방의 빙하가 녹아내리고 해수면이 상승하면서 저지대 도시가 "
-    "침수될 위험이 커지고 있으므로 온실기체 배출량을 줄이려는 국제적인 노력이 필요하다.",
+    "침수될 위험이 커지고 있으므로 온실기체 배출량을 줄이려는 국제적인 노력이 필요하다. "
+    "특히 이산화탄소와 메테인처럼 대기 중에 오래 머무르는 기체는 지표면에서 방출되는 "
+    "적외선을 흡수하였다가 다시 내보내는 성질을 가지고 있어서 대기의 평균 온도를 "
+    "끌어올리는 데에 결정적인 역할을 하며, 이러한 온실효과가 지나치게 강해지면 "
+    "생태계 전반에 걸쳐 되돌리기 어려운 변화가 나타나게 된다.",
 ]
 
 _log_f = None
@@ -115,6 +120,28 @@ def dump_props(obj, title):
     for i in range(0, len(names), 6):
         log("  " + ", ".join(names[i:i + 6]))
     return names
+
+
+def set_para_field(hwp, para, field, value):
+    """한 문단의 문단모양 필드 하나를 바꾸고 **되읽어서** 실제로 먹었는지 확인한다.
+
+    왜 되읽나: Execute 가 True 를 줘도 값이 안 바뀌는 경우가 있다. 지정값만 믿고
+    "어절 단위를 켰다"고 적으면 실측이 아니라 추측이 된다.
+    """
+    ps = hwp.HParameterSet
+    try:
+        hwp.SetPos(0, para, 0)
+        run(hwp, "MoveParaBegin")
+        run(hwp, "MoveSelParaEnd")
+        hwp.HAction.GetDefault("ParagraphShape", ps.HParaShape.HSet)
+        setattr(ps.HParaShape, field, value)
+        hwp.HAction.Execute("ParagraphShape", ps.HParaShape.HSet)
+        run(hwp, "Cancel")
+        hwp.SetPos(0, para, 0)
+        hwp.HAction.GetDefault("ParagraphShape", ps.HParaShape.HSet)
+        return getattr(ps.HParaShape, field)
+    except Exception as e:
+        return f"<실패: {e}>"
 
 
 def probe(obj, names, title):
@@ -273,22 +300,20 @@ def m1_line_select(hwp):
     log(f"  → 첫 문단은 시각적으로 {len(lines)}줄. "
         f"문단 전체가 한 덩어리로 잡히지 않고 줄마다 끊기면 ① 성공.")
 
-    log("\n어절 단위 줄바꿈(BreakNonLatinWord) 값에 따라 줄 끝이 어떻게 달라지나:")
-    ps = hwp.HParameterSet
+    # 어절 단위 줄바꿈은 **여러 줄로 흐르는 긴 문단**에서만 차이가 드러난다.
+    # (2줄짜리 문단으로 재면 우연히 같은 자리에서 끊겨 '차이 없음'으로 보인다 —
+    #  첫 실행에서 실제로 그렇게 잘못 읽을 뻔했다.)
+    log("\n어절 단위 줄바꿈(BreakNonLatinWord)에 따라 줄 끝이 어떻게 달라지나 "
+        "— 긴 문단4 로 잰다:")
     for v in (0, 1):
-        try:
-            hwp.SetPos(0, 0, 0)
-            run(hwp, "MoveParaBegin")
-            run(hwp, "MoveSelParaEnd")
-            hwp.HAction.GetDefault("ParagraphShape", ps.HParaShape.HSet)
-            ps.HParaShape.BreakNonLatinWord = v
-            hwp.HAction.Execute("ParagraphShape", ps.HParaShape.HSet)
-            run(hwp, "Cancel")
-            ls = scan_lines(hwp, 0)
-            log(f"  BreakNonLatinWord={v}: 줄수={len(ls)} "
-                f"끝칸={[c for *_, c in ls]} 첫줄끝='{ls[0][2][-8:]}'")
-        except Exception as e:
-            log(f"  BreakNonLatinWord={v} 실패: {e}")
+        got = set_para_field(hwp, 4, "BreakNonLatinWord", v)
+        ls = scan_lines(hwp, 4)
+        log(f"  BreakNonLatinWord 지정={v} 되읽음={got}: 줄수={len(ls)}")
+        for i, (b, e, t, c) in enumerate(ls):
+            cut = "" if (t.endswith(" ") or i == len(ls) - 1) else "  ← 단어 중간에서 잘림"
+            log(f"    줄{i} 끝칸={c} 끝부분='…{t[-10:]}'{cut}")
+        log(f"    왼쪽 정렬로 잰 줄별 남는 칸 = {slack_by_left_align(hwp, 4)}")
+    set_para_field(hwp, 4, "BreakNonLatinWord", 1)      # 원래대로(한글 기본값)
     return scan_lines(hwp, 0)
 
 
@@ -355,6 +380,16 @@ def m2_slack(hwp, lines):
         ls = scan_lines(hwp, p, with_text=False)
         log(f"   문단{p} 줄별 남는 칸 = {[maxcol - c for *_, c in ls[:-1]]}")
     log("  → 한글은 한 글자=2칸이므로 '남는 칸 ≥ 2' 면 최소 한 글자는 더 들어갈 폭.")
+
+    log("\n(라) 양쪽 정렬이 남는 폭을 감추고 있는가 — 정렬을 바꿔 가며 끝칸을 본다")
+    log("  (양쪽 정렬이면 한글이 어절 간격을 늘려 줄 끝을 여백에 딱 맞춘다.")
+    log("   그러면 '끝칸'은 늘 꽉 찬 값이라 남는 폭을 못 잰다. 왼쪽 정렬로 바꾸면")
+    log("   늘리기가 사라져 진짜 남는 폭이 드러난다 — 그게 사실인지 확인한다.)")
+    for a in (0, 1, 2, 3):
+        got = set_para_field(hwp, 4, "AlignType", a)
+        ls = scan_lines(hwp, 4, with_text=False)
+        log(f"  AlignType 지정={a} 되읽음={got}: 끝칸={[c for *_, c in ls]}")
+    set_para_field(hwp, 4, "AlignType", 0)              # 원래대로(양쪽 정렬)
 
     log("\n(다) 되돌리기 방식이 실용적인가 — 자간을 좁혀 보고 줄이 바뀌는지 본다")
     t0 = time.time()
@@ -467,34 +502,71 @@ def m4_reflow(hwp):
     log("─" * 70)
 
     def snapshot():
+        """문단마다 (문서상 줄번호, 줄수, 줄 경계) — 경계까지 봐야 재흐름이 보인다."""
         out = []
         for i in range(len(PARAS)):
             ls = scan_lines(hwp, i, with_text=False)
             hwp.SetPos(0, i, 0)
             ki = key_indicator(hwp)
-            out.append((i, (ki[KI_LINE] if isinstance(ki, tuple) else -1), len(ls)))
+            out.append((i,
+                        ki[KI_LINE] if isinstance(ki, tuple) else -1,
+                        len(ls),
+                        [b[2] for b, *_ in ls]))
         return out
 
     before = snapshot()
-    for i, ki, n in before:
-        log(f"  전 문단{i}: 줄수={n} 문단첫줄의 문서상 줄번호={ki}")
+    for i, ki, n, bs in before:
+        log(f"  전 문단{i}: 문서줄번호={ki} 줄수={n} 줄시작={bs}")
 
-    lines = scan_lines(hwp, 0, with_text=False)
-    apply_spacing(hwp, 0, lines[0][0][2], lines[0][1][2], -8)
+    # 문단1 **전체**에 −8% — 한 줄만 건드리면 그 문단 안에서도 티가 잘 안 난다
+    p1 = scan_lines(hwp, 1, with_text=False)
+    apply_spacing(hwp, 1, p1[0][0][2], p1[-1][1][2], -8)
     after = snapshot()
     log("")
-    for i, ki, n in after:
-        log(f"  후 문단{i}: 줄수={n} 문단첫줄의 문서상 줄번호={ki}")
+    for i, ki, n, bs in after:
+        log(f"  후 문단{i}: 문서줄번호={ki} 줄수={n} 줄시작={bs}")
 
-    changed = [i for (i, k1, n1), (_, k2, n2) in zip(before, after)
-               if (k1, n1) != (k2, n2)]
-    log(f"\n  → 값이 달라진 문단 = {changed}")
-    log("  (문단0 만 달라지면 재흐름은 그 문단에 갇힌다. 뒤 문단의 KeyIndicator "
-        "만 달라지고 줄수는 그대로면 '페이지 위치만 밀린 것'이다.)")
-    run(hwp, "Undo")
+    log("\n  판정:")
+    for (i, k1, n1, b1), (_, k2, n2, b2) in zip(before, after):
+        tag = []
+        if b1 != b2:
+            tag.append("문단 안에서 줄이 다시 흐름")
+        if n1 != n2:
+            tag.append("줄수 변함")
+        if k1 != k2:
+            tag.append("문서상 줄 위치가 밀림")
+        log(f"   문단{i}: {' / '.join(tag) if tag else '변화 없음'}")
+    log("  → 손댄 문단만 '다시 흐름'이고 뒤 문단은 '줄 위치가 밀림'뿐이면, "
+        "재흐름은 문단 경계를 넘지 않는다 = 위→아래 한 번 훑기로 충분하다.")
+
+    apply_spacing(hwp, 1, p1[0][0][2], p1[-1][1][2], 0)
 
 
 # ── M5. 방식 A 를 흉내 내 본다 ───────────────────────────
+def slack_by_left_align(hwp, para, ref_col=None):
+    """양쪽 정렬을 잠깐 왼쪽 정렬로 바꿔 '진짜 남는 칸'을 재고 되돌린다.
+
+    왜 이렇게까지: 양쪽 정렬에서는 한글이 어절 간격을 늘려 줄 끝을 여백에 딱
+    맞추므로 끝칸이 늘 꽉 찬 값이다. 그 상태로는 어느 줄이 헐렁한지 알 수 없다.
+    정렬을 잠깐 풀면 늘리기가 사라져 남는 폭이 숫자로 드러난다.
+    """
+    orig = None
+    try:
+        ps = hwp.HParameterSet
+        hwp.SetPos(0, para, 0)
+        hwp.HAction.GetDefault("ParagraphShape", ps.HParaShape.HSet)
+        orig = ps.HParaShape.AlignType
+        set_para_field(hwp, para, "AlignType", 1)       # 왼쪽 정렬
+        cols = [c for *_, c in scan_lines(hwp, para, with_text=False)]
+        ref = ref_col if ref_col is not None else max(cols)
+        return [ref - c for c in cols]
+    except Exception as e:
+        return f"<실패: {e}>"
+    finally:
+        if orig is not None:
+            set_para_field(hwp, para, "AlignType", orig)
+
+
 def m5_dry_run(hwp):
     """실제 알고리즘의 축소판 — 첫 문단을 위에서 아래로 한 줄씩 좁혀 본다."""
     log("\n" + "─" * 70)
@@ -506,6 +578,8 @@ def m5_dry_run(hwp):
     tries = 0
     para = 4
     before_n = len(scan_lines(hwp, para, with_text=False))
+    before_slack = slack_by_left_align(hwp, para)
+    log(f"  손대기 전 줄별 남는 칸(왼쪽 정렬로 재봄) = {before_slack}")
     line_idx = 0
     while line_idx < 20:
         lines = scan_lines(hwp, para, with_text=False)
@@ -530,10 +604,60 @@ def m5_dry_run(hwp):
             log(f"  줄{line_idx}: 자간 {got[0]}% 로 {got[1]}자 당겨 올림")
         line_idx += 1
     after_n = len(scan_lines(hwp, para, with_text=False))
+    log(f"  손댄 뒤 줄별 남는 칸(왼쪽 정렬로 재봄) = {slack_by_left_align(hwp, para)}")
     log(f"\n  문단{para} 줄수 {before_n} → {after_n}, "
         f"자간 적용 시도 {tries}회, 걸린 시간 {time.time() - t0:.2f}s")
     log(f"  → 문단 하나에 {tries}회면 페이지 한 장(문단 20개 가정)에 "
         f"{tries * 20}회. 되돌리기 묶음·진행 표시가 반드시 필요한 규모인지 판단 근거.")
+
+
+# ── M6. 비용과 예측 가능성 ───────────────────────────────
+def m6_cost_and_formula(hwp):
+    """더듬어 찾기(자간을 −2,−4,−6,−8 로 올려 보기)를 안 해도 되는지 본다.
+
+    자간 p% 를 걸면 글자마다 폭이 p% 씩 줄고, 한글 한 글자는 2칸이므로
+    줄에 n 글자가 있으면 이론상 2*n*p/100 칸이 빈다. 이게 맞으면 필요한 p 를
+    **한 번에 계산**할 수 있어 시도 횟수가 1~2회로 줄어든다.
+    """
+    log("\n" + "─" * 70)
+    log("M6. 비용 / 필요한 자간을 계산으로 맞힐 수 있는가")
+    log("─" * 70)
+
+    para = 1
+    # 되돌려 깨끗한 상태에서 잰다
+    ls = scan_lines(hwp, para, with_text=False)
+    apply_spacing(hwp, para, ls[0][0][2], ls[-1][1][2], 0)
+
+    log("\n[비용] COM 호출 100회씩 걸리는 시간")
+    for label, fn in (
+        ("GetPos", lambda: hwp.GetPos()),
+        ("KeyIndicator", lambda: hwp.KeyIndicator()),
+        ("MoveLineEnd", lambda: run(hwp, "MoveLineEnd")),
+        ("한 줄 훑기(scan_lines 1문단)",
+         lambda: scan_lines(hwp, para, with_text=False)),
+    ):
+        t0 = time.time()
+        for _ in range(100):
+            fn()
+        log(f"  {label:28s} 100회 = {time.time() - t0:.2f}s "
+            f"(1회 {(time.time() - t0) * 10:.1f}ms)")
+
+    log("\n[예측] 자간 p% 를 걸면 첫 줄에 글자가 몇 개나 더 들어오는가")
+    log("  (끝칸으로 재면 안 된다 — 좁히는 순간 줄이 다시 채워져 끝칸은 늘 꽉 찬 값이다.")
+    log("   첫 실행에서 이걸로 헛measure 했다. 재야 할 것은 '줄에 담긴 글자 수'다.)")
+    ls = scan_lines(hwp, para, with_text=False)
+    b = ls[0][0]
+    n0 = ls[0][1][2] - b[2]
+    log(f"  기준: 문단{para} 첫 줄 {n0}자 (자간 0)")
+    # 문단 전체에 걸어야 아래 줄 글자가 올라올 수 있다 — 첫 줄만 좁히면 재료가 없다
+    tail = ls[-1][1][2]
+    for p in (-2, -4, -6, -8, 2, 4):
+        apply_spacing(hwp, para, b[2], tail, p)
+        n = scan_lines(hwp, para, with_text=False)[0][1][2] - b[2]
+        log(f"  자간 {p:+d}% → 첫 줄 {n}자 ({n - n0:+d}자), "
+            f"이론값 {n0 / (1 + p / 100) - n0:+.1f}자")
+        apply_spacing(hwp, para, b[2], tail, 0)
+    log("  → 실측이 이론값에 가까우면 필요한 자간을 계산해 1~2회 만에 맞힐 수 있다.")
 
 
 # ── 실행 ─────────────────────────────────────────────────
@@ -554,6 +678,7 @@ def main():
         m3_spacing_scope(hwp)
         m4_reflow(hwp)
         m5_dry_run(hwp)
+        m6_cost_and_formula(hwp)
     except Exception as e:
         import traceback
         log(f"\n✗ 스파이크 중단: {type(e).__name__}: {e}")

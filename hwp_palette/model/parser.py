@@ -606,7 +606,20 @@ def build_library_plan(text, lookup):
                     else:
                         fills.append(_slot_value(lines[j], lookup, warnings))
                         j += 1
-                ops.append((kind, item, fills))
+                # 꾸러미(섞은 물감)면 **요소마다 하나씩** 펼친다 (2026-07-31).
+                # 사용자 기획: 물감 1·2·3 이 빈칸 2개씩일 때 \숫자\ 아래 여섯
+                # 줄을 쓰면 1↦(1,2) 2↦(3,4) 3↦(5,6) 으로 나뉘어 들어가고,
+                # 셋을 이어 붙인 결과가 나온다. 나누는 규칙은 '앞에서부터
+                # 요소의 빈칸 수만큼' — 낱개 템플릿의 규칙 그대로다.
+                members = item.get('_mix_items')
+                if members:
+                    at = 0
+                    for m in members:
+                        n = int(m.get('slot_count') or 0)
+                        ops.append(('template', m, fills[at:at + n]))
+                        at += n
+                else:
+                    ops.append((kind, item, fills))
                 i = j
                 continue
             # \표3x3\ — 등록 라벨이 아닐 때만 본다(등록한 것이 언제나 우선)
