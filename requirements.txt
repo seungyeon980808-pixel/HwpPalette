@@ -1,3 +1,6 @@
 pyhwpx
 openpyxl
 olefile
+# 양식 파일 끌어다 놓기 전용. 없으면 그 기능만 꺼지고 나머지는 그대로 돈다.
+tkinterdnd2
+tkinterdnd2   # 양식 파일 끌어다 놓기 — 없으면 그 기능만 꺼지고 나머지는 그대로 돈다

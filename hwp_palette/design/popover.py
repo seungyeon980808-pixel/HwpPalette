@@ -53,12 +53,25 @@ class Popover(tk.Toplevel):
         """보통 항목. indent=True 면 체크 항목들과 글머리를 맞춘다."""
         return self._item(text, command, lead="    " if indent else "")
 
+    def add_disabled(self, text):
+        """누를 수 없는 줄 — **왜 못 하는지**를 그 자리에서 말한다.
+
+        항목을 아예 빼지 않는 이유: 없는 것과 지금은 안 되는 것은 다르다.
+        빼 버리면 "그런 기능이 없구나"로 읽혀 다시 찾지 않게 된다.
+        """
+        lab = tk.Label(self._body, text="    " + text,
+                       font=(theme.FONT, theme.fs(9)),
+                       bg=_C["card"], fg=_C["faint"], anchor="w",
+                       padx=12, pady=6)
+        lab.pack(fill="x")
+        return self
+
     def add_check(self, text, command, checked=False, more=None):
         """체크 표시가 붙는 항목 (지금 선택된 팔레트 등).
 
         more 를 주면 항목 오른쪽에 ⋯ 단추가 붙는다 — 그 항목에 대한 관리
-        메뉴(이름·순서·삭제 등)를 여는 용도. 항목 본체를 누르면 command,
-        ⋯ 를 누르면 more 가 실행된다 (둘 다 팝오버를 먼저 닫는다).
+        메뉴(이름·순서·삭제 등)를 여는 용도. 항목 본체를 누르면 command 를
+        실행하며 팝오버가 닫히고, **⋯ 는 팝오버를 열어 둔 채** more 를 연다.
         """
         return self._item(text, command, lead="✓  " if checked else "    ",
                           bold=checked, more=more)
@@ -78,7 +91,7 @@ class Popover(tk.Toplevel):
             dots.pack(side="right")
             dots.bind("<Enter>", lambda e: dots.config(fg=_C["accent"]))
             dots.bind("<Leave>", lambda e: dots.config(fg=_C["muted"]))
-            dots.bind("<ButtonRelease-1>", lambda e, c=more: self._run(c))
+            dots.bind("<ButtonRelease-1>", lambda e, c=more: self._run_more(c))
             dots.config(cursor="hand2")
             parts.append(dots)
         lab.pack(side="left", fill="x", expand=True)
@@ -152,6 +165,29 @@ class Popover(tk.Toplevel):
         self.close()
         if command:
             command()
+
+    def _run_more(self, command):
+        r"""⋯ 관리 메뉴 — **팝오버를 열어 둔 채** 연다 (사용자 지적 2026-07-29).
+
+        예전에는 ⋯ 도 _run 을 타서 목록이 먼저 사라졌다. 그런데 관리 메뉴는
+        '이 목록의 이 줄'에 대한 것이라, 목록이 없어지면 무엇을 고치는 중인지
+        가리키는 대상이 화면에서 사라진다 — 이름을 바꾸고 나면 어디에 있었는지
+        다시 찾아야 했다.
+
+        grab 을 잠깐 놓는 이유: 팝오버가 바깥 클릭을 잡으려고 grab 을 쥐고
+        있는데, 그 위에 뜬 tk.Menu 도 자기 grab 이 필요하다. 둘이 겹치면
+        메뉴가 클릭을 못 받는다. 메뉴가 닫힌 뒤 다시 쥔다.
+        """
+        try:
+            self.grab_release()
+        except Exception:
+            pass
+        try:
+            if command:
+                command()
+        finally:
+            if not self._closed and self.winfo_exists():
+                self.after(1, self._grab)
 
     def close(self):
         if self._closed:

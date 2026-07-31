@@ -365,7 +365,6 @@ class SettingsWindow(tk.Toplevel):
         self._lifted = None        # 끌면서 들어 올린 타일의 유령 창
         self._lift_failed = False  # 이번 끌기에서 유령 생성 실패 — 재시도 금지
         self._grab_xy = None
-        self._extra_rows = 0       # ＋줄 추가로 늘린 빈 줄 수
         self._grid_origin = None   # 격자 첫 칸의 실측 위치 (_xy_to_cell)
         self._blocks_now = []      # 지금 그려진 블럭 스냅샷 (드래그 중 참조)
         self._size_tip = None      # 크기 조절 중 커서 옆에 뜨는 안내
@@ -774,6 +773,64 @@ class SettingsWindow(tk.Toplevel):
     # 셋 다 **같은 판**의 내용(_zoom_body)과 버튼 줄(_zoom_foot)만 갈아끼운다.
     # 창을 새로 띄우거나 판을 늘리지 않는 것이 규칙이다 (사용자 결정
     # 2026-07-27 — "최대한 위젯 창을 늘리지 않는 로직").
+
+    # 블럭 종류 → 라이브러리 분류. 팔레트 블럭은 물감을 id(ref)로 가리킨다.
+    _BLOCK_CAT = {"char": "문자", "template": "템플릿",
+                  "form": "양식", "function": "서식"}
+
+    def _preview_tile(self, idx):
+        r"""팔레트에 놓인 블럭을 눌러도 미리보기가 뜬다 (사용자 요청 2026-07-29).
+
+        여태 미리보기는 **창고에 있는 물감**만 보여줬다. 그런데 "이 블럭이 뭐였지"
+        가 궁금한 순간은 대개 창고가 아니라 팔레트를 보고 있을 때다 — 거기서
+        확인하려면 블럭을 지우고 창고에서 다시 찾아야 했다.
+        """
+        if self._edit_ctx is not None:
+            return              # 고치는 중 — 판을 갈아끼우지 않는다
+        try:
+            blk = self._blocks_now[idx]
+        except (IndexError, KeyError, TypeError):
+            return
+        btype = blk.get("type")
+        if btype == "builtin":
+            self._show_builtin_detail(blk)
+            return
+        cat = self._BLOCK_CAT.get(btype)
+        if not cat:
+            return
+        item = library.find_by_id(cat, blk.get("ref"))
+        if item is None:
+            # 물감을 지운 뒤 남은 블럭 — 무엇을 가리켰는지라도 알려 준다
+            self._clear_zoom()
+            self._zoom_title.config(text="물감 미리보기")
+            self.zoom_hint.config(text=blk.get("name") or blk.get("form") or "")
+            tk.Label(self._zoom_body,
+                     text="이 블럭이 가리키던 물감이 라이브러리에 없습니다.\n"
+                          "지워졌거나 다른 이름으로 바뀐 것 같습니다.",
+                     bg=CARD, fg=MUTED, justify="left", anchor="nw",
+                     font=(FONT, theme.fs(FS["sub"]))).pack(
+                fill="x", padx=SP["m"] - 2, pady=SP["s"])
+            return
+        self._show_detail(cat, item)
+
+    def _show_builtin_detail(self, blk):
+        """프로그램 기능 블럭 — 라이브러리에 없으므로 이름·설명만 보여준다."""
+        self._clear_zoom()
+        key = blk.get("key")
+        self._zoom_title.config(text="도구 미리보기")
+        self.zoom_hint.config(text=f"{builtin_actions.name_of(key)} · #도구")
+        tk.Label(self._zoom_body, text=builtin_actions.hint_of(key)
+                 or "이 프로그램의 기능입니다.",
+                 bg=CARD, fg=TEXT, justify="left", anchor="nw",
+                 wraplength=ZOOM_W - 32,
+                 font=(FONT, theme.fs(FS["body"]))).pack(
+            fill="x", padx=SP["m"] - 2, pady=SP["s"])
+        tk.Label(self._zoom_body,
+                 text="프로그램이 가진 기능이라 내용은 고칠 수 없습니다.\n"
+                      "이름·색·크기는 블럭을 두 번 눌러 바꿉니다.",
+                 bg=CARD, fg=MUTED, justify="left", anchor="nw",
+                 font=(FONT, theme.fs(FS["sub"]))).pack(
+            fill="x", padx=SP["m"] - 2, pady=(0, SP["s"]))
 
     def _clear_zoom(self):
         for w in self._zoom_body.winfo_children():
@@ -1189,8 +1246,13 @@ class SettingsWindow(tk.Toplevel):
         tabs = palette.load_tabs()
         if not (0 <= idx < len(tabs)):
             return
+        cols = int(tabs[idx].get("cols", palette.DEFAULT_COLS))
+        rows = int(tabs[idx].get("rows", palette.DEFAULT_ROWS))
         m = tk.Menu(self, tearoff=0)
         m.add_command(label="이름 바꾸기", command=lambda: self._rename_tab(idx))
+        # 격자 크기 — 지금 값을 이름에 적어 둔다. 열어 보지 않아도 알게.
+        m.add_command(label=f"행/열 수정…  ({cols}×{rows})",
+                      command=lambda: self._edit_grid_size(idx))
         m.add_separator()
         m.add_command(label="▲ 위로", command=lambda: self._move_tab(idx, -1),
                       state="normal" if idx > 0 else "disabled")
@@ -1364,8 +1426,11 @@ class SettingsWindow(tk.Toplevel):
 
         # ② 빈칸 — 여기를 끌면 가로·세로 크기를 함께 정할 수 있다
         self._empty_map = {}
-        total_rows = max(palette.grid_extent(blocks), 0) + self._extra_rows
-        total_rows = max(total_rows, 1)     # 블럭이 없어도 놓을 자리는 있어야 한다
+        # 줄 수는 이제 탭에 저장된다 (2026-07-29). 다만 저장값보다 아래까지
+        # 뻗은 블럭이 있으면 — 예전 데이터나 격자를 줄이기 전에 만든 블럭 —
+        # 그 블럭이 화면에서 사라지지 않게 늘려서 그린다.
+        total_rows = max(int(tab.get("rows", palette.DEFAULT_ROWS)),
+                         palette.grid_extent(blocks), 1)
         for rr in range(total_rows):
             for cc in range(cols):
                 if (rr, cc) not in self._used_cells:
@@ -1377,29 +1442,13 @@ class SettingsWindow(tk.Toplevel):
                      fg=MUTED).grid(row=rr + HEADER_ROWS, column=0,
                                     padx=(0, 2))
 
-        # ③ 끝쪽 ＋／－ — **번호가 끝나는 자리**에 작게 늘 둔다 (2026-07-25).
+        # ③ 격자 크기를 바꾸는 자리는 **여기가 아니다** (사용자 결정 2026-07-29).
         #
-        # 숨겼다 보여주는 방식은 '거기 버튼이 있다'는 걸 아무도 모른다는 게
-        # 문제였다. 번호 줄(위·왼쪽)의 연장선에 놓으면 무엇을 늘리는지가
-        # 자리로 드러나므로, 작고 흐리게 둬도 알아볼 수 있다.
-        # 칸 조절은 격자 오른쪽에 **＋ 위, － 아래**로 세로로 쌓는다.
-        # 가로로 늘어놓으면 칸 하나만큼 폭을 더 먹는다 (2026-07-25).
-        colbar = tk.Frame(grid, bg=CARD)        # 칸 번호가 끝나는 오른쪽
-        colbar.grid(row=0, column=cols + HEADER_COLS,
-                    rowspan=2, sticky="n", padx=(4, 0))
-        for txt, cmd, tip in (("＋", self._add_col, "칸(가로) 늘리기"),
-                              ("－", self._remove_col, "칸(가로) 줄이기")):
-            b = _mini_btn(colbar, txt, cmd)
-            b.pack()
-            _tip(b, tip)
-
-        rowbar = tk.Frame(grid, bg=CARD)        # 줄 번호가 끝나는 아래쪽
-        rowbar.grid(row=total_rows + HEADER_ROWS, column=0, pady=(3, 0))
-        for txt, cmd, tip in (("＋", self._add_row, "줄(세로) 늘리기"),
-                              ("－", self._remove_row, "줄(세로) 줄이기")):
-            b = _mini_btn(rowbar, txt, cmd)
-            b.pack(side="left")
-            _tip(b, tip)
+        # 예전에는 ＋／－ 네 개가 격자 가장자리에 붙어 있었고, 잠깐 '행/열 수정'
+        # 버튼을 격자 아래에 뒀었다. 둘 다 판 위에 상시로 놓여 있는데, 격자 크기는
+        # **팔레트마다 한 번 정하고 마는 값**이라 늘 보일 이유가 없다.
+        # 팔레트 드롭다운의 ⋯ (이름 바꾸기·순서·삭제와 같은 무리)로 옮겼다
+        # — 거기가 '이 팔레트 자체를 손보는' 자리다. (_tab_manage_menu)
 
         # 드래그 좌표 계산용 (winfo_containing 없이 수학으로 — 부드러운 이유)
         self._grid_widget = grid
@@ -1419,42 +1468,42 @@ class SettingsWindow(tk.Toplevel):
         size = (avail - CELL_GAP * cols) // max(1, cols)
         return max(CELL_MIN_PX, min(CELL_MAX_PX, size))
 
-    def _add_row(self):
-        self._extra_rows += 1
-        self._render_blocks()
+    def _edit_grid_size(self, idx=None):
+        """격자 크기를 한 번에 정한다 — 가로 8~16 · 세로 4~16.
 
-    def _remove_row(self):
-        if self._extra_rows > 0:
-            self._extra_rows -= 1
-            self._render_blocks()
+        팔레트 드롭다운의 ⋯ 에서 연다. idx 를 받는 이유: 그 메뉴는 **지금 보고
+        있지 않은 팔레트**의 줄에서도 열리기 때문이다.
 
-    def _add_col(self):
-        self._set_cols(self._cur_cols() + 1)
-
-    def _remove_col(self):
-        """칸을 줄인다 — 오른쪽 끝에 블럭이 있으면 막는다(잘려 사라지지 않게).
-
-        최소 8칸(palette.MIN_COLS) 밑으로는 못 줄인다 (사용자 결정 2026-07-25) —
-        메인 창이 어차피 8칸 폭을 확보해서, 그 밑으로 줄여도 좁아지지 않는다.
+        줄이는 쪽만 막는다: 잘리는 자리에 블럭이 있으면 그 블럭이 소리 없이
+        사라지기 때문이다. 늘리는 쪽은 아무것도 잃지 않으므로 묻지 않는다.
         """
-        cols = self._cur_cols()
-        if cols <= palette.MIN_COLS:
-            messagebox.showinfo(
-                "칸을 줄일 수 없음",
-                f"팔레트는 최소 {palette.MIN_COLS}칸입니다.\n"
-                "메인 창이 이 폭을 항상 확보하므로, 더 줄여도 창은 좁아지지 "
-                "않습니다.", parent=self)
+        idx = self.sel_tab if idx is None else idx
+        tabs = palette.load_tabs()
+        if not (0 <= idx < len(tabs)):
             return
-        blocks = palette.load_tabs()[self.sel_tab]["blocks"]
-        edge = [b for b in blocks
-                if int(b.get("col", 0)) + int(b.get("span", 1)) > cols - 1]
-        if edge:
-            messagebox.showinfo(
-                "칸을 줄일 수 없음",
-                "마지막 칸에 블럭이 있어 줄이면 잘립니다.\n"
-                "그 블럭을 먼저 왼쪽으로 옮겨주세요.", parent=self)
-            return
-        self._set_cols(cols - 1)
+        tab = tabs[idx]
+        blocks = tab.get("blocks", [])
+
+        # 하한 = 지금 놓인 블럭이 닿는 끝. 이 밑으로는 못 내려가므로 줄이다가
+        # 블럭이 잘리는 일이 없다 — 경고창 대신 애초에 못 가게 막는다.
+        min_cols = max([palette.MIN_COLS] +
+                       [int(b.get("col", 0)) + int(b.get("span", 1))
+                        for b in blocks])
+        min_rows = max([palette.MIN_ROWS] +
+                       [int(b.get("row", 0)) + int(b.get("rows", 1))
+                        for b in blocks])
+
+        def apply(cols, rows):
+            palette.set_tab_grid(idx, cols, rows)
+            if idx == self.sel_tab:
+                self._render_blocks()   # 지금 보고 있는 팔레트만 다시 그린다
+            self._notify()
+
+        _GridSizeDialog(self, int(tab.get("cols", palette.DEFAULT_COLS)),
+                        int(tab.get("rows", palette.DEFAULT_ROWS)),
+                        min_cols=min(min_cols, palette.MAX_COLS),
+                        min_rows=min(min_rows, palette.MAX_ROWS),
+                        on_change=apply)
 
     def _cur_cols(self):
         return palette.load_tabs()[self.sel_tab].get("cols", palette.DEFAULT_COLS)
@@ -1628,6 +1677,8 @@ class SettingsWindow(tk.Toplevel):
             self._add_function(span, rows)
         elif dlg.result == "form":
             self._add_form(span, rows)
+        elif dlg.result == "mix":
+            self._add_mix(span, rows)
         elif dlg.result == "builtin":
             self._add_builtin(span, rows)
         self._pending_area = None
@@ -1661,12 +1712,13 @@ class SettingsWindow(tk.Toplevel):
                          highlightthickness=2 if selected else 1)
         tile.pack_propagate(False)
         # 글자색은 배경 밝기에 맞춰 정한다 — 어두운 색을 골라도 읽히게 (제안 18)
-        # 글자는 왼쪽에 붙인다 — 메인 창 블럭과 같은 규칙 (RoundButton.align).
+        # 글자는 가운데 — 메인 창 블럭과 같은 규칙 (RoundButton.align).
         # 여기가 그 블럭의 미리보기이므로 자리가 다르면 다른 물건으로 보인다.
+        # (2026-07-29 메인 창을 가운데로 되돌리면서 함께 맞췄다)
         lab = tk.Label(tile, text=self._tile_text(blk, span), bg=bg,
-                       fg=theme.text_on(bg), anchor="w", justify="left",
+                       fg=theme.text_on(bg), anchor="center", justify="center",
                        font=(FONT, theme.fs(10 if blk["type"] == "char" else 8)))
-        lab.pack(expand=True, fill="both", padx=(TILE_TEXT_PAD, 0))
+        lab.pack(expand=True, fill="both", padx=TILE_TEXT_PAD)
         self._tiles[i] = tile
         for w in (tile, lab):
             self._tile_map[str(w)] = i
@@ -1896,6 +1948,7 @@ class SettingsWindow(tk.Toplevel):
     def _on_press(self, idx, event=None):
         self._drag_from = idx
         self._set_selection(idx)
+        self._preview_tile(idx)
         # 끌기 준비 — 실제로 '들어 올리는' 것은 손이 조금 움직인 뒤다.
         # 바로 들면 그냥 클릭한 것도 타일이 튀어 보인다.
         self._lifted = None
@@ -2270,33 +2323,39 @@ class SettingsWindow(tk.Toplevel):
         """
         if not self._need_tab():
             return
-        names = [f"{a['name']} — {a['hint']}"
-                 for a in builtin_actions.BUILTIN_ACTIONS]
-        pick = _ChoiceDialog(self, "도구 선택", names)
+        pick = _BuiltinPickDialog(self)
         self.wait_window(pick)
-        if not pick.result:
+        action = pick.result
+        if not action:
             return
-        idx = names.index(pick.result)
-        action = builtin_actions.BUILTIN_ACTIONS[idx]
         self._place({"type": "builtin", "key": action["key"],
                      "name": action["name"], "span": span, "rows": rows})
 
-    def _add_form(self, span=2, rows=1):
-        """양식 블럭 추가 — 라이브러리에 등록된 양식에서 고른다."""
+    def _add_mix(self, span=2, rows=1):
+        """물감 섞기 블럭 추가 — 이미 만든 섞기에서 고르거나 여기서 새로 만든다."""
         if not self._need_tab():
             return
-        items = library.list_items("양식")
-        if not items:
-            messagebox.showinfo(
-                "양식 없음",
-                "먼저 📚 라이브러리 → 양식 탭에서 hwp 파일을 등록해주세요.\n\n"
-                "양식은 '새 문서로 열기'용입니다 (표지·통신문처럼\n"
-                "용지·여백·머리말까지 그대로 시작할 때).", parent=self)
-            return
-        pick = _ChoiceDialog(self, "양식 선택", [it["name"] for it in items])
+        pick = _MixPickDialog(self)
         self.wait_window(pick)
-        if pick.result:
-            it = next(x for x in items if x["name"] == pick.result)
+        it = pick.result
+        if it:
+            self._place({"type": "mix", "ref": it["id"], "name": it["name"],
+                         "span": span, "rows": rows})
+
+    def _add_form(self, span=2, rows=1):
+        r"""양식 블럭 추가 — 등록된 양식에서 고르거나, **여기서 바로 등록**한다.
+
+        예전에는 등록된 양식이 없으면 "라이브러리 → 양식 탭에서 먼저 등록하세요"
+        라고 돌려보냈다 (사용자 지적 2026-07-29: "안 추가된 양식은 불러오는 것이
+        불가능하다"). 블럭을 놓으려고 자리까지 잡아 둔 사람을 다른 창으로
+        보내면 그 자리가 사라지고, 돌아와서 처음부터 다시 해야 한다.
+        """
+        if not self._need_tab():
+            return
+        pick = _FormPickDialog(self)
+        self.wait_window(pick)
+        it = pick.result
+        if it:
             self._place({"type": "form", "ref": it["id"],
                          "form": it["name"], "span": span, "rows": rows})
 
@@ -2500,6 +2559,600 @@ class _ChoiceDialog(tk.Toplevel):
         self.destroy()
 
 
+class _GridSizeDialog(tk.Toplevel):
+    """격자 크기 — 가로·세로를 각각 얼마로 (사용자 결정 2026-07-29).
+
+    두 가지가 이 창의 성격을 정한다.
+
+    **누르는 즉시 판이 바뀐다.** 격자 크기는 숫자로 상상하는 값이 아니라 눈으로
+    보고 정하는 값이다. [확인]을 눌러야 결과가 보이면 "9가 맞나 10이 맞나"를
+    창을 여닫으며 확인해야 한다. 그래서 ＋ 를 누르는 순간 뒤의 판이 그대로
+    바뀌고, [취소]는 열 때 값으로 되돌린다.
+
+    **줄이다가 블럭이 잘리는 일이 없다.** 지금 놓인 블럭이 닿는 데까지를
+    하한으로 잡아 그 밑으로는 아예 못 내려가게 한다 — 경고창을 띄우고 되돌리는
+    것보다, 애초에 갈 수 없는 편이 조용하다.
+
+    tk.Spinbox 를 안 쓰는 이유: 윈도우 기본 위젯이라 이 프로그램의 나머지와
+    얼굴이 다르다 (사용자 지적 2026-07-29). ＋／－ 를 RoundButton 으로 그린다.
+    """
+
+    def __init__(self, master, cols, rows, min_cols=None, min_rows=None,
+                 on_change=None):
+        super().__init__(master)
+        self.result = None
+        self._on_change = on_change
+        self.lo_c = max(palette.MIN_COLS, int(min_cols or palette.MIN_COLS))
+        self.lo_r = max(palette.MIN_ROWS, int(min_rows or palette.MIN_ROWS))
+        self.cols = max(self.lo_c, min(palette.MAX_COLS, int(cols)))
+        self.rows = max(self.lo_r, min(palette.MAX_ROWS, int(rows)))
+        # 되돌릴 값은 **보정한 뒤**의 것이다. 넘어온 값이 하한보다 작을 수 있는데
+        # (블럭이 저장된 줄 수보다 아래까지 뻗은 옛 데이터), 그걸 그대로 기억했다가
+        # [취소] 때 되돌리면 블럭이 잘리는 크기로 되돌아간다.
+        self._start = (self.cols, self.rows)
+
+        self.title("행/열 수정")
+        self.configure(bg=BG)
+        self.attributes("-topmost", True)
+        self.resizable(False, False)
+
+        tk.Label(self, text="격자 크기", bg=BG, fg=TEXT,
+                 font=(FONT, theme.fs(FS["head"]), "bold")).pack(
+            anchor="w", padx=SP["l"], pady=(SP["m"], 2))
+        tk.Label(self, text="누르면 뒤의 판이 바로 바뀝니다.",
+                 bg=BG, fg=MUTED, font=(FONT, theme.fs(FS["sub"]))).pack(
+            anchor="w", padx=SP["l"], pady=(0, SP["s"]))
+
+        card = tk.Frame(self, bg=CARD, highlightbackground=BORDER,
+                        highlightthickness=1)
+        card.pack(fill="x", padx=SP["l"])
+        self._steppers = {}
+        self._stepper(card, 0, "가로", "cols", palette.MAX_COLS, self.lo_c, "칸")
+        self._stepper(card, 1, "세로", "rows", palette.MAX_ROWS, self.lo_r, "줄")
+
+        foot = tk.Frame(self, bg=BG, padx=SP["l"], pady=SP["m"])
+        foot.pack(fill="x")
+        _dialog_btn(foot, "확인", self._ok, primary=True).pack(side="right")
+        _dialog_btn(foot, "취소", self._cancel).pack(side="right",
+                                                    padx=(0, SP["s"]))
+
+        self.bind("<Return>", lambda e: self._ok())
+        self.bind("<Escape>", lambda e: self._cancel())
+        self.protocol("WM_DELETE_WINDOW", self._cancel)
+        self.update_idletasks()
+        screens.place_beside(self, master, follow=False)
+        self.grab_set()
+        ui_fx.attach_all(self)
+
+    def _stepper(self, parent, r, label, attr, hi, lo, unit):
+        tk.Label(parent, text=label, bg=CARD, fg=TEXT,
+                 font=(FONT, theme.fs(FS["body"]))).grid(
+            row=r, column=0, sticky="w", padx=(SP["m"], SP["m"]),
+            pady=SP["s"])
+        minus = RoundButton(parent, text="－",
+                            command=lambda: self._step(attr, -1),
+                            bg=BG, fg=TEXT, radius=theme.RADIUS["ctl"],
+                            font=(FONT, theme.fs(FS["body"])),
+                            outline=BORDER, zone_bg=CARD)
+        minus.fit(pad_x=9, pad_y=3).grid(row=r, column=1)
+        val = tk.Label(parent, text="", bg=CARD, fg=TEXT, width=4,
+                       font=(FONT, theme.fs(FS["head"]), "bold"))
+        val.grid(row=r, column=2)
+        plus = RoundButton(parent, text="＋",
+                           command=lambda: self._step(attr, +1),
+                           bg=BG, fg=TEXT, radius=theme.RADIUS["ctl"],
+                           font=(FONT, theme.fs(FS["body"])),
+                           outline=BORDER, zone_bg=CARD)
+        plus.fit(pad_x=9, pad_y=3).grid(row=r, column=3)
+        rng = tk.Label(parent, text=f"{lo} ~ {hi}{unit}", bg=CARD, fg=MUTED,
+                       font=(FONT, theme.fs(FS["sub"])))
+        rng.grid(row=r, column=4, sticky="w", padx=(SP["m"], SP["m"]))
+        self._steppers[attr] = (minus, val, plus, lo, hi)
+        self._paint(attr)
+
+    def _paint(self, attr):
+        minus, val, plus, lo, hi = self._steppers[attr]
+        cur = getattr(self, attr)
+        val.config(text=str(cur))
+        # 끝에 닿으면 버튼을 흐리게 — 눌러도 안 되는 이유를 자리로 말한다
+        minus.retint(fg=MUTED if cur <= lo else TEXT)
+        plus.retint(fg=MUTED if cur >= hi else TEXT)
+
+    def _step(self, attr, delta):
+        _m, _v, _p, lo, hi = self._steppers[attr]
+        new = max(lo, min(hi, getattr(self, attr) + delta))
+        if new == getattr(self, attr):
+            return
+        setattr(self, attr, new)
+        self._paint(attr)
+        if self._on_change:
+            self._on_change(self.cols, self.rows)
+
+    def _ok(self):
+        self.result = (self.cols, self.rows)
+        self.destroy()
+
+    def _cancel(self):
+        """열 때 값으로 되돌린다 — 미리 적용해 둔 것을 물린다."""
+        if self._on_change and (self.cols, self.rows) != self._start:
+            self._on_change(*self._start)
+        self.destroy()
+
+
+class _TwoPaneDialog(tk.Toplevel):
+    """왼쪽 분류 · 오른쪽 목록 (사용자 결정 2026-07-29).
+
+    한 줄에 **이름(왼쪽) + 설명(오른쪽)**. 예전의 콤보박스는 이름과 설명을
+    `이름 — 설명` 한 덩어리로 이어 붙여 넣었는데, 목록을 펼치기 전에는 무엇이
+    있는지 보이지도 않고 설명이 길면 창 밖으로 잘렸다.
+
+    골격만 여기 두고, 무엇을 채울지는 물려받는 쪽이 정한다.
+    """
+
+    LIST_W = 460            # 오른쪽 목록 폭 — 설명이 잘리지 않을 만큼
+    CAT_W = 116             # 왼쪽 분류 폭
+
+    def __init__(self, master, title, subtitle):
+        super().__init__(master)
+        self.result = None
+        self.title(title)
+        self.configure(bg=BG)
+        self.attributes("-topmost", True)
+        self.resizable(False, False)
+
+        tk.Label(self, text=title, bg=BG, fg=TEXT,
+                 font=(FONT, theme.fs(FS["head"]), "bold")).pack(
+            anchor="w", padx=SP["l"], pady=(SP["m"], 2))
+        tk.Label(self, text=subtitle, bg=BG, fg=MUTED,
+                 font=(FONT, theme.fs(FS["sub"]))).pack(
+            anchor="w", padx=SP["l"], pady=(0, SP["s"]))
+
+        # 두 칸의 **폭만** 못 박고 높이는 내용이 정하게 한다.
+        #
+        # 처음엔 pack + pack_propagate(False) 로 폭을 고정했는데, 그러면 높이도
+        # 함께 막혀 두 칸이 1px 로 접혔다 — 창은 뜨는데 목록이 통째로 안 보였다
+        # (실측 2026-07-29). grid 의 minsize 는 폭만 보장하므로 이 사고가 없다.
+        # 왼쪽 분류와 오른쪽 목록이 **한 덩어리로 읽혀야** 한다 (사용자 지적
+        # 2026-07-29: "위계가 안 서고 옆 리스트와 연결된 느낌이 없다").
+        #
+        # 방법은 탭과 판을 잇는 고전적인 수법이다:
+        #   · 왼쪽 칸은 한 단 들어간 바탕(BG), 오른쪽 판은 카드(CARD) + 테두리
+        #   · **고른 분류만 판과 같은 CARD 색**이 되어 둘 사이의 경계가 사라진다
+        #     → 고른 갈래가 판 쪽으로 이어져 붙은 것처럼 보인다
+        #   · 그 줄 왼쪽에 강조색 막대를 세워 '지금 여기'를 못 박는다
+        body = tk.Frame(self, bg=BG, padx=SP["l"])
+        body.pack(fill="both", expand=True)
+        body.columnconfigure(0, minsize=self.CAT_W)
+        body.columnconfigure(1, minsize=self.LIST_W, weight=1)
+        body.rowconfigure(0, weight=1)
+        self.cat_box = tk.Frame(body, bg=BG)
+        self.cat_box.grid(row=0, column=0, sticky="nsew")
+        # 판은 카드 + 테두리. 왼쪽 테두리는 없앤다 — 고른 분류와 맞닿는 변이라
+        # 선이 남아 있으면 '이어진' 느낌이 끊긴다.
+        self.list_box = tk.Frame(body, bg=CARD, highlightbackground=BORDER,
+                                 highlightthickness=1, padx=SP["s"],
+                                 pady=SP["s"])
+        self.list_box.grid(row=0, column=1, sticky="nsew")
+
+        self.foot = tk.Frame(self, bg=BG, padx=SP["l"], pady=SP["m"])
+        self.foot.pack(fill="x")
+        _dialog_btn(self.foot, "취소", self.destroy).pack(side="right")
+
+        self._cat_btns = {}
+        self._cur_cat = None
+        self.bind("<Escape>", lambda e: self.destroy())
+
+    def _fill_cats(self, cats):
+        for w in self.cat_box.winfo_children():
+            w.destroy()
+        self._cat_btns = {}
+        for c in cats:
+            # 한 줄 = [강조 막대][이름]. 막대는 고른 줄에서만 색이 든다.
+            row = tk.Frame(self.cat_box, bg=BG, cursor="hand2")
+            row.pack(fill="x")
+            bar = tk.Frame(row, bg=BG, width=3)
+            bar.pack(side="left", fill="y")
+            lab = tk.Label(row, text=c, bg=BG, fg=TEXT, anchor="w",
+                           font=(FONT, theme.fs(FS["body"])), cursor="hand2",
+                           padx=SP["s"], pady=SP["s"])
+            lab.pack(side="left", fill="both", expand=True)
+            for w in (row, lab):
+                w.bind("<Button-1>", lambda e, name=c: self._pick_cat(name))
+            self._cat_btns[c] = (row, bar, lab)
+        if cats:
+            self._pick_cat(cats[0])
+
+    def _pick_cat(self, name):
+        self._cur_cat = name
+        for c, (row, bar, lab) in self._cat_btns.items():
+            on = (c == name)
+            # 고른 줄만 판(CARD)과 같은 색 → 둘 사이 경계가 사라져 이어져 보인다
+            row.config(bg=CARD if on else BG)
+            bar.config(bg=ACCENT if on else BG)
+            lab.config(bg=CARD if on else BG,
+                       fg=ACCENT if on else TEXT,
+                       font=(FONT, theme.fs(FS["body"]),
+                             "bold" if on else "normal"))
+        self._fill_list(name)
+
+    def _fill_list(self, cat):
+        raise NotImplementedError
+
+    def _row(self, name, desc, on_click, tail=None):
+        """한 줄 — 왼쪽 이름, 오른쪽 설명. 설명은 남는 폭을 다 쓴다."""
+        row = tk.Frame(self.list_box, bg=CARD, highlightbackground=BORDER,
+                       highlightthickness=1, cursor="hand2")
+        row.pack(fill="x", pady=1)
+        nm = tk.Label(row, text=name, bg=CARD, fg=TEXT, anchor="w", width=12,
+                      font=(FONT, theme.fs(FS["body"]), "bold"))
+        nm.pack(side="left", padx=(SP["m"], SP["s"]), pady=SP["s"] - 2)
+        ds = tk.Label(row, text=desc or tail or "", bg=CARD, fg=MUTED,
+                      anchor="w", justify="left",
+                      font=(FONT, theme.fs(FS["sub"])))
+        ds.pack(side="left", fill="x", expand=True, padx=(0, SP["m"]))
+        parts = (row, nm, ds)
+        for w in parts:
+            w.bind("<Button-1>", lambda e: on_click())
+            w.bind("<Enter>", lambda e: [x.config(bg=ACCENT_SOFT) for x in parts])
+            w.bind("<Leave>", lambda e: [x.config(bg=CARD) for x in parts])
+        return row
+
+    def _clear_list(self):
+        for w in self.list_box.winfo_children():
+            w.destroy()
+
+    def _done(self, value):
+        self.result = value
+        self.destroy()
+
+    def _settle(self, master):
+        self.update_idletasks()
+        screens.place_beside(self, master, follow=False)
+        self.grab_set()
+        ui_fx.attach_all(self)
+
+
+class _BuiltinPickDialog(_TwoPaneDialog):
+    """이 프로그램의 기능 고르기 — 분류(왼쪽) · 기능과 설명(오른쪽)."""
+
+    def __init__(self, master):
+        super().__init__(master, "도구 선택",
+                         "이 프로그램이 가진 기능입니다. 분류를 고르면 "
+                         "오른쪽에 목록이 나옵니다.")
+        self._groups = builtin_actions.by_category()
+        self._fill_cats(list(self._groups))
+        self._settle(master)
+
+    def _fill_list(self, cat):
+        self._clear_list()
+        for a in self._groups.get(cat, []):
+            self._row(a["name"], a["hint"], lambda act=a: self._done(act))
+
+
+class _FormPickDialog(_TwoPaneDialog):
+    r"""양식 고르기 — 등록된 것에서 고르거나 **여기서 바로 등록**한다.
+
+    등록 길을 둘 준다 (사용자 요청 2026-07-29):
+      · 창에 hwp 파일을 끌어다 놓기
+      · '파일에서 등록' 버튼
+    끌어 놓기는 tkinterdnd2 가 있을 때만 켠다 — 없어도 버튼 길은 늘 열려 있다.
+    """
+
+    def __init__(self, master):
+        super().__init__(master, "양식 선택",
+                         "hwp 파일 전체를 새 문서로 여는 블럭입니다. "
+                         "창에 파일을 끌어다 놓아도 등록됩니다.")
+        self._items = []
+        _dialog_btn(self.foot, "＋ 파일에서 등록", self._register_pick,
+                    primary=True).pack(side="left")
+        self.drop_hint = tk.Label(
+            self, text="", bg=BG, fg=MUTED,
+            font=(FONT, theme.fs(FS["sub"])))
+        self.drop_hint.pack(anchor="w", padx=SP["l"], pady=(0, SP["s"]))
+        self._enable_drop()
+        self._reload()
+        self._settle(master)
+
+    def _reload(self):
+        self._items = library.list_items("양식")
+        self._fill_cats(["등록된 양식"])
+
+    def _fill_list(self, cat):
+        self._clear_list()
+        if not self._items:
+            tk.Label(self.list_box,
+                     text="등록된 양식이 없습니다.\n"
+                          "아래 [＋ 파일에서 등록] 을 누르거나 hwp 파일을 "
+                          "이 창에 끌어다 놓으세요.",
+                     bg=BG, fg=MUTED, anchor="w", justify="left",
+                     font=(FONT, theme.fs(FS["sub"]))).pack(anchor="w",
+                                                            pady=SP["s"])
+            return
+        for it in self._items:
+            slots = int(it.get("slot_count") or 0)
+            desc = f"빈칸 {slots}개" if slots else "빈칸 없음"
+            self._row(it["name"], desc, lambda item=it: self._done(item))
+
+    # ── 등록 ────────────────────────────────────────────
+    def _register_pick(self):
+        path = filedialog.askopenfilename(
+            parent=self, title="양식으로 등록할 hwp 파일",
+            filetypes=[("한글 파일", "*.hwp *.hwpx"), ("모든 파일", "*.*")])
+        if path:
+            self._register_form(path)
+
+    def _register_form(self, path):
+        r"""파일 하나를 양식으로 등록한다.
+
+        이름이 `_register` 가 아닌 이유: tkinter 의 Misc._register 는 콜백을
+        Tcl 에 등록하는 **내부 메서드**다. 덮어쓰면 창을 만드는 도중 tkinter 가
+        이 함수를 콜백 등록기로 불러 엉뚱한 곳에서 터진다 (실측 2026-07-29).
+
+        빈칸(\) 개수는 한글이 있어야 셀 수 있다. 없으면 0으로 등록하고 그대로
+        알려 준다 — 등록 자체를 막으면 한글을 켜기 전에는 아무것도 못 한다.
+        """
+        name = pathlib.Path(path).stem
+        try:
+            slots = engine_library.count_slots_in_file(path)
+        except Exception as e:
+            applog.exc(f"양식 빈칸 세기 실패 ({name}) — 0으로 등록한다", e)
+            slots = 0
+        try:
+            library.add_form_from_file(name, path, slot_count=slots)
+        except Exception as e:
+            applog.exc(f"양식 등록 실패 ({name})", e)
+            messagebox.showerror("등록하지 못했습니다", str(e), parent=self)
+            return
+        self._reload()
+        if not slots:
+            self.drop_hint.config(
+                text=f"'{name}' 등록됨 — 빈칸 수를 0으로 잡았습니다"
+                     " (한글을 켠 채 다시 등록하면 세어 줍니다)")
+        else:
+            self.drop_hint.config(text=f"'{name}' 등록됨 · 빈칸 {slots}개")
+
+    def _enable_drop(self):
+        r"""끌어다 놓기 — tkinterdnd2 가 있을 때만 켠다.
+
+        보통은 뿌리 창을 `TkinterDnD.Tk()` 로 만들어야 한다고 안내되지만, 그러면
+        app.py 의 창 생성을 통째로 바꾸고 tkinterdnd2 를 **켜는 데 반드시 필요한**
+        의존성으로 만들게 된다. `_require` 는 이미 떠 있는 인터프리터에 tkdnd
+        Tcl 패키지만 얹어 주므로, 없으면 이 창의 끌어놓기만 조용히 꺼진다
+        (실측 2026-07-29: 평범한 tk.Tk 뿌리에서도 등록됐다).
+        """
+        try:
+            from tkinterdnd2 import DND_FILES, TkinterDnD
+            TkinterDnD._require(self)
+            self.drop_target_register(DND_FILES)
+            self.dnd_bind("<<Drop>>", self._on_drop)
+            self.drop_hint.config(text="hwp 파일을 이 창에 끌어다 놓아도 됩니다.")
+        except Exception as e:
+            applog.exc("끌어다 놓기를 켜지 못했다 (버튼 등록은 그대로 된다)", e)
+            self.drop_hint.config(text="[＋ 파일에서 등록] 으로 추가하세요.")
+
+    def _on_drop(self, event):
+        for path in _split_dropped(event.data):
+            if pathlib.Path(path).suffix.lower() in (".hwp", ".hwpx"):
+                self._register_form(path)
+                return
+        self.drop_hint.config(text="hwp · hwpx 파일만 등록할 수 있습니다.")
+
+
+class _MixPickDialog(_TwoPaneDialog):
+    r"""물감 섞기 — 만들어 둔 섞기에서 고르거나, 여기서 새로 만든다.
+
+    만드는 방법은 **담을 물감을 차례로 누르는 것**이 전부다. 순서가 곧 문서에
+    들어갈 순서이고, 빈칸도 그 순서대로 이어진다.
+    """
+
+    def __init__(self, master):
+        super().__init__(master, "물감 섞기",
+                         "여러 물감을 순서대로 묶어 이름 하나로 부릅니다. "
+                         "\\이름\\ 으로도 쓸 수 있습니다.")
+        self._items = []
+        _dialog_btn(self.foot, "＋ 새로 섞기", self._make_new,
+                    primary=True).pack(side="left")
+        self._reload()
+        self._settle(master)
+
+    def _reload(self):
+        self._items = library.list_items("섞기")
+        self._fill_cats(["만들어 둔 섞기"])
+
+    def _fill_list(self, cat):
+        self._clear_list()
+        if not self._items:
+            tk.Label(self.list_box,
+                     text="아직 섞어 둔 물감이 없습니다.\n"
+                          "아래 [＋ 새로 섞기] 를 누르세요.",
+                     bg=CARD, fg=MUTED, anchor="w", justify="left",
+                     font=(FONT, theme.fs(FS["sub"]))).pack(anchor="w",
+                                                            pady=SP["s"])
+            return
+        lookup = library.label_lookup()
+        for it in self._items:
+            parts = it.get("parts") or []
+            slots = library.mix_slot_count(it, lookup)
+            missing = [lab for lab, _c, obj in library.mix_parts(it, lookup)
+                       if obj is None]
+            desc = " + ".join(parts) + f"   (빈칸 {slots})"
+            if missing:
+                desc += f"  ⚠ 없는 물감: {', '.join(missing)}"
+            self._row(it["name"], desc, lambda item=it: self._done(item))
+
+    def _make_new(self):
+        dlg = _MixMakeDialog(self)
+        self.wait_window(dlg)
+        if dlg.result:
+            self._reload()
+            self._done(dlg.result)
+
+
+class _MixMakeDialog(tk.Toplevel):
+    r"""섞기 만들기 — 왼쪽에서 물감을 누르면 오른쪽에 순서대로 쌓인다.
+
+    담는 것을 '고르기(체크)'가 아니라 '쌓기'로 만든 이유: 같은 물감을 두 번
+    담는 일이 실제로 있고(보기 상자를 두 개 쓰는 문항), 무엇보다 **순서가
+    내용의 일부**라 체크박스로는 표현할 수 없다.
+    """
+
+    def __init__(self, master):
+        super().__init__(master)
+        self.result = None
+        self.title("새로 섞기")
+        self.configure(bg=BG)
+        self.attributes("-topmost", True)
+        self.parts = []
+
+        tk.Label(self, text="새로 섞기", bg=BG, fg=TEXT,
+                 font=(FONT, theme.fs(FS["head"]), "bold")).pack(
+            anchor="w", padx=SP["l"], pady=(SP["m"], 2))
+        tk.Label(self, text="왼쪽 물감을 누르면 오른쪽에 차례로 담깁니다. "
+                            "담은 순서가 문서에 들어갈 순서입니다.",
+                 bg=BG, fg=MUTED, font=(FONT, theme.fs(FS["sub"]))).pack(
+            anchor="w", padx=SP["l"], pady=(0, SP["s"]))
+
+        name_row = tk.Frame(self, bg=BG, padx=SP["l"])
+        name_row.pack(fill="x", pady=(0, SP["s"]))
+        tk.Label(name_row, text="이름", bg=BG, fg=TEXT,
+                 font=(FONT, theme.fs(FS["body"]))).pack(side="left")
+        self.name_var = tk.StringVar(value="")
+        # dialogs 모듈은 이 파일에서 messagebox 라는 이름으로 들어와 있다.
+        # field 는 (감싼 Frame, Entry) 를 준다 — 초점 링을 그리려고 한 겹 쌌다.
+        box, self.name_ent = messagebox.field(
+            name_row, textvariable=self.name_var, width=24)
+        box.pack(side="left", padx=(SP["s"], 0))
+
+        body = tk.Frame(self, bg=BG, padx=SP["l"])
+        body.pack(fill="both", expand=True)
+        body.columnconfigure(0, minsize=200)
+        body.columnconfigure(1, minsize=260, weight=1)
+
+        left = tk.Frame(body, bg=CARD, highlightbackground=BORDER,
+                        highlightthickness=1, padx=SP["s"], pady=SP["s"])
+        left.grid(row=0, column=0, sticky="nsew")
+        tk.Label(left, text="담을 수 있는 물감 (템플릿)", bg=CARD, fg=MUTED,
+                 font=(FONT, theme.fs(FS["caption"]))).pack(anchor="w")
+        self.pool = tk.Frame(left, bg=CARD)
+        self.pool.pack(fill="both", expand=True)
+
+        right = tk.Frame(body, bg=CARD, highlightbackground=BORDER,
+                         highlightthickness=1, padx=SP["s"], pady=SP["s"])
+        right.grid(row=0, column=1, sticky="nsew", padx=(SP["m"], 0))
+        self.sum_lbl = tk.Label(right, text="담은 순서", bg=CARD, fg=MUTED,
+                                font=(FONT, theme.fs(FS["caption"])))
+        self.sum_lbl.pack(anchor="w")
+        self.basket = tk.Frame(right, bg=CARD)
+        self.basket.pack(fill="both", expand=True)
+
+        foot = tk.Frame(self, bg=BG, padx=SP["l"], pady=SP["m"])
+        foot.pack(fill="x")
+        _dialog_btn(foot, "만들기", self._ok, primary=True).pack(side="right")
+        _dialog_btn(foot, "취소", self.destroy).pack(side="right",
+                                                    padx=(0, SP["s"]))
+
+        self._fill_pool()
+        self._paint_basket()
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.update_idletasks()
+        screens.place_beside(self, master, follow=False)
+        self.grab_set()
+        ui_fx.attach_all(self)
+
+    def _fill_pool(self):
+        for it in library.list_items("템플릿"):
+            lab = (it.get("label") or it.get("name") or "").strip()
+            if not lab:
+                continue        # 라벨이 없으면 \이름\ 으로 부를 수 없다
+            slots = int(it.get("slot_count") or 0)
+            row = tk.Label(self.pool, text=f"{it['name']}   (빈칸 {slots})",
+                           bg=CARD, fg=TEXT, anchor="w", cursor="hand2",
+                           font=(FONT, theme.fs(FS["sub"])), pady=2)
+            row.pack(fill="x")
+            row.bind("<Button-1>", lambda e, l=lab: self._take(l))
+            row.bind("<Enter>", lambda e, w=row: w.config(fg=ACCENT))
+            row.bind("<Leave>", lambda e, w=row: w.config(fg=TEXT))
+
+    def _take(self, label):
+        self.parts.append(label)
+        self._paint_basket()
+
+    def _drop(self, i):
+        del self.parts[i]
+        self._paint_basket()
+
+    def _paint_basket(self):
+        for w in self.basket.winfo_children():
+            w.destroy()
+        lookup = library.label_lookup()
+        total = 0
+        for i, lab in enumerate(self.parts):
+            entry = lookup.get(lab)
+            slots = int((entry[1] if entry else {}).get("slot_count") or 0)
+            total += slots
+            row = tk.Frame(self.basket, bg=CARD)
+            row.pack(fill="x")
+            # 없는 물감은 빈칸이 0으로 잡혀 합계만 조용히 줄어든다 — 눈에 띄게 한다
+            gone = entry is None
+            tk.Label(row,
+                     text=(f"{i + 1}. {lab}  ⚠ 없는 물감" if gone
+                           else f"{i + 1}. {lab}  (빈칸 {slots})"),
+                     bg=CARD, fg=theme.notice_colors()["warn"][0] if gone else TEXT,
+                     anchor="w",
+                     font=(FONT, theme.fs(FS["sub"]))).pack(side="left")
+            x = tk.Label(row, text="✕", bg=CARD, fg=MUTED, cursor="hand2",
+                         padx=6, font=(FONT, theme.fs(FS["caption"])))
+            x.pack(side="right")
+            x.bind("<Button-1>", lambda e, k=i: self._drop(k))
+        self.sum_lbl.config(
+            text=f"담은 순서 — {len(self.parts)}개 · 빈칸 모두 {total}칸"
+            if self.parts else "담은 순서 (아직 비어 있습니다)")
+
+    def _ok(self):
+        name = self.name_var.get().strip()
+        if not name:
+            messagebox.showinfo("이름이 필요합니다",
+                                "이 섞기를 부를 이름을 적어주세요.", parent=self)
+            return
+        if not self.parts:
+            messagebox.showinfo("담은 물감이 없습니다",
+                                "왼쪽에서 물감을 눌러 담아주세요.", parent=self)
+            return
+        try:
+            new_id = library.add_mix(name, self.parts)
+        except Exception as e:
+            applog.exc("섞기 등록 실패", e)
+            messagebox.showerror("만들지 못했습니다", str(e), parent=self)
+            return
+        self.result = library.find_by_id("섞기", new_id)
+        self.destroy()
+
+
+def _split_dropped(data):
+    r"""끌어다 놓은 문자열을 경로 목록으로.
+
+    Tk 의 DND 는 여러 파일을 공백으로 잇고, 공백이 든 경로만 { } 로 감싼다
+    (`{C:\my docs\a.hwp} C:\b.hwp`). 그래서 공백으로 그냥 자르면 안 된다.
+    """
+    out, buf, brace = [], "", False
+    for ch in str(data):
+        if ch == "{":
+            brace = True
+        elif ch == "}":
+            brace = False
+            out.append(buf)
+            buf = ""
+        elif ch == " " and not brace:
+            if buf:
+                out.append(buf)
+            buf = ""
+        else:
+            buf += ch
+    if buf:
+        out.append(buf)
+    return [p for p in out if p]
+
+
 class _DefaultFormatDialog(tk.Toplevel):
     """‘기본 서식으로 변환’이 적용할 기본 서식."""
 
@@ -2618,6 +3271,7 @@ class _ToolPickDialog(tk.Toplevel):
         ("template", "템플릿", "표·결재란 등 문서 일부를 커서 자리에 꽂기"),
         ("function", "서식 조합", "선택한 글자에 굵게·크기·자간 등을 한 번에"),
         ("form", "양식", "hwp 파일 전체를 새 문서로 열기"),
+        ("mix", "물감 섞기", "여러 물감을 순서대로 묶어 이름 하나로 부르기"),
         ("builtin", "도구", "이 프로그램의 기능 (사진·특수기호·양식 채우기 …)"),
     ]
 

@@ -524,6 +524,59 @@ def _table_rows(lines, start, rows, cols, lookup, warnings):
     return grid, j
 
 
+def _read_fills(lines, start, slot_count, lookup, warnings):
+    r"""빈칸에 채울 값을 slot_count 개만큼 읽는다. 반환: (값들, 다음 줄 번호).
+
+    템플릿·양식·섞기가 모두 이 규칙을 쓴다 — 빈칸을 채우는 방식은 하나뿐이라야
+    사람이 하나만 외운다.
+      · 빈 줄은 건너뛴다
+      · `-` 한 줄은 그 빈칸을 비운다
+      · `{` 로 시작하면 닫는 `}` 까지가 한 칸
+      · 다음 삽입 라벨을 만나면 거기서 끊는다
+    """
+    fills, j = [], start
+    while len(fills) < slot_count and j < len(lines):
+        cand = lines[j].strip()
+        if not cand:
+            j += 1
+            continue
+        if _starts_new_insert(cand, lookup):
+            break              # 다음 삽입 시작 — 여기까지가 이 삽입의 몫
+        if cand == SKIP_MARK:
+            fills.append(None)         # 이 빈칸은 비움
+            j += 1
+        elif cand.startswith('{'):
+            # { … } — 여러 줄이 이 빈칸 하나에 통째로 들어간다
+            value, j = _read_block(lines, j, lookup, warnings)
+            fills.append(value)
+        else:
+            fills.append(_slot_value(lines[j], lookup, warnings))
+            j += 1
+    return fills, j
+
+
+def _mix_parts(item, lookup):
+    r"""섞기 항목 → 펼칠 부품 항목들. 없어진 부품은 건너뛰고 경고를 남긴다.
+
+    부품이 사라졌는데 조용히 넘어가면 **빈칸 개수가 줄어** 뒤의 값이 통째로
+    한 칸씩 당겨진다 — 눈에는 문서가 채워진 것처럼 보이므로 반드시 알린다.
+    """
+    out, warns = [], []
+    name = item.get('name') or item.get('label') or '섞기'
+    for lab in item.get('parts') or []:
+        entry = lookup.get(lab)
+        if entry is None:
+            warns.append(rf"섞기 '{name}' 의 부품 \{lab}\ 을(를) 찾을 수 "
+                         rf"없습니다 — 그 자리는 비워집니다")
+            continue
+        if entry[0] != '템플릿':
+            warns.append(rf"섞기 '{name}' 의 부품 \{lab}\ 은(는) "
+                         rf"[{entry[0]}] 이라 섞을 수 없습니다 — 건너뜁니다")
+            continue
+        out.append(entry[1])
+    return out, warns
+
+
 def _starts_new_insert(stripped_line, lookup):
     r"""이 줄이 '다음 삽입을 시작하는' 라벨인가 (그러면 빈칸 채우기를 여기서 끊는다).
 
@@ -540,7 +593,8 @@ def _starts_new_insert(stripped_line, lookup):
     entry = lookup.get(m.group(1).strip())
     if entry is None:
         return True                     # 미등록 — 예전 동작 유지
-    return entry[0] in ('템플릿', '양식')
+    # 섞기도 '새 삽입'이다 — 부품 여러 개로 펼쳐지지만 시작하는 것은 하나다
+    return entry[0] in ('템플릿', '양식', '섞기')
 
 
 def split_selection_units(text):
@@ -582,30 +636,34 @@ def build_library_plan(text, lookup):
         if m:
             label = m.group(1).strip()
             entry = lookup.get(label)
+            # 물감 섞기 — 부품들을 **그 자리에서 펼친다** (2026-07-29).
+            #
+            # 새 op 종류를 만들지 않는 것이 요령이다. 섞기는 결국 "템플릿 몇 개를
+            # 차례로 넣는 것"이라, 여기서 부품 목록으로 갈라 놓으면 그 아래 코드와
+            # 엔진은 섞기라는 것이 있는지도 모른 채 그대로 돈다.
+            if entry and entry[0] == '섞기':
+                parts, warn = _mix_parts(entry[1], lookup)
+                warnings.extend(warn)
+                if parts:
+                    total = sum(int(it.get('slot_count') or 0) for it in parts)
+                    fills, j = _read_fills(lines, i + 1, total, lookup, warnings)
+                    at = 0
+                    for it in parts:
+                        n = int(it.get('slot_count') or 0)
+                        ops.append(('template', it, fills[at:at + n]))
+                        at += n
+                    i = j
+                    continue
+                ops.append(('line', stripped))      # 부품이 하나도 없다 — 원문을 남긴다
+                i += 1
+                continue
             # 템플릿(삽입)과 양식(새 문서로 열기) — 빈칸 채우는 방식은 같다
             if entry and entry[0] in ('템플릿', '양식'):
                 kind = 'form' if entry[0] == '양식' else 'template'
                 item = entry[1]
                 slot_count = int(item.get('slot_count') or 0)
-                fills = []
-                j = i + 1
-                while len(fills) < slot_count and j < len(lines):
-                    cand = lines[j].strip()
-                    if not cand:
-                        j += 1
-                        continue
-                    if _starts_new_insert(cand, lookup):
-                        break          # 다음 삽입 시작 — 여기까지가 이 템플릿 몫
-                    if cand == SKIP_MARK:
-                        fills.append(None)     # 이 빈칸은 비움
-                        j += 1
-                    elif cand.startswith('{'):
-                        # { … } — 여러 줄이 이 빈칸 하나에 통째로 들어간다
-                        value, j = _read_block(lines, j, lookup, warnings)
-                        fills.append(value)
-                    else:
-                        fills.append(_slot_value(lines[j], lookup, warnings))
-                        j += 1
+                fills, j = _read_fills(lines, i + 1, slot_count, lookup,
+                                       warnings)
                 ops.append((kind, item, fills))
                 i = j
                 continue

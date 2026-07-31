@@ -26,15 +26,24 @@ from hwp_palette.core import paths
 LIBRARY_PATH = paths.DATA_DIR / "library.json"
 FRAGMENTS_DIR = paths.DATA_DIR / "fragments"
 
-CATEGORIES = ("서식", "문자", "템플릿", "양식")
+# '섞기' = 물감 섞기 (사용자 기획 2026-07-29). 조각 파일이 없는 유일한 분류다 —
+# 자기 내용을 갖지 않고 **다른 물감의 라벨을 순서대로 적어 둔 목록**이기 때문이다.
+#   {"name": "기본문항", "parts": ["발문", "3보기", "5선지"]}
+# 부르면 그 자리에서 부품이 차례로 펼쳐진다(parser.build_library_plan).
+CATEGORIES = ("서식", "문자", "템플릿", "양식", "섞기")
 
-_EMPTY = {"서식": [], "문자": [], "템플릿": [], "양식": []}
+_EMPTY = {"서식": [], "문자": [], "템플릿": [], "양식": [], "섞기": []}
 
 # 조각 파일(.hwp)을 갖는 분류 — 삭제 시 파일도 함께 지운다
 _FILE_CATEGORIES = ("템플릿", "양식")
 
+# 섞기가 부품으로 담을 수 있는 분류. 빈칸을 채우는 규칙이 정해진 것만 받는다 —
+# 양식은 '문서를 새로 여는 것'이라 중간에 끼워 넣을 수 없어 뺐다.
+MIXABLE = ("템플릿",)
+
 # 라이브러리 분류 → 팔레트 블럭 타입 (고아 블럭 정리·사용처 카운트용)
-_BLOCK_TYPE = {"템플릿": "template", "서식": "style", "문자": "char", "양식": "form"}
+_BLOCK_TYPE = {"템플릿": "template", "서식": "style", "문자": "char",
+               "양식": "form", "섞기": "mix"}
 
 
 def _ensure_dirs():
@@ -327,6 +336,45 @@ def make_preview(text):
 def get_preview(item):
     """항목의 미리보기 글자. 예전에 등록한 것은 비어 있다."""
     return (item or {}).get("preview", "") or ""
+
+
+def add_mix(name, parts, label=None, tags=None):
+    r"""물감 섞기를 등록한다. parts 는 **부품의 라벨**을 순서대로 담은 목록.
+
+    id 가 아니라 라벨로 담는 이유: 부르는 문법(`\라벨\`)과 같은 말을 쓰면
+    사람이 저장된 값을 읽고 무엇이 섞였는지 바로 안다. 라벨이 바뀌면 끊기는데,
+    그건 문서에 적어 둔 `\라벨\` 도 마찬가지라 새로 생기는 위험이 아니다.
+
+    빈칸 수는 **저장하지 않는다.** 부품을 나중에 고치면 저장해 둔 수만 옛것으로
+    남아 빈칸이 한 칸씩 밀리는데, 화면에는 아무 표시도 안 나고 문서만 통째로
+    어긋난다. 쓸 때마다 부품에서 더한다(mix_slot_count).
+    """
+    data = load()
+    item = _meta(_unique_name(data["섞기"], name), label, tags)
+    item["parts"] = [p for p in (parts or []) if p]
+    item["preview"] = " + ".join(item["parts"])
+    data["섞기"].append(item)
+    save(data)
+    return item["id"]
+
+
+def mix_parts(item, lookup=None):
+    r"""섞기 항목 → [(라벨, 분류, 항목dict 또는 None)]. 없어진 부품은 None.
+
+    lookup 을 주면 그것을 쓴다(라벨 해석을 한 번만 하려는 호출자용).
+    """
+    lookup = label_lookup() if lookup is None else lookup
+    out = []
+    for lab in item.get("parts") or []:
+        entry = lookup.get(lab)
+        out.append((lab, entry[0] if entry else None, entry[1] if entry else None))
+    return out
+
+
+def mix_slot_count(item, lookup=None):
+    """섞기의 빈칸 수 — 부품들의 빈칸을 더한 값. 없어진 부품은 0으로 센다."""
+    return sum(int((it or {}).get("slot_count") or 0)
+               for _lab, _cat, it in mix_parts(item, lookup))
 
 
 def add_template_from_capture(name, save_to, label=None, tags=None,

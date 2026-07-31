@@ -33,6 +33,20 @@ DEFAULT_COLS = 15       # 격자 가로 칸 수. 칸 크기는 폭에 맞춰 정
 # (main._MIN_GRID_COLS), 그보다 줄여 봐야 오른쪽에 빈 공간만 남고 좁아지지 않는다
 # — 줄인 티가 안 나는 조작은 아예 못 하게 막는 게 덜 헷갈린다.
 MIN_COLS = 8
+# 칸 수의 최대값 (사용자 결정 2026-07-29). 위쪽도 막는 이유: 칸이 늘수록 한 칸이
+# 작아지는데(＿cell_px), 16칸을 넘기면 칸이 글자 하나도 못 담을 만큼 줄어든다.
+MAX_COLS = 16
+
+# 격자 세로 줄 수 (사용자 결정 2026-07-29).
+#
+# 여태 줄 수는 **저장하지 않았다** — 화면에 그릴 때 '블럭이 닿는 마지막 줄 +
+# 창을 연 뒤 ＋로 늘린 수'로 계산했다. 그래서 빈 줄을 늘려 놓고 창을 닫으면
+# 그대로 사라졌고, 다음에 열면 블럭에 딱 붙은 크기로 돌아왔다.
+# 칸(cols)과 같은 자격으로 저장한다 — 격자 크기는 팔레트의 성질이지
+# 창을 열어 둔 동안의 임시 상태가 아니다.
+DEFAULT_ROWS = 4
+MIN_ROWS = 4
+MAX_ROWS = 16
 
 # 블럭은 격자 위의 사각형이다: (row, col) 에서 span×rows 칸을 차지한다.
 #   span = 가로 칸 수, rows = 세로 줄 수
@@ -172,6 +186,13 @@ def load_tabs():
         if int(t.get("cols") or DEFAULT_COLS) < MIN_COLS:
             t["cols"] = MIN_COLS
             migrated = True
+        if int(t.get("cols") or DEFAULT_COLS) > MAX_COLS:
+            t["cols"] = MAX_COLS
+            migrated = True
+        # 줄 수를 저장하기 전(v0.2.0 이하)에 만든 탭은 rows 가 없다 — 기본값을
+        # 넣어 준다. 블럭이 그보다 아래까지 뻗어 있으면 화면에서 늘려 그린다.
+        t.setdefault("rows", DEFAULT_ROWS)
+        t["rows"] = max(MIN_ROWS, min(MAX_ROWS, int(t.get("rows") or DEFAULT_ROWS)))
         t.setdefault("blocks", [])
         if _migrate_positions(t):
             migrated = True
@@ -397,7 +418,20 @@ def move_tab(index, delta):
 def set_tab_cols(index, cols):
     tabs = load_tabs()
     if 0 <= index < len(tabs):
-        tabs[index]["cols"] = max(MIN_COLS, int(cols))
+        tabs[index]["cols"] = max(MIN_COLS, min(MAX_COLS, int(cols)))
+        save_tabs(tabs)
+
+
+def set_tab_grid(index, cols, rows):
+    """격자 크기를 한 번에 정한다 (행/열 수정 창).
+
+    따로 저장하지 않고 한 번에 쓰는 이유: 둘을 각각 저장하면 그 사이에
+    되돌리기 지점이 두 번 찍혀, Ctrl+Z 한 번으로는 반만 돌아온다.
+    """
+    tabs = load_tabs()
+    if 0 <= index < len(tabs):
+        tabs[index]["cols"] = max(MIN_COLS, min(MAX_COLS, int(cols)))
+        tabs[index]["rows"] = max(MIN_ROWS, min(MAX_ROWS, int(rows)))
         save_tabs(tabs)
 
 

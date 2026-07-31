@@ -207,10 +207,12 @@ def nearest_pastel(hex_color):
 # 2026-07-27: 채도를 한 단계 낮췄다 — 강조색(변환)만 화면에서 튀어야 한다.
 BLOCK_LIGHT = {"char": "#ffffff", "template": "#eef4fb",
                "function": "#f1efe9", "form": "#eef7ef",
-               "builtin": "#f3eefb"}      # 프로그램 기능 (사진·특수문자 등)
+               "builtin": "#f3eefb",      # 프로그램 기능 (사진·특수문자 등)
+               "mix": "#fbf0ea"}          # 물감 섞기 — 템플릿 계열이되 살짝 따뜻하게
 BLOCK_DARK = {"char": "#2c2c2e", "template": "#1e2b3f",
               "function": "#3a2f1c", "form": "#18321f",
-              "builtin": "#2b2740"}
+              "builtin": "#2b2740",
+              "mix": "#3a2a20"}
 
 # 도구 중 **변환**만 진한 강조색 — 이 프로그램의 본체이고, 예전에 큰 파란
 # 버튼이던 것이 블럭으로 옮겨왔다. 눈에 띄어야 찾기 쉽다 (2026-07-25).

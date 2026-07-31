@@ -62,6 +62,7 @@ CATS = (
     {"key": "문자",   "label": "특수기호"},
     {"key": "템플릿", "label": "템플릿"},
     {"key": "양식",   "label": "양식"},
+    {"key": "섞기",   "label": "물감 섞기"},
     {"key": "사진",   "label": "사진"},
 )
 # '내장' 탭은 없앴다 (사용자 결정 2026-07-26) — 내장 기호와 내가 등록한 기호는
@@ -80,6 +81,8 @@ TAB_DESC = {
     "템플릿": "표·결재란처럼 문서 '일부'를 저장해 커서 자리에 꽂아 넣는 기능",
     "양식": "hwp 파일 '전체'를 저장해 새 문서로 여는 기능 "
             "(용지·여백·머리말까지 그대로 — 표지·통신문용)",
+    "섞기": "여러 물감을 순서대로 묶어 이름 하나로 부릅니다 "
+            "(만드는 것은 팔레트 설정에서 — 여기서는 이름 바꾸기·삭제·확인)",
     "사진": "그림이 든 폴더를 연결해 둡니다. 문서에서 \\파일이름\\ 으로 부르거나 "
             "팔레트의 '사진' 버튼에서 골라 넣습니다 (하위 폴더는 읽지 않습니다)",
 }
@@ -1249,6 +1252,20 @@ class LibraryManager(tk.Toplevel):
                 # 물감 설정의 [열기] 도 손으로 채워 쓰는 경우 — 자리표시는 지운다
                 engine_library.open_form(library.template_path(item),
                                          strip_markers=True)
+            elif cat == "섞기":
+                # 부품을 담긴 순서대로 넣는다. 하나라도 없으면 **넣기 전에**
+                # 멈춘다 — 반쯤 들어간 문서를 만들지 않는다.
+                parts = library.mix_parts(item)
+                gone = [lab for lab, pcat, obj in parts
+                        if obj is None or pcat != "템플릿"]
+                if gone:
+                    messagebox.showwarning(
+                        "넣을 수 없습니다",
+                        "이 섞기에 없는 물감이 있습니다: %s\n"
+                        "먼저 고쳐주세요." % ", ".join(gone), parent=self)
+                    return
+                for _lab, _c, part in parts:
+                    engine_library.insert_fragment(library.template_path(part))
             else:
                 engine_library.insert_fragment(library.template_path(item))
         except Exception as e:

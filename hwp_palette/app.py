@@ -524,6 +524,101 @@ def _template_path_by_ref(block):
     return library.template_path(it) if it else None
 
 
+def _block_slot_info(block):
+    r"""블럭 → (채울 자리 수, 표를 여는 함수 또는 None, 못 여는 이유).
+
+    '자리 지정'이 된 물건만 표로 채울 수 있다. 무엇이 가능한지 한 곳에서 정해
+    두면 메뉴를 그리는 쪽과 실제로 여는 쪽이 어긋나지 않는다.
+    """
+    btype = block.get("type")
+    if btype == "form":
+        it = _form_item(block)
+        n = int((it or {}).get("slot_count") or 0)
+        if not it:
+            return 0, None, "양식을 찾을 수 없습니다"
+        if not n:
+            return 0, None, "이 양식에는 채울 자리가 없습니다"
+        path = _form_path_by_ref(block)
+        if not path:
+            return n, None, "양식 파일을 찾을 수 없습니다"
+        return n, (lambda: form_table_ui.open_form_table(
+            root, path, title=_block_form_name(block))), ""
+    if btype == "template":
+        it = library.get_item("템플릿", item_id=block.get("ref"),
+                              name=block.get("template"))
+        n = int((it or {}).get("slot_count") or 0)
+        if not it:
+            return 0, None, "템플릿을 찾을 수 없습니다"
+        if not n:
+            return 0, None, "이 템플릿에는 채울 자리가 없습니다"
+        return n, (lambda: form_table_ui.open_template_table(root, it)), ""
+    if btype == "mix":
+        it = library.get_item("섞기", item_id=block.get("ref"),
+                              name=block.get("name"))
+        n = library.mix_slot_count(it) if it else 0
+        # 섞기는 부품이 여럿이라 표 하나로 묶으려면 form_table_ui 가 여러 조각의
+        # 자리를 한 표에 이어 붙일 수 있어야 한다 — 아직 그렇게 안 돼 있다.
+        return n, None, "섞기는 아직 표로 채울 수 없습니다 (부품을 따로 쓰세요)"
+    return 0, None, "이 블럭에는 채울 자리가 없습니다"
+
+
+def _block_context_menu(block, widget):
+    r"""팔레트 블럭 오른쪽 클릭 (사용자 결정 2026-07-29).
+
+    왼쪽 클릭이 '그냥 넣기'로 고정됐으므로, **자리를 채워 넣는 길**이 여기다.
+    tk.Menu 가 아니라 Popover 를 쓴다 — 메인 창의 다른 메뉴(⚙·?)와 같은 얼굴.
+    """
+    n, opener, why = _block_slot_info(block)
+    pop = Popover(root, widget)
+    if opener:
+        pop.add(f"자리지정 표 넣기  (빈칸 {n}칸)",
+                lambda: _open_slot_table(opener))
+    else:
+        pop.add_disabled(f"자리지정 표 넣기 — {why}")
+    pop.show()
+
+
+def _open_slot_table(opener):
+    if not ensure_hwp():
+        return
+    try:
+        opener()
+    except Exception as e:
+        report_error("채우기 표를 열지 못했습니다", e, detail=True)
+
+
+def _run_mix_block(block):
+    r"""섞기 블럭 — 부품 템플릿을 등록 순서대로 커서 자리에 넣는다.
+
+    중간에 하나가 실패해도 **거기서 멈춘다.** 마저 넣으면 부품이 빠진 채로
+    이어져, 눈에는 완성된 것처럼 보이는 반쪽짜리가 남는다.
+    """
+    it = library.get_item("섞기", item_id=block.get("ref"),
+                          name=block.get("name"))
+    if not it:
+        notify("warn", "섞기를 찾을 수 없습니다 (라이브러리에서 지워진 것 같습니다)")
+        return
+    parts = library.mix_parts(it)
+    if not parts:
+        notify("warn", f"'{it['name']}' 에 담긴 물감이 없습니다")
+        return
+    done = 0
+    for lab, cat, part in parts:
+        if part is None or cat != "템플릿":
+            notify("warn", f"부품 \\{lab}\\ 을(를) 넣지 못했습니다 — "
+                           f"{done}개까지 넣고 멈춥니다")
+            return
+        ok, msg = engine_library.run_block(
+            {"type": "template", "ref": part["id"], "template": part["name"]},
+            template_path_fn=_template_path_by_ref,
+            slot_count_fn=_template_slot_count_by_ref)
+        if not ok:
+            notify("warn", f"{msg} — {done}개까지 넣고 멈춥니다")
+            return
+        done += 1
+    notify("ok", f"{it['name']} — 물감 {done}개 삽입")
+
+
 def _template_slot_count_by_ref(block):
     r"""블럭이 가리키는 템플릿의 빈칸(\) 개수. 빈칸 청소 범위를 개수로 제한한다."""
     it = library.get_item("템플릿", item_id=block.get("ref"),
@@ -676,24 +771,24 @@ def _run_palette_block(block):
             report_error(f"도구 실행 실패: {builtin_actions.name_of(key)}", e,
                          detail=True)
         return
-    # 채울 자리가 있는 양식은 그냥 열지 않고 '채우기 표'를 먼저 띄운다
-    # (2026-07-27). 자리가 없는 양식은 지금까지처럼 바로 열린다.
-    if block.get("type") == "form" and _form_has_slots(block):
+    # **왼쪽 클릭은 언제나 같은 일을 한다** — 그냥 넣는다/연다 (사용자 결정
+    # 2026-07-29). 채우기 표는 오른쪽 클릭 메뉴로 옮겼다(_block_context_menu).
+    #
+    # 예전에는 여기서 빈칸 수와 자리 이름을 보고 프로그램이 알아서 갈랐다
+    # (2026-07-27). 그런데 그 기준은 화면에 안 보이는 값이라, 같은 자리를 눌러도
+    # 어떤 블럭은 창이 뜨고 어떤 블럭은 안 떠서 **누르기 전에 무슨 일이 날지
+    # 알 수 없었다.** 게다가 같은 양식이라도 "빈 채로 열어 손으로 쓰고 싶을 때"와
+    # "표로 채워 완성본을 뽑고 싶을 때"가 갈리는데, 프로그램이 하나로 정하면
+    # 나머지 하나는 길이 막힌다.
+    # 물감 섞기 — 부품을 차례로 넣는다 (2026-07-29).
+    #
+    # 엔진에 'mix' 를 가르치지 않는다. 섞기는 결국 "템플릿 여러 개를 순서대로
+    # 넣는 것"이라, 여기서 부품 블럭으로 갈라 기존 경로를 그대로 태운다
+    # (마크다운 쪽도 같은 요령이다 — parser 가 template op 로 펼친다).
+    if block.get("type") == "mix":
         if not ensure_hwp(): return
-        path = _form_path_by_ref(block)
-        if path:
-            form_table_ui.open_form_table(root, path,
-                                          title=_block_form_name(block))
-            return
-    # 이름 있는 자리(\학년\)를 가진 템플릿도 표를 띄운다 (2026-07-27) —
-    # 이름을 붙였다는 것 자체가 "표로 채울 물건"이라는 선언이다.
-    if block.get("type") == "template":
-        it = library.get_item("템플릿", item_id=block.get("ref"),
-                              name=block.get("template"))
-        if it and any(n for n in it.get("slot_names") or []):
-            if not ensure_hwp(): return
-            form_table_ui.open_template_table(root, it)
-            return
+        _run_mix_block(block)
+        return
     if not ensure_hwp(): return
     try:
         ok, msg = engine_library.run_block(
@@ -1771,18 +1866,22 @@ def _make_block_button(parent, blk, span=1):
     # 글자색을 TEXT 로 고정하면 사용자가 남색·빨강을 고르거나 어두운 모드로
     # 바꿨을 때 글자가 배경에 묻힌다 (UI 제안 18) — text_on 이 밝기를 재서 정한다.
     # 초점 테두리(키보드 Tab 이동)는 RoundButton 이 자체로 그린다.
-    # 이름은 **왼쪽에 붙인다** (사용자 결정 2026-07-28) — 칸 크기와 비율은
-    # 그대로 두고 글자 자리만 옮겼다. 자세한 이유는 RoundButton 의 align.
+    # 이름은 **가운데에 놓는다** (사용자 결정 2026-07-29 — 되돌림).
+    # 2026-07-28 에 왼쪽 정렬로 바꿔 봤다가 원래대로 되돌린 것이다: 칸이
+    # 정사각에 가까워 왼쪽에 붙이면 오른쪽 여백만 크게 남아 보였다.
     btn = RoundButton(parent, text=label,
                       command=lambda b=blk: run_palette_block(b),
                       bg=bg, fg=theme.text_on(bg), radius=theme.RADIUS["ctl"], font=_font(size),
                       outline=BORDER, focus_color=ACCENT,
                       zone_bg=parent.cget("bg"),
-                      align="left", justify="left", pad_in=_BLOCK_TEXT_PAD)
+                      align="center", justify="center", pad_in=_BLOCK_TEXT_PAD)
     # 도구 블럭은 이름표를 달아 둔다 — 튜토리얼이 '마크다운 변환' 버튼을
     # 짚으려면 그 위젯을 찾을 수 있어야 한다 (2026-07-26).
     if blk.get("type") == "builtin" and blk.get("key"):
         _builtin_btns[blk["key"]] = btn
+    # 오른쪽 클릭 — 자리를 채워 넣는 길 (2026-07-29). 왼쪽 클릭은 '그냥 넣기'로
+    # 고정돼 있으므로, 표로 채우려면 여기로 온다.
+    btn.bind("<Button-3>", lambda e, b=blk, w=btn: _block_context_menu(b, w))
     # 이름이 안 잘려도 '무엇이 들었는지'를 보여주므로 늘 붙인다 (UI 제안 6)
     _add_tooltip(btn, _block_tooltip(blk))
     return btn
