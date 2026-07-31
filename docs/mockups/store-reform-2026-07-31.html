@@ -240,6 +240,49 @@
   .co{display:inline-flex;width:16px;height:16px;border-radius:50%;background:#bf8700;color:#fff;
     font-size:10px;align-items:center;justify-content:center;font-style:normal;flex:0 0 auto;vertical-align:middle}
 
+  /* ── G : 물감 겹치기 ─────────────────────── */
+  .minigrid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-top:9px}
+  .minigrid .cell{height:46px;font-size:10px}
+  .cell.dropping{border:2px dashed #0969da;background:#eaf3ff;color:#0969da}
+  .cell.ghost{opacity:.55;border-color:#0969da;box-shadow:0 4px 10px rgba(9,105,218,.3);transform:rotate(-2deg)}
+  .stackcell{position:relative;border:1px solid #b6bcc4;border-radius:5px;background:#fff;
+    height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:10.5px}
+  .stackcell::before,.stackcell::after{content:"";position:absolute;left:2px;right:2px;height:100%;
+    border:1px solid #d8dce2;border-radius:5px;background:#fff;z-index:-1}
+  .stackcell::before{top:-3px}
+  .stackcell::after{top:-6px;left:4px;right:4px;border-color:#e4e7eb}
+  .stackcell .cnt{position:absolute;top:3px;right:4px;font-size:8.5px;color:#fff;background:#57606a;
+    border-radius:7px;padding:0 4px;line-height:12px}
+  .pop{border:1px solid #c9ced6;border-radius:7px;background:#fff;box-shadow:0 8px 22px rgba(16,22,26,.18);
+    width:200px;padding:5px;margin-top:7px}
+  .pop .pr{display:flex;align-items:center;gap:7px;padding:6px 7px;border-radius:5px;font-size:11px;color:#0d1117}
+  .pop .pr i{font-style:normal;font-size:11px;color:#57606a;flex:0 0 auto}
+  .pop .pr.hov{background:#eaf3ff}
+  .pop .pr span{margin-left:auto;font-size:9.5px;color:#8b939c}
+
+  /* ── H : 물감 섞기 ───────────────────────── */
+  .mixrow{display:flex;align-items:center;gap:8px;border:1px solid #d8dce2;border-radius:6px;
+    background:#fff;padding:7px 9px;font-size:11.5px;margin-top:5px}
+  .mixrow .grip2{color:#b6bcc4;cursor:grab;font-size:12px}
+  .mixrow .ord{flex:0 0 16px;height:16px;border-radius:50%;background:#0969da;color:#fff;
+    font-size:10px;display:flex;align-items:center;justify-content:center}
+  .mixrow .sl{margin-left:auto;font-size:10px;color:#8b939c}
+  .mixbadge{display:inline-block;font-size:9px;color:#6639ba;background:#f3eefc;
+    border:1px solid #d8c8f0;border-radius:3px;padding:0 4px;margin-top:3px}
+  /* 꾸러미 카드 — 옆 세로 MIX 리본, 칸 높이는 낱개와 동일 (사용자 결정 2026-07-31) */
+  .card.mixcard{position:relative;padding-right:18px;border-color:#d8c8f0}
+  .mixrib{position:absolute;top:-1px;right:-1px;bottom:-1px;width:14px;background:#f3eefc;color:#6639ba;
+    border:1px solid #d8c8f0;font-size:7.5px;font-weight:700;letter-spacing:1.5px;
+    display:flex;align-items:center;justify-content:center;writing-mode:vertical-rl;
+    border-radius:0 6px 6px 0}
+  .refline{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .refline .nd{border:1px solid #d0d7de;border-radius:5px;background:#fff;padding:4px 9px;font-size:11px}
+  .refline .nd.mix{border-color:#d8c8f0;background:#f9f6fe;color:#6639ba;font-weight:600}
+  .refline .ar{color:#b6bcc4;font-size:11px}
+  .mdbox{background:#0d1117;color:#c9d1d9;border-radius:6px;padding:9px 11px;font-size:10.5px;
+    font-family:"IBM Plex Mono",Consolas,monospace;line-height:1.8;margin-top:8px;white-space:pre}
+  .mdbox b{color:#79c0ff;font-weight:600}
+
   footer{max-width:1600px;margin:44px auto 0;font-size:11px;color:#8b939c;
     border-top:1px solid #cdd3da;padding-top:12px;line-height:1.8}
 </style>
@@ -275,6 +318,7 @@
     <li>템플릿은 자동 진행이 아니라 <b>도킹한 채 드래그로 담는다</b>(담기 모드) → 아래 <b>E</b> 수정.</li>
     <li>문서 하나를 통째로 해체해 팔레트를 만드는 기능 — <b>채택.</b> 최종 조작안은 <b>F</b>(골라 담기, 도킹 상태) — E 는 이전 안의 기록.</li>
     <li>시안 <b>B 확정.</b> 해체 입구는 “파일이 선택된 상태에서 [문서 해체]” — 즉시 시작.</li>
+    <li><b>물감 겹치기</b> 채택 — 팔레트 한 칸에 여러 물감, 누르면 골라 실행 → 아래 <b>G</b>.</li>
   </ul>
 </div>
 
@@ -899,6 +943,241 @@
 </div>
 
 
+<h3 class="sec">G. 물감 겹치기 — 팔레트 한 칸에 여러 물감 (채택)</h3>
+<div class="note" style="max-width:1000px">
+  <b>“선지 스타일이 5개인데 버튼 5개면 공간 낭비가 심각하다”</b> —
+  애플 폴더처럼 <b>블럭을 잡고 겹치면</b> 확인을 묻고, 이름을 정하고,
+  누르면 <b>안에서 하나를 골라</b> 실행합니다.
+  <b>⚠ 섞기(E·017)와 다릅니다</b> — 섞기는 요소를 순서대로 <b>전부 이어</b> 꾸러미 하나로(합체),
+  겹치기는 같은 자리에 보관했다가 쓸 때 <b>하나만</b> 고르는 것(택일)입니다.
+</div>
+
+<div class="rack">
+
+  <div class="slot">
+    <h2><b>G-1</b> 만들기 — 끌어서 겹치기 (환경설정)</h2>
+    <div class="zoom">
+      <h5>블럭을 블럭 위로 끌면</h5>
+      <div class="minigrid">
+        <div class="cell on"><i>⇒</i>변환</div>
+        <div class="cell dropping"><i>≡</i>선지 5택</div>
+        <div class="cell ghost"><i>≡</i>선지 3택</div>
+        <div class="cell empty"></div>
+      </div>
+      <p style="font-size:11px;color:#57606a;margin:8px 0 0">
+        받는 칸이 파란 겹침 표시로 바뀝니다. 놓으면 —
+      </p>
+      <div class="dlg" style="width:100%;margin-top:9px">
+        <div class="tb"><i></i><span>물감 겹치기</span><span class="s"></span><u>✕</u></div>
+        <div class="dlg-body">
+          <h6 style="font-size:13px">물감을 겹치겠습니까?</h6>
+          <p class="sub">‘선지 5택’ 과 ‘선지 3택’ 이 한 칸에 들어갑니다.<br>누르면 안에서 골라 쓰게 됩니다.</p>
+          <div class="frow on" style="border-bottom:0"><span class="nm" style="flex:0 0 60px">겹친 이름</span>
+            <span class="val" style="text-align:left;min-width:130px">선지 모음</span></div>
+          <div style="display:flex;gap:6px;margin-top:10px;justify-content:flex-end">
+            <span style="border:1px solid #d0d7de;border-radius:5px;padding:5px 12px;font-size:11.5px;background:#fff;color:#57606a">취소</span>
+            <span class="go">겹치기</span>
+          </div>
+        </div>
+      </div>
+      <p style="font-size:11px;color:#57606a;margin:8px 0 0">
+        이미 겹친 칸 위로 또 끌면 <b>그 안에 추가</b>됩니다 (확인창 없이, 애플과 같게).
+        밖으로 끌어내면 낱개로 돌아갑니다.
+      </p>
+    </div>
+  </div>
+
+  <div class="slot">
+    <h2><b>G-2</b> 쓰기 — 누르면 골라서 실행</h2>
+    <div class="zoom">
+      <h5>팔레트에서</h5>
+      <div class="minigrid">
+        <div class="cell"><i>⇒</i>변환</div>
+        <div class="stackcell"><span class="cnt">5</span><i>≡</i>선지 모음</div>
+        <div class="cell"><i>▧</i>사진</div>
+        <div class="cell"><i>※</i>특수기호</div>
+      </div>
+      <div class="pop">
+        <div class="pr hov"><i>≡</i>선지 5택 (①~⑤)</div>
+        <div class="pr"><i>≡</i>선지 3택 (①~③)</div>
+        <div class="pr"><i>≡</i>선지 4택 가로</div>
+        <div class="pr"><i>≡</i>ㄱㄴㄷ 보기</div>
+        <div class="pr"><i>≡</i>O X 선지</div>
+      </div>
+      <p style="font-size:11px;color:#57606a;margin:9px 0 0">
+        겹친 칸은 <b>겹친 종이 모양 + 개수 배지</b>로 낱개와 구별됩니다.
+        누르면 팝오버가 열리고, 하나를 누르면 그것이 실행됩니다 —
+        특수기호가 이미 쓰는 팝오버 방식 그대로라 새로 배울 것이 없습니다.
+      </p>
+    </div>
+  </div>
+
+  <div class="slot">
+    <h2><b>G-3</b> 규칙</h2>
+    <div class="zoom">
+      <table class="kv">
+        <tr><th>겹치기 vs 섞기</th><td><b>겹치기 = 택일</b>(보관함, 쓸 때 하나 고름) / <b>섞기(017) = 합체</b>(요소를 순서대로 이어 꾸러미로). 이름·화면을 끝까지 다르게 둔다.</td></tr>
+        <tr><th>배치일 뿐</th><td>겹침은 팔레트의 <b>배치</b>다 — 창고에는 낱개 그대로 남는다 (“창고가 진짜 분류” 원칙 그대로).</td></tr>
+        <tr><th>편집</th><td>환경설정에서 겹친 칸을 열어 빼기·추가·순서·이름 변경. 밖으로 끌면 낱개 복귀.</td></tr>
+        <tr><th>어떤 물감이든</th><td>서로 다른 종류도 겹칠 수 있다 (템플릿+서식 섞어 담기 허용 — 팝오버에서 고르는 건 마찬가지).</td></tr>
+      </table>
+      <p style="background:#fffaf0;border:1px solid #f0dcb0;border-radius:5px;padding:8px 10px;color:#8a5300;margin-top:10px">
+        <b>미정</b> — ① Ctrl+1~9 가 겹친 칸에 걸리면: 팝오버를 열지, 마지막 쓴 것을 바로 실행할지.
+        ② 겉면에 마지막 쓴 물감 이름을 함께 보일지. ③ 도킹 도구줄 칩에도 겹침을 적용할지.
+      </p>
+    </div>
+  </div>
+
+</div>
+
+
+<h3 class="sec">H. 물감 섞기 — 여러 물감을 섞어 하나의 물감으로 (논의 중 · 추천안)</h3>
+<div class="note" style="max-width:1000px">
+  <b>“섞기는 여러 물감을 섞어서 하나의 물감을 만드는 것”</b> (사용자 정의 확정).
+  이 시안은 Claude 추천안 네 가지를 그림으로 옮긴 것입니다 —
+  <b>① 참조 방식</b>(요소를 고치면 꾸러미도 따라 바뀜) · <b>② 1차는 템플릿끼리만</b> ·
+  <b>③ 템플릿 분류 안에 ‘섞음’ 배지</b> · <b>④ 문서 해체의 묶어 담기와 연계</b>.
+  아직 <b>확정 아닙니다.</b>
+</div>
+
+<div class="rack">
+
+  <div class="slot">
+    <h2><b>H-1</b> 만들기 — 입구는 둘</h2>
+    <div class="zoom">
+      <h5>골라서 섞거나, 빈 데서 시작해 추가하거나</h5>
+      <div class="cards">
+        <div class="card" style="outline:2px solid #0969da;outline-offset:-1px"><b>지문 박스</b><span>빈칸 1</span></div>
+        <div class="card" style="outline:2px solid #0969da;outline-offset:-1px"><b>발문</b><span>빈칸 2</span></div>
+        <div class="card" style="outline:2px solid #0969da;outline-offset:-1px"><b>선지 5택</b><span>빈칸 5</span></div>
+        <div class="card"><b>가정통신문머리</b><span>빈칸 2</span></div>
+      </div>
+      <div class="dlg" style="width:100%;margin-top:10px">
+        <div class="tb"><i></i><span>물감 섞기</span><span class="s"></span><u>✕</u></div>
+        <div class="dlg-body">
+          <h6 style="font-size:13px">3개를 섞어 하나의 물감을 만듭니다</h6>
+          <p class="sub">문서에 꽂히는 순서입니다 — 끌어서 바꿀 수 있습니다.</p>
+          <div class="mixrow"><span class="grip2">⋮⋮</span><span class="ord">1</span>지문 박스<span class="sl">빈칸 1</span></div>
+          <div class="mixrow"><span class="grip2">⋮⋮</span><span class="ord">2</span>발문<span class="sl">빈칸 2</span></div>
+          <div class="mixrow"><span class="grip2">⋮⋮</span><span class="ord">3</span>선지 5택<span class="sl">빈칸 5</span></div>
+          <div class="mixrow" style="border-style:dashed;border-color:#a8c7e8;color:#0969da;justify-content:center">＋ 물감 추가</div>
+          <div class="frow on" style="border-bottom:0;margin-top:8px"><span class="nm" style="flex:0 0 60px">이름</span>
+            <span class="val" style="text-align:left;min-width:120px">가</span>
+            <span class="fromdoc">마크다운 명령이 됩니다</span></div>
+          <div style="display:flex;gap:6px;margin-top:10px;justify-content:flex-end;align-items:center">
+            <span style="margin-right:auto;font-size:10.5px;color:#8b939c">빈칸 합계 8</span>
+            <span style="border:1px solid #d0d7de;border-radius:5px;padding:5px 12px;font-size:11.5px;background:#fff;color:#57606a">취소</span>
+            <span class="go">섞기</span>
+          </div>
+        </div>
+      </div>
+      <p style="font-size:11px;color:#57606a;margin:8px 0 0">
+        <b>입구 ①</b> 창고에서 Ctrl+클릭으로 고른 뒤 [섞기] — 고른 것들이 담긴 채 창이 열립니다.<br>
+        <b>입구 ②</b> 그냥 [섞기]를 눌러 빈 창에서 시작 — <b>[＋ 물감 추가]</b>로 원하는 물감을 하나씩 골라 배열합니다.
+        어느 쪽이든 창 안에서 추가·빼기·순서 바꾸기가 됩니다.
+      </p>
+    </div>
+  </div>
+
+  <div class="slot">
+    <h2><b>H-2</b> 섞은 뒤 — 창고에도, 팔레트에도, 마크다운에도</h2>
+    <div class="zoom">
+      <h5>꾸러미는 옆 세로 MIX 리본 — 칸 높이는 낱개와 같습니다</h5>
+      <div class="cards">
+        <div class="card mixcard"><span class="mixrib">MIX</span><b>가</b><span>빈칸 8 · 3개</span></div>
+        <div class="card mixcard"><span class="mixrib">MIX</span><b>나</b><span>빈칸 7 · 4개</span></div>
+        <div class="card"><b>지문 박스</b><span>빈칸 1</span></div>
+        <div class="card"><b>선지 5택</b><span>빈칸 5</span></div>
+      </div>
+      <p>
+        섞음 표시는 <b>칸 오른쪽의 세로 MIX 리본</b>입니다 — 배지를 아랫줄에 더 다는 방식이 아니라서
+        <b>칸 높이가 늘어나지 않고</b>, 목록에서 한눈에 구별됩니다.
+        낱개 템플릿과 똑같이 다룹니다 — 팔레트에 놓고, 겹치기(G)에 넣고, 눌러서 꽂습니다.
+        새 분류를 만들지 않습니다(분류 다섯은 고정).
+      </p>
+      <h5 style="margin-top:12px">시험지 마크다운에서는 이름이 곧 명령</h5>
+      <div class="mdbox"><b>::가::</b> {광합성 실험에서 …} {다음 중 옳은 것은?} (3점) ① … ⑤ …
+<b>::나::</b> {암석의 순환 …} …
+<b>::가::</b> {소화 효소 실험 …} …</div>
+      <p style="font-size:11px;color:#8b939c;margin-top:6px">
+        (문법 표기는 예시 — 실제 표기는 docs/문법.md 와 맞춰 정합니다)
+      </p>
+    </div>
+  </div>
+
+  <div class="slot">
+    <h2><b>H-3</b> 참조 방식 — 한 군데 고치면 전부 반영</h2>
+    <div class="zoom">
+      <h5>꾸러미는 요소를 “가리키기만” 합니다</h5>
+      <div class="refline">
+        <span class="nd mix">가</span><span class="ar">→</span>
+        <span class="nd">지문 박스</span><span class="ar">+</span>
+        <span class="nd">발문</span><span class="ar">+</span>
+        <span class="nd" style="border-color:#0969da;color:#0969da">선지 5택 ✎</span>
+      </div>
+      <div class="refline">
+        <span class="nd mix">나</span><span class="ar">→</span>
+        <span class="nd">발문</span><span class="ar">+</span>
+        <span class="nd" style="border-color:#0969da;color:#0969da">선지 5택 ✎</span><span class="ar">+</span>
+        <span class="nd">답란</span>
+      </div>
+      <p>
+        ‘선지 5택’ 하나를 고치면(✎) <b>‘가’와 ‘나’ 모두</b> 다음 사용부터 새 모양으로 꽂힙니다.
+        시험지 관리의 핵심 — 선지 모양 교체를 꾸러미마다 반복하지 않습니다.
+      </p>
+      <h5 style="margin-top:12px">요소를 지우려 하면</h5>
+      <div class="dlg" style="width:100%;margin-top:7px">
+        <div class="tb"><i></i><span>지울 수 없습니다</span><span class="s"></span><u>✕</u></div>
+        <div class="dlg-body">
+          <p class="sub" style="margin:0">‘선지 5택’ 은 꾸러미 <b>‘가’, ‘나’</b> 가 쓰고 있습니다.<br>
+            먼저 꾸러미에서 빼거나, 꾸러미를 지운 뒤 다시 시도하세요.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slot">
+    <h2><b>H-4</b> 문서 해체와 만나는 지점</h2>
+    <div class="zoom">
+      <h5>[묶어 담기]가 두 가지를 물을 수 있게 됩니다</h5>
+      <div class="dlg" style="width:100%">
+        <div class="tb"><i></i><span>묶어 담기 — 3개 조각</span><span class="s"></span><u>✕</u></div>
+        <div class="dlg-body">
+          <div class="frow on" style="border-bottom:1px solid #eceff2;padding:7px 0"><span class="ck"></span>
+            <span style="font-size:11.5px"><b>낱개 + 꾸러미로 담기</b> (권장)<br>
+            <span style="font-size:10.5px;color:#8b939c">조각 3개를 각각 담고, 그것들을 가리키는 꾸러미를 함께 만듭니다.<br>나중에 조각 하나만 고쳐도 꾸러미가 따라 바뀝니다.</span></span></div>
+          <div class="frow" style="border-bottom:0;padding:7px 0"><span class="ck"></span>
+            <span style="font-size:11.5px"><b>한 덩어리로 담기</b><br>
+            <span style="font-size:10.5px;color:#8b939c">지금처럼 합쳐진 조각 하나가 됩니다. 요소를 따로 고칠 수 없습니다.</span></span></div>
+        </div>
+      </div>
+      <p>
+        해체 한 번으로 <b>요소들과 유형(‘가’)이 동시에</b> 생깁니다 —
+        시험지 하나를 해체하면 우리 학교 문항 유형이 그대로 꾸러미가 되는 흐름입니다.
+      </p>
+    </div>
+  </div>
+
+  <div class="slot">
+    <h2><b>H-5</b> 출력 규칙 — 누르면 어떻게 꽂히나 <b class="pick">논의 중</b></h2>
+    <div class="zoom" style="width:430px">
+      <h5>기본 제안 + 자리지정빈칸</h5>
+      <table class="kv">
+        <tr><th>팔레트에서<br>누르면</th><td>요소들을 <b>순서대로 커서 자리에 이어</b> 꽂습니다. 빈칸은 빈칸대로 남습니다 — 낱개 템플릿과 같은 동작이라 새 규칙이 없습니다. (꽂기 전에 빈칸 채우기 창을 띄울지는 결정 필요)</td></tr>
+        <tr><th>마크다운<br>값 붓기</th><td><code style="background:#f6f8fa;border:1px solid #d0d7de;border-radius:3px;padding:0 3px">::가:: {…} {…} …</code> — 값을 앞에서부터 <b>빈칸 순서대로</b> 붓습니다. <code style="background:#f6f8fa;border:1px solid #d0d7de;border-radius:3px;padding:0 3px">-</code> 는 건너뜀. 현행 조각 규칙 그대로 물려받습니다.</td></tr>
+        <tr><th>자리지정빈칸<br>(이름표)</th><td>이름 있는 빈칸은 <b>순서를 무시하고 지정</b>해 부을 수 있습니다 — <code style="background:#f6f8fa;border:1px solid #d0d7de;border-radius:3px;padding:0 3px">발문={…} 선1={…}</code>. 이름 지정이 먼저 자리를 차지하고, 나머지 값은 남은 빈칸에 순서대로 들어갑니다.</td></tr>
+        <tr><th>이름이<br>겹치면</th><td>‘가’ 안의 두 요소가 똑같이 ‘선1’ 을 가질 수 있습니다. 제안: <b>나온 순서대로 배분</b> (첫 ‘선1=’ 은 첫 요소의 선1). 금지할지 배분할지 결정 필요.</td></tr>
+      </table>
+      <p style="background:#fffaf0;border:1px solid #f0dcb0;border-radius:5px;padding:8px 10px;color:#8a5300;margin-top:10px">
+        <b>결정 필요</b> — ① 팔레트 클릭 시 채우기 창을 띄울지, 빈칸으로 꽂을지
+        ② 이름 겹침 규칙(배분 vs 금지) ③ 표기(<code>::가::</code>, <code>이름={값}</code>)를 docs/문법.md 와 정합.
+      </p>
+    </div>
+  </div>
+
+</div>
+
+
 <div class="note warn" style="margin-top:38px">
   <b>이 시안에서 아직 안 정한 것</b>
   <ul>
@@ -906,6 +1185,8 @@
     <li><b>미리보기 폭</b> — 지금 시안은 206px 남짓. 무엇이 들어가야 하는지에 따라 달라집니다.</li>
     <li><b>창고 카드의 ‘빈칸 N’</b> — 템플릿에만 뜻이 있는 값입니다. 다른 분류에서는 무엇을 보일지.</li>
     <li><b>문서 해체(E)</b> — 채택 여부 · 기능 이름 · 훑는 범위(표 안·글상자 안까지 갈지).</li>
+    <li><b>물감 섞기(H)</b> — 추천안 확정: ① 참조 방식 ② 템플릿끼리만 ④ 묶어 담기 연계. <b>출력 규칙(H-5)</b>: 팔레트 클릭 시 채우기 창 여부 · 이름 겹침 규칙 · 문법 표기 정합.</li>
+    <li><b>겹치기(G) 미정 3건</b> — Ctrl+1~9 동작 · 겉면 표시 · 도킹 칩 적용.</li>
   </ul>
   <b style="display:block;margin-top:9px">먼저 고쳐야 하는 것</b>
   피드백 <b>011</b>(<code>_ToolPickDialog</code> 이름이 두 개라 도구 고르기 창이 안 열림).
