@@ -16,6 +16,7 @@ import time
 
 import pathlib
 import shutil
+import uuid
 
 from hwp_palette.core import applog
 from hwp_palette.model import form_fill                    # 채울 자리 토큰 규칙(이름표 \학년\) 한 벌로
@@ -294,10 +295,15 @@ def measure_insert_span(anchor_pos, insert_fn):
         hwp.SetPos(*anchor_pos)
         return None
     before = hwp_engine.doc_end_para()
-    hwp.SetPos(*anchor_pos)
-    insert_fn()
-    after = hwp_engine.doc_end_para()
-    hwp.SetPos(*anchor_pos)
+    after = before
+    try:
+        hwp.SetPos(*anchor_pos)
+        insert_fn()
+        after = hwp_engine.doc_end_para()
+    finally:
+        # doc_end_para 가 커서를 문서 끝으로 옮기므로, 중간에 무엇이 터져도
+        # 커서는 반드시 제자리로 — 안 그러면 사용자의 커서가 문서 끝에 남는다
+        hwp.SetPos(*anchor_pos)
     return anchor_pos[1] + max(after - before, 0)
 
 
@@ -770,14 +776,24 @@ class EditSession:
     그것만 활성화하고 그것만 닫으면 그 가정이 통째로 사라진다.
 
     temp_path: 양식 편집이 만든 사본(편집중_*.hwp). 저장이 끝나면 지운다.
+    own_tab: 이 탭을 **우리가 열었는가**. open 이 새 탭을 쓰지 않고 기존
+        문서를 갈아치운 경우(open_form_copy 의 예비 경로) False 로 온다 —
+        그 문서는 활성화·저장은 해도 되지만 **닫으면 안 된다** (사용자
+        탭일 수 있다).
     """
 
-    def __init__(self, doc, temp_path=None):
+    def __init__(self, doc, temp_path=None, own_tab=True):
         self.doc = doc
         self.temp_path = temp_path
+        self.own_tab = own_tab
 
     def activate(self):
         """저장·닫기 전에 이 문서를 활성으로 되돌린다. 성공 여부."""
+        if self.doc is None:
+            # 문서 객체를 아예 못 받은 세션 — 재시도해도 같은 결과다.
+            # 호출부(overwrite_content)가 이 경우를 따로 안내한다.
+            applog.warn("고치던 문서 객체가 없습니다 — 활성화할 대상이 없다")
+            return False
         try:
             self.doc.SetActive_XHwpDocument()
             return True
@@ -789,7 +805,12 @@ class EditSession:
         """이 문서만 저장 없이 닫는다. 성공 여부.
 
         사용자가 이미 손으로 닫았을 수 있으므로 실패를 오류로 보지 않는다.
+        우리가 연 탭이 아니면(own_tab=False) **닫지 않는다** — open 이 기존
+        문서를 갈아치운 경우라, 닫으면 사용자 탭이 사라질 수 있다.
         """
+        if not self.own_tab:
+            applog.warn("우리가 연 탭이 아니라 닫지 않습니다 — 사용자가 직접 닫는다")
+            return False
         try:
             self.doc.Close(isDirty=False)
             return True
@@ -798,12 +819,16 @@ class EditSession:
             return False
 
     def cleanup(self):
-        """양식 편집이 만든 사본 파일을 지운다 (저장이 끝난 뒤)."""
+        """이 세션이 만든 사본 파일**만** 지운다 (저장이 끝난 뒤).
+
+        사본 이름은 세션마다 다르므로(open_form_copy 의 uuid 접두)
+        다른 세션이 아직 고치는 파일을 건드릴 일이 없다.
+        """
         if not self.temp_path:
             return
         try:
             pathlib.Path(self.temp_path).unlink(missing_ok=True)
-        except OSError as e:
+        except Exception as e:
             applog.exc(f"양식 사본 삭제 실패 (남아도 무해) — {self.temp_path}", e)
 
 
@@ -891,7 +916,10 @@ def open_form_copy(path, note_lines=None):
         raise FileNotFoundError(f"양식 파일이 없습니다 — {src}")
     work = paths.data_dir() / "양식작업"
     work.mkdir(parents=True, exist_ok=True)
-    copy_path = work / f"편집중_{src.name}"
+    # 세션마다 다른 이름을 쓴다 (2026-07-31) — `편집중_{원본이름}` 처럼
+    # 정해진 이름이면 같은 양식을 두 번 열었을 때 사본이 서로 덮어쓰고,
+    # 한쪽 cleanup() 이 다른 쪽이 아직 고치는 파일을 지운다.
+    copy_path = work / f"편집중_{uuid.uuid4().hex[:8]}_{src.name}"
     shutil.copy2(str(src), str(copy_path))
 
     before = hwp.XHwpDocuments.Count
@@ -904,8 +932,17 @@ def open_form_copy(path, note_lines=None):
     if hwp.XHwpDocuments.Count <= before:
         # open 이 새 탭을 쓰지 않고 기존 문서를 갈아치웠다는 뜻 — 이 경우
         # 우리가 들고 있는 doc 이 사용자 문서일 수 있어 닫으면 안 된다.
+        # 다만 **지금 활성 문서는 방금 open 한 사본**이므로 그것을 세션에
+        # 담아 둔다 (2026-07-31 안전 수리): doc=None 으로 두면 저장 전의
+        # activate() 가 항상 실패해 이 세션은 영영 저장할 수 없게 된다.
+        # own_tab=False 라 닫기(close)만 건너뛴다.
         applog.warn("양식 편집: 새 탭이 늘지 않았습니다 — 탭 자동 닫기를 건너뜁니다")
-        return EditSession(None, temp_path=copy_path)
+        try:
+            fallback_doc = hwp.XHwpDocuments.Active_XHwpDocument
+        except Exception as e:
+            applog.exc("양식 편집: 활성 문서 읽기 실패 — 이 세션은 저장할 수 없다", e)
+            fallback_doc = None
+        return EditSession(fallback_doc, temp_path=copy_path, own_tab=False)
     # open 뒤에는 활성 문서를 다시 받아 둔다 — 탭을 여는 것과 파일을 여는 것이
     # 별개라, Add 가 준 객체가 그대로 그 문서를 가리킨다고 단정할 수 없다.
     try:
@@ -1080,6 +1117,12 @@ def normalize_marks_to_pairs():
     순서가 생명이다: 이름표(\학년\)와 기존 쌍(\\)을 먼저 다른 글자로 피신시킨
     뒤 홑 \ 를 불리고, 마지막에 되돌린다 — 안 그러면 \학년\ 이 \\학년\\ 으로
     불어난다. 피신 글자(⟪…⟫)는 시험지에 나올 수 없는 조합이다.
+
+    **단계마다 결과를 확인한다** (2026-07-31 안전 수리): replace_all 은
+    실패해도 예외 없이 False 만 준다. 중간 단계가 실패한 채 계속 가면 피신
+    글자(⟪이름:…⟫)가 문서에 남아 **그대로 저장물이 된다.** 실패하면 이미
+    피신시킨 것만 제자리로 되돌리고 예외로 멈춘다 — 저장 쪽(save_active_as)이
+    이 예외를 보고 저장을 포기한다.
     """
     hwp = _h()
     try:
@@ -1095,14 +1138,48 @@ def normalize_marks_to_pairs():
     for m in form_fill.TOKEN_RE.finditer(text):
         if m.group(1) and m.group(1) not in names:
             names.append(m.group(1))
+    # 이름 없는 쌍(\\)이 문서에 있을 때만 피신시킨다 — 없는 글자를 찾는
+    # 바꾸기는 '실패'와 구분할 수 없어, 있는 것만 만져야 결과 확인이 선다
+    pairs = sum(1 for m in form_fill.TOKEN_RE.finditer(text)
+                if m.group(1) is None and len(m.group(0)) == 2)
     PAIR = "⟪자리쌍⟫"
+    pending = []                        # 아직 안 되돌린 피신 — (찾기, 원래대로)
+
+    def _undo_pending():
+        """피신 글자를 제자리로 되돌린다. 반환: 전부 되돌렸는가."""
+        ok = True
+        for find, repl in reversed(pending):
+            if not hwp_engine.replace_all(find, repl):
+                applog.warn(f"자리 표시 되돌리기 실패 — {find!r} → {repl!r}")
+                ok = False
+        return ok
+
+    def _must(find, repl):
+        """바꾸기 한 단계 — 실패하면 피신을 되돌리고 예외로 멈춘다."""
+        if hwp_engine.replace_all(find, repl):
+            return
+        if _undo_pending():
+            raise RuntimeError(
+                "자리 표시 정리에 실패해 문서를 정리 전으로 되돌렸습니다 — "
+                "한글이 바쁘거나 응답하지 않았을 수 있습니다.\n"
+                "잠시 뒤 다시 시도해 주세요.")
+        raise RuntimeError(
+            "자리 표시 정리에 실패했고 임시 표시(⟪…⟫)가 문서에 남았을 수 "
+            "있습니다.\n한글에서 ⟪ 글자를 찾아 지운 뒤 다시 시도해 주세요.")
+
     for n in names:
-        hwp_engine.replace_all(f"\\{n}\\", f"⟪이름:{n}⟫")
-    hwp_engine.replace_all("\\\\", PAIR)
-    hwp_engine.replace_all("\\", "\\\\")
-    hwp_engine.replace_all(PAIR, "\\\\")
+        _must(f"\\{n}\\", f"⟪이름:{n}⟫")
+        pending.append((f"⟪이름:{n}⟫", f"\\{n}\\"))
+    if pairs:
+        _must("\\\\", PAIR)
+        pending.append((PAIR, "\\\\"))
+    _must("\\", "\\\\")
+    if pairs:
+        _must(PAIR, "\\\\")
+        pending.remove((PAIR, "\\\\"))
     for n in names:
-        hwp_engine.replace_all(f"⟪이름:{n}⟫", f"\\{n}\\")
+        _must(f"⟪이름:{n}⟫", f"\\{n}\\")
+        pending.remove((f"⟪이름:{n}⟫", f"\\{n}\\"))
     # 검산 — 홑 \ 가 남아 있으면 기록만 남긴다 (읽기는 옛 문법도 되므로 무해)
     try:
         after = hwp.GetTextFile("TEXT", "") or ""
@@ -1126,10 +1203,11 @@ def save_active_as(dest_path):
     if doc_is_empty():
         raise RuntimeError("문서가 비어 있어 저장하지 않았습니다 "
                            "(원본을 지우지 않기 위해 멈춥니다).")
-    try:
-        normalize_marks_to_pairs()      # 양식 '내용 고치기' 저장도 새 문법으로
-    except Exception as e:
-        applog.exc("자리 표시 정리 실패 — 옛 문법 그대로 저장 (읽기는 됨)", e)
+    # 정리가 실패하면 저장하지 않는다 (2026-07-31 안전 수리) — 예전에는
+    # 여기서 예외를 삼키고 저장을 계속해서, 피신 글자(⟪이름:…⟫)가 문서에
+    # 남은 채 **성공한 것처럼** 저장물이 됐다. 예외를 그대로 올리면 호출부
+    # (overwrite_content)가 오류창을 띄우고 편집 상태를 유지한다.
+    normalize_marks_to_pairs()          # 양식 '내용 고치기' 저장도 새 문법으로
     hwp.save_as(str(dest_path), format="HWP")
     try:
         return hwp.GetTextFile("TEXT", "") or ""

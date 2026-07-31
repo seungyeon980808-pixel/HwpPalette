@@ -1993,9 +1993,30 @@ def overwrite_content(session, cat, item, parent):
         return False, False
     try:
         if session is not None:
+            # 문서 객체가 아예 없는 세션은 **다시 시도해도 똑같이** 실패한다
+            # (open 이 새 탭을 안 쓴 데다 활성 문서 읽기까지 실패한 경우).
+            # 재시도 안내 대신 편집을 다시 여는 길을 알려준다 (2026-07-31).
+            if getattr(session, "doc", None) is None:
+                messagebox.showerror(
+                    "덮어쓰기 중단",
+                    "고치던 문서를 프로그램이 놓쳐서 이 편집으로는 저장할 수 "
+                    "없습니다.\n"
+                    "편집을 취소한 뒤 '내용 고치기'를 다시 눌러 주세요.",
+                    parent=parent)
+                return False, False
             # 고치던 그 탭을 확실히 활성으로 — 사용자가 다른 탭으로
-            # 갈아탔더라도 엉뚱한 문서를 저장하지 않는다
-            session.activate()
+            # 갈아탔더라도 엉뚱한 문서를 저장하지 않는다.
+            # **실패하면 여기서 통째로 멈춘다** (2026-07-31 안전 수리):
+            # 활성화가 안 됐는데 계속 가면 아래의 안내문 걷기·저장이
+            # 사용자가 보고 있던 문서(시험지)를 상대로 실행된다.
+            if not session.activate():
+                messagebox.showerror(
+                    "덮어쓰기 중단",
+                    "편집 중인 한글 창을 찾지 못해 중단했습니다 — 편집 탭이 "
+                    "닫혔거나 한글이 바쁩니다.\n"
+                    "편집 탭을 확인하고 다시 시도해 주세요.",
+                    parent=parent)
+                return False, False
         engine_library.strip_edit_note()   # 안내문은 저장물에 넣지 않는다
         # 템플릿도 양식과 **같은 길**로 저장한다 (2026-07-27) — 편집 탭이 이미
         # 저장할 내용 그대로라, 예전의 복사→임시 탭→저장(capture_fragment)은

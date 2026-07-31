@@ -184,7 +184,12 @@ class OpenFormCopyTest(unittest.TestCase):
             engine_library.open_form_copy(self.src.with_name("_없음.hwp"), None)
 
     def test_탭이_늘지_않으면_자동_닫기를_포기한다(self):
-        r"""open 이 사용자 문서를 갈아치웠을 수 있다 — 그때 닫으면 남의 문서를 닫는다."""
+        r"""open 이 사용자 문서를 갈아치웠을 수 있다 — 그때 닫으면 남의 문서를 닫는다.
+
+        단, 지금 활성 문서는 방금 open 한 사본이므로 세션에 담아 둔다
+        (2026-07-31) — doc=None 이면 저장 전 activate() 가 항상 실패해
+        이 세션은 영영 저장할 수 없었다. 닫기만 own_tab=False 로 막는다.
+        """
         fake = FakeHwp()
 
         class NoGrowDocs(FakeDocs):
@@ -195,7 +200,11 @@ class OpenFormCopyTest(unittest.TestCase):
         fake.XHwpDocuments = NoGrowDocs()
         _install(fake)
         session = engine_library.open_form_copy(self.src, None)
-        self.assertIsNone(session.doc, "닫으면 안 되는 상황인데 문서를 들고 있다")
+        self.assertIsNotNone(session.doc,
+                             "활성 문서를 담아 둬야 저장(activate)이 된다")
+        self.assertFalse(session.own_tab, "우리가 연 탭이 아니라고 표시해야 한다")
+        self.assertFalse(session.close(), "닫으면 안 되는 탭을 닫으려 했다")
+        self.assertFalse(session.doc.closed, "사용자 탭일 수 있는 문서를 닫았다")
 
 
 class FinishEditSessionTest(unittest.TestCase):
