@@ -144,6 +144,21 @@ def clear_crop(hwnd):
         applog.exc("한글 창 잘라내기 해제 실패 — 창이 잘린 채 남을 수 있음", e)
 
 
+def is_hung(hwnd):
+    r"""그 창의 스레드가 '응답 없음'인가 (2026-07-31, ctypes IsHungAppWindow).
+
+    왜 필요한가: SetWindowPos·SetWindowPlacement·SetWindowRgn 은 남의 프로세스
+    창에 **동기**로 메시지를 보낸다. 상대(한글)가 멈춰 있으면 그 응답을
+    기다리는 우리 스레드도 함께 멈춘다 — Tk 주 스레드에서 그러면 사용자는
+    이 프로그램 창을 닫을 수조차 없다. 그래서 그런 호출 앞에서 먼저 물어본다.
+    (pywin32 에는 IsHungAppWindow 가 없어 ctypes 로 부른다.)
+    """
+    try:
+        return bool(_user32.IsHungAppWindow(hwnd))
+    except Exception:
+        return False                    # 판단이 안 되면 원래 하던 대로 진행
+
+
 def preposition(hwnd, host_widget):
     r"""**숨어 있는** 한글 창을 미리 판 자리로 옮겨 둔다. 성공 여부.
 
@@ -302,6 +317,12 @@ class Dock:
         try:
             if not win32gui.IsWindow(self.hwnd):
                 return
+            # 이 둘은 순서가 생명이라(한글을 올린 **다음** 그 바로 아래에 낀다)
+            # 비동기로 못 부친다 — 대신 멈춘 한글이면 손대지 않는다 (2026-07-31).
+            # 이 함수는 <Activate>/<FocusIn> 로 Tk 주 스레드에서도 불리므로,
+            # 동기 호출이 멈춘 창을 기다리면 앱이 통째로 굳는다.
+            if is_hung(self.hwnd):
+                return
             fg = win32gui.GetForegroundWindow()
             if not force and fg not in (self.hwnd, self._root_hwnd):
                 return                      # 남의 프로그램을 쓰는 중 — 건드리지 않는다
@@ -419,7 +440,22 @@ class Dock:
         보이는 창이면 **미끄러지듯** 되돌린다 (2026-07-28, 사용자 지적
         "저장하면 깜빡거린다") — 순간이동은 '창이 튀었다'로 보인다.
         숨겨진 창이면 그냥 배치만 써 둔다 (아무것도 안 보인다).
+
+        (2026-07-31) 활강의 위치 변경은 **동기**로 보낸다 — ASYNC 로 부치면
+        한글이 잠깐 바쁜 사이 쌓인 이동 요청이, 뒤이은 SetWindowPlacement 의
+        보낸 메시지(sent)보다 **늦게**(posted) 처리돼 확정된 배치를 도로
+        중간 지점으로 밀어 버린다. 멈춘 한글에 붙잡히는 문제는 위의
+        is_hung 검사가 이미 막는다. 배치가 건드리지 않는 Z순서(NOTOPMOST)
+        되돌리기만 ASYNC 로 부친다.
         """
+        # 한글이 '응답 없음'이면 원복 전체를 건너뛴다 (2026-07-31): 아래의
+        # SetWindowRgn·SetWindowPlacement 는 비동기 선택지가 없는 동기 호출이라,
+        # 멈춘 한글을 붙잡으면 Tk 주 스레드가 같이 멈춰 사용자가 이 창을 닫을
+        # 수도 없다. 한글이 판 자리에 남는 쪽이 앱이 통째로 굳는 것보다 낫다.
+        if win32gui.IsWindow(self.hwnd) and is_hung(self.hwnd):
+            applog.warn("한글 창이 응답하지 않아 원복을 건너뜀 — 창이 지금 자리에 남습니다")
+            self._placement = None
+            return
         # 지난 판이 남긴 잘라내기가 있으면 여기서도 걷어낸다 (무조건, 맨 먼저):
         # placement 가 없다고 먼저 돌아가 버리면 제목줄 없는 한글이 남는다.
         if crop_top_of(self.hwnd):
@@ -435,21 +471,25 @@ class Dock:
             if visible and not was_maximized:
                 tl, tt, tr, tb = self._rect0 or placement[4]
                 tw, th = tr - tl, tb - tt
-                for _ in range(8):                   # ~130ms 활강
+                for i in range(8):                   # ~115ms 활강
                     cl, ct, cr, cb = win32gui.GetWindowRect(self.hwnd)
                     dl, dt = tl - cl, tt - ct
                     dw, dh = tw - (cr - cl), th - (cb - ct)
                     if all(abs(v) <= _SNAP_PX for v in (dl, dt, dw, dh)):
                         break
+                    # 동기: ASYNC 로 부치면 늦게 처리된 이동이 아래
+                    # SetWindowPlacement 확정을 도로 밀어낸다 (docstring 참고)
                     win32gui.SetWindowPos(
                         self.hwnd, 0,
                         cl + int(dl * _EASE), ct + int(dt * _EASE),
                         (cr - cl) + int(dw * _EASE), (cb - ct) + int(dh * _EASE),
                         win32con.SWP_NOZORDER | win32con.SWP_NOACTIVATE)
-                    time.sleep(0.016)
+                    if i < 7:            # 마지막 틱 뒤에는 잘 필요가 없다
+                        time.sleep(0.016)
             win32gui.SetWindowPos(
                 self.hwnd, win32con.HWND_NOTOPMOST, 0, 0, 0, 0,
-                win32con.SWP_NOMOVE | win32con.SWP_NOSIZE)
+                win32con.SWP_NOMOVE | win32con.SWP_NOSIZE
+                | win32con.SWP_ASYNCWINDOWPOS)
             if not visible:
                 # 이미 숨겨진 창이면 **숨긴 채로** 배치만 되돌린다 (실측
                 # 2026-07-28): 원래 배치의 showCmd 가 SW_SHOWNORMAL 이라

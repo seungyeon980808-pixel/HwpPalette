@@ -173,12 +173,22 @@ class Tutorial:
                 w = None
         self._target = w
         self._base = _base_of(w, self.root)
-        self._raise_over(self._base)    # 흐림이 그 창 위에 오도록 z-순서 정리
-        self._draw_dim(w)               # 대상만 남기고 나머지를 흐리게
-        if w is not None:
-            self._draw_halo(w)
-        self._draw_coach(w, step["title"], step["text"],
-                         last=(i == len(self.steps) - 1))
+        try:
+            self._raise_over(self._base)    # 흐림이 그 창 위에 오도록 z-순서 정리
+            self._draw_dim(w)               # 대상만 남기고 나머지를 흐리게
+            if w is not None:
+                self._draw_halo(w)
+            # title/text 는 .get 으로 (2026-07-31) — 단계 dict 에 빠져 있어도
+            # 안내가 비어 보일 뿐, 튜토리얼이 터져서는 안 된다.
+            self._draw_coach(w, step.get("title", ""), step.get("text", ""),
+                             last=(i == len(self.steps) - 1))
+        except Exception as e:
+            # 그리다 만 채로 두면 안 된다 (2026-07-31): 흐림 패널은 클릭을 다
+            # 삼키는 창이라, 정리 없이 남으면 프로그램을 강제 종료하는 길밖에
+            # 없다. 무슨 일이 있어도 걷고 끝낸다.
+            applog.exc(f"튜토리얼 {i}단계 그리기 실패 — 안내를 걷고 중단", e)
+            self._finish()
+            return
         self._last_geo = self._geo()    # 이 자리를 기준으로 '움직였나' 를 잰다
         self._track()                   # 창이 움직이면 따라오게
         if settle:
@@ -402,6 +412,10 @@ class Tutorial:
                 d.wm_overrideredirect(True)
                 d.configure(bg="#000000")
                 d.attributes("-alpha", _DIM_ALPHA)
+                # 흐림 판이 초점을 얻는 수가 있다 — 클릭을 삼키는 창이므로
+                # (2026-07-31). 그때도 Escape 로 나올 수 있게 코치 창과 같은
+                # 탈출구를 여기에도 달아 둔다.
+                d.bind("<Escape>", lambda e=None: self._finish())
                 self._dim.append(d)
             except Exception as e:
                 applog.exc("흐림 패널 생성 실패 — 강조 없이 계속", e)

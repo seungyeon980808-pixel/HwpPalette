@@ -38,6 +38,8 @@ WM_HOTKEY = 0x0312
 WM_QUIT = 0x0012
 # 누르고 있을 때 자동 반복으로 쏟아지지 않게 (Windows 7+)
 MOD_NOREPEAT = 0x4000
+# start() 가 스레드의 등록 결과를 기다리는 시간 (초) — 테스트가 줄여 쓴다
+_READY_TIMEOUT_S = 3.0
 
 # 수정키 이름 → 비트. 조합을 글로 적어두면 설정으로 빼기도 쉽다.
 _MODS = {"ctrl": 0x0002, "alt": 0x0001, "shift": 0x0004, "win": 0x0008}
@@ -85,6 +87,10 @@ class GlobalHotkey:
         self._thread = None
         self._tid = None
         self._ready = threading.Event()
+        # start() 가 기다리다 포기했다는 표시 (2026-07-31) — 이게 선 뒤에
+        # 등록이 끝나면 스레드가 스스로 도로 푼다. 안 풀면 아무도 받지 않는
+        # 가로채기가 남아 그 조합이 **모든 프로그램에서** 죽은 키가 된다.
+        self._cancel = threading.Event()
         self._error = None
 
     # ── 시작/종료 ────────────────────────────────────
@@ -107,13 +113,25 @@ class GlobalHotkey:
             name=f"hotkey-{self.combo}")
         self._thread.start()
         # 등록은 스레드 안에서 일어나므로 결과가 나올 때까지 잠깐 기다린다
-        if not self._ready.wait(timeout=3.0):
+        if not self._ready.wait(timeout=_READY_TIMEOUT_S):
+            # 그냥 돌아가면 안 된다 (2026-07-31): 잠시 뒤 등록이 **성공해
+            # 버리면** 그 조합을 시스템 전체에서 가로채는데 아무도 받아 가지
+            # 않는다. 취소를 세워 두면 스레드가 등록을 마치는 즉시 도로 풀고,
+            # 이미 수신에 들어갔다면 stop() 의 WM_QUIT 가 깨워서 풀게 한다.
+            self._cancel.set()
+            self.stop()
             self._error = "단축키 등록이 응답하지 않습니다"
             return False, self._error
         return (self._error is None), self._error
 
     def stop(self):
-        """스레드를 깨워 등록을 풀고 끝낸다 (데몬이라 안 불러도 프로세스는 죽는다)."""
+        """스레드를 깨워 등록을 풀고 끝낸다 (몇 번 불러도, 언제 불러도 안전).
+
+        데몬이라 안 불러도 프로세스는 죽지만, 등록만 남기고 죽으면 다음 실행
+        까지 그 조합이 시스템에서 자리를 차지할 수 있어 반드시 풀고 간다.
+        """
+        # 등록이 아직 진행 중이라면, 끝나는 즉시 스스로 풀게 한다 (2026-07-31)
+        self._cancel.set()
         if self._tid is None or win32gui is None:
             return
         try:
@@ -148,6 +166,12 @@ class GlobalHotkey:
         applog.info(f"전역 단축키 등록: {self.combo}")
         self._ready.set()
         try:
+            # start() 가 기다리다 포기한 **뒤에야** 등록이 끝났을 수 있다
+            # (2026-07-31). 그 등록은 임자가 없다 — 아무도 poll 하지 않는데
+            # 키만 시스템 전체에서 가로챈다. 곧바로 나가 finally 가 풀게 한다.
+            if self._cancel.is_set():
+                applog.warn(f"단축키 {self.combo} 등록이 뒤늦게 끝나 도로 풉니다")
+                return
             while True:
                 rc, msg = win32gui.GetMessage(None, 0, 0)
                 if rc in (0, -1):          # WM_QUIT 또는 오류
