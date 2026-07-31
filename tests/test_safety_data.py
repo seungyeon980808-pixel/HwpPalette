@@ -262,7 +262,8 @@ class CorruptLibraryTest(_LibraryBase):
 
     def test_파일이_없으면_새_설치로_정상_동작(self):
         self.assertEqual(library.load(),
-                         {"서식": [], "문자": [], "템플릿": [], "양식": []})
+                         {"서식": [], "문자": [], "템플릿": [], "양식": [],
+                          "subcats": {}})
         library.add_char("가나다", "★")             # 저장도 된다
         self.assertTrue(self.lib.exists())
 

@@ -208,6 +208,44 @@ class StyleFieldDialog(tk.Toplevel):
         self.destroy()
 
 
+class SubcatPicker(ttk.Combobox):
+    r"""하위 분류 드롭다운 — 물감이 생기는 **모든** 등록 창에 붙는 한 줄
+    (2026-07-31, 시안 docs/mockups/store-subcats.html K-2).
+
+    기본값이 '미분류'라 안 고르고 저장해도 그냥 진행된다 — 묻는 창이 하나 더
+    뜨는 게 아니다. 맨 아래 '＋ 새 분류 만들기…'로 저장하던 김에 분류를 만들
+    수 있다 (창고에 갔다 올 필요가 없다).
+    """
+    NEW = "＋ 새 분류 만들기…"
+
+    def __init__(self, master, category, value="", width=14, **kw):
+        self.category = category
+        super().__init__(master, state="readonly", width=width, **kw)
+        self._reload(select=library.normalize_subcat(value))
+        self.bind("<<ComboboxSelected>>", self._picked)
+
+    def _reload(self, select=""):
+        names = library.list_subcats(self.category)
+        self["values"] = ([library.SUBCAT_UNSORTED] + names + [self.NEW])
+        self.set(select if select in names else library.SUBCAT_UNSORTED)
+        self._last = self.get()         # '＋' 를 골랐다 물렀을 때 돌아갈 자리
+
+    def _picked(self, _e=None):
+        if self.get() != self.NEW:
+            self._last = self.get()
+            return
+        # '＋' 를 고른 것 자체는 값이 아니다 — 이름을 받든 못 받든 값은
+        # 실제 분류로 되돌린다.
+        name = simpledialog.askstring(
+            "새 분류", "새 하위 분류 이름:", parent=self.winfo_toplevel())
+        made = library.add_subcat(self.category, name) if name else None
+        self._reload(select=made or library.normalize_subcat(self._last))
+
+    def value(self):
+        """고른 하위 분류 ("" = 미분류)."""
+        return library.normalize_subcat(self.get())
+
+
 class MetaForm(tk.Frame):
     r"""이름·태그 입력 폼 — **창과 판이 같은 부품을 쓴다** (2026-07-27 분리).
 
@@ -221,11 +259,13 @@ class MetaForm(tk.Frame):
     """
 
     def __init__(self, master, name="", label="", extra_note="",
-                 exclude_id=None, bg=BG, on_submit=None):
+                 exclude_id=None, bg=BG, on_submit=None,
+                 category=None, subcat=""):
         super().__init__(master, bg=bg)
         self._bg = bg
         self.exclude_id = exclude_id        # 수정 중인 자기 자신은 충돌에서 제외
         self._on_submit = on_submit         # 이름칸 Enter → 저장 지름길
+        self._subcat_picker = None          # category 를 받았을 때만 생긴다
 
         body = tk.Frame(self, bg=bg)
         body.pack(fill="x")
@@ -255,10 +295,19 @@ class MetaForm(tk.Frame):
         self.name_var.trace_add("write", lambda *a: self._update_preview())
         self.label_var.trace_add("write", lambda *a: self._update_preview())
 
+        # ── 하위 분류 (2026-07-31, 시안 K-2) — 물감이 생기는 모든 창의
+        # 등록 정보에 붙는 한 줄. 기본이 미분류라 안 골라도 그냥 진행된다.
+        if category in library.CATEGORIES:
+            tk.Label(body, text="분류", font=(FONT, theme.fs(FS["body"])),
+                     bg=bg, fg=TEXT).grid(row=2, column=0, sticky="w", pady=3)
+            self._subcat_picker = SubcatPicker(body, category, value=subcat)
+            self._subcat_picker.grid(row=2, column=1, sticky="w", pady=3,
+                                     padx=(8, 0))
+
         if extra_note:
             tk.Label(body, text=extra_note, font=(FONT, theme.fs(FS["sub"])),
                      bg=bg, fg=MUTED, wraplength=320, justify="left").grid(
-                row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
+                row=3, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         # ── 태그 — 늘 펼쳐 둔다 (2026-07-27) ──
         # '자세히'로 접어 뒀더니 태그가 있다는 것 자체를 모르고 지나쳤다.
@@ -400,6 +449,10 @@ class MetaForm(tk.Frame):
             return None
         return (name, label, tags)
 
+    def subcat(self):
+        """드롭다운의 하위 분류 ("" = 미분류 또는 드롭다운 없음)."""
+        return self._subcat_picker.value() if self._subcat_picker else ""
+
     def _checked_tags(self):
         r"""입력칸의 태그를 검사한다. 통과하면 목록, 아니면 None(저장 중단).
 
@@ -447,9 +500,10 @@ class MetaDialog(tk.Toplevel):
     """
 
     def __init__(self, master, title="등록 정보", name="", label="", extra_note="",
-                 exclude_id=None):
+                 exclude_id=None, category=None, subcat=""):
         super().__init__(master)
         self.result = None
+        self.subcat = ""            # 저장을 눌렀을 때의 하위 분류 ("" = 미분류)
         self.title(title)
         self.configure(bg=BG)
         self.resizable(False, False)
@@ -457,7 +511,8 @@ class MetaDialog(tk.Toplevel):
 
         self.form = MetaForm(self, name=name, label=label,
                              extra_note=extra_note, exclude_id=exclude_id,
-                             bg=BG, on_submit=self._ok)
+                             bg=BG, on_submit=self._ok,
+                             category=category, subcat=subcat)
         self.form.pack(fill="x", padx=16, pady=(12, 0))
 
         foot = tk.Frame(self, bg=BG, padx=16, pady=12)
@@ -485,10 +540,11 @@ class MetaDialog(tk.Toplevel):
         if got is None:
             return
         self.result = got
+        self.subcat = self.form.subcat()    # destroy 후에는 위젯을 못 읽는다
         self.destroy()
 
 
-def capture_template_dialog(parent):
+def capture_template_dialog(parent, subcat=""):
     r"""한글의 현재 선택(또는 커서가 든 표)을 템플릿으로 등록한다.
 
     반환: 등록된 항목 id. 사용자가 취소했거나 실패하면 None.
@@ -530,7 +586,8 @@ def capture_template_dialog(parent):
         note = ("자리 표시(\\\\)가 없습니다. 글자가 들어갈 자리에 \\\\ 를 넣으면\n"
                 "마크다운 변환 때 아랫줄 내용이 순서대로 채워집니다.\n"
                 "이름을 넣어 \\배점\\ 처럼 쓰면 누를 때 채우기 표가 뜹니다.")
-    meta = MetaDialog(parent, title="템플릿 등록", extra_note=note)
+    meta = MetaDialog(parent, title="템플릿 등록", extra_note=note,
+                      category="템플릿", subcat=subcat)
     parent.wait_window(meta)
     if not meta.result:
         return None
@@ -541,7 +598,7 @@ def capture_template_dialog(parent):
     try:
         item_id = library.add_template_from_capture(
             name, engine_library.capture_fragment, label=label,
-            tags=tags, slot_count=slot_count)
+            tags=tags, slot_count=slot_count, subcat=meta.subcat)
     except Exception as e:
         applog.exc("템플릿 캡처 실패", e)
         messagebox.showerror("캡처 실패", str(e), parent=parent)
@@ -613,8 +670,12 @@ class TextInputDialog(tk.Toplevel):
 
 
 class LibraryManager(tk.Toplevel):
-    def __init__(self, master, on_saved=None, cat=None):
+    def __init__(self, master, on_saved=None, cat=None, subcat=""):
         super().__init__(master)
+        # 창고에서 하위 분류를 켠 채 ＋ 로 들어왔으면, 여기서 만드는 물감의
+        # 등록 창도 그 분류를 기본으로 연다 (시안 K-1: "＋ 줄로 만들면 지금
+        # 켜 놓은 하위 분류로 들어갑니다").
+        self.default_subcat = library.normalize_subcat(subcat)
         # 다 만들 때까지 숨긴다 (2026-07-31, SettingsWindow 와 같은 이유) —
         # Tk 는 창을 기본 자리에 먼저 그린 뒤 place_beside 가 옮겨서,
         # 화면 어딘가에서 깜빡 나타났다 건너오는 것처럼 보였다.
@@ -1441,12 +1502,14 @@ class LibraryManager(tk.Toplevel):
         if not delta:
             messagebox.showwarning("캡처 실패", "선택한 항목을 읽지 못했습니다.", parent=self)
             return
-        meta = MetaDialog(self, title="서식 등록")
+        meta = MetaDialog(self, title="서식 등록", category="서식",
+                          subcat=self.default_subcat)
         self.wait_window(meta)
         if not meta.result:
             return
         name, label, tags = meta.result
-        library.add_style(name, delta, label=label, tags=tags)
+        library.add_style(name, delta, label=label, tags=tags,
+                          subcat=meta.subcat)
         self._refresh("서식")
         self._notify()
 
@@ -1464,19 +1527,21 @@ class LibraryManager(tk.Toplevel):
             return
         content = dlg.result
         default_name = content.strip().replace("\n", " ")[:AUTO_NAME_MAX]
-        meta = MetaDialog(self, title="문자/문구 등록", name=default_name)
+        meta = MetaDialog(self, title="문자/문구 등록", name=default_name,
+                          category="문자", subcat=self.default_subcat)
         self.wait_window(meta)
         if not meta.result:
             return
         name, label, tags = meta.result
-        library.add_char(name, content, label=label, tags=tags)
+        library.add_char(name, content, label=label, tags=tags,
+                         subcat=meta.subcat)
         self._refresh("문자")
         self._notify()
 
     # ── 템플릿 ───────────────────────────────────────
     def _add_template(self):
         # 등록 절차는 환경설정 창과 공유한다 (capture_template_dialog)
-        if capture_template_dialog(self) is None:
+        if capture_template_dialog(self, subcat=self.default_subcat) is None:
             return
         self._refresh("템플릿")
         self._notify()
@@ -1522,7 +1587,8 @@ class LibraryManager(tk.Toplevel):
                     "한글을 켠 뒤 다시 등록해주세요.")
         default_name = pathlib.Path(path).stem
         meta = MetaDialog(self, title="양식 등록", name=default_name,
-                          extra_note=note)
+                          extra_note=note, category="양식",
+                          subcat=self.default_subcat)
         self.wait_window(meta)
         if not meta.result:
             return
@@ -1531,7 +1597,8 @@ class LibraryManager(tk.Toplevel):
             item_id = library.add_form_from_file(name, path, label=label,
                                                  tags=tags,
                                                  slot_count=slot_count,
-                                                 slot_names=slot_names)
+                                                 slot_names=slot_names,
+                                                 subcat=meta.subcat)
         except Exception as e:
             messagebox.showerror("등록 실패", str(e), parent=self)
             return
@@ -1569,10 +1636,11 @@ class LibraryManager(tk.Toplevel):
         self._notify()
 
     def _edit(self, cat, item):
-        """등록된 항목의 이름·라벨·태그 수정 (id 유지 → 팔레트 연결 안 깨짐)."""
+        """등록된 항목의 이름·라벨·태그·하위 분류 수정 (id 유지 → 팔레트 연결 안 깨짐)."""
         meta = MetaDialog(self, title=f"{CAT_LABEL.get(cat, cat)} 수정",
                           name=item["name"],
-                          label=item.get("label", ""), exclude_id=item["id"])
+                          label=item.get("label", ""), exclude_id=item["id"],
+                          category=cat, subcat=library.subcat_of(item))
         try:
             meta.tags_var.set(" ".join(item.get("tags") or []))
         except Exception:
@@ -1585,7 +1653,8 @@ class LibraryManager(tk.Toplevel):
         # 안에 접혀 있어 사용자 눈에 안 보인다). 규칙은 resolve_edited_label 참고.
         label = library.resolve_edited_label(
             item["name"], item.get("label", ""), name, label)
-        library.update_item(cat, item["id"], name=name, label=label, tags=tags)
+        library.update_item(cat, item["id"], name=name, label=label, tags=tags,
+                            subcat=meta.subcat)
         self._refresh(cat)
         self._notify()
 
@@ -1985,7 +2054,8 @@ def edit_item_dialog(master, cat, item, on_saved=None):
     """
     meta = MetaDialog(master, title=f"{CAT_LABEL.get(cat, cat)} 수정",
                       name=item["name"], label=item.get("label", ""),
-                      exclude_id=item["id"])
+                      exclude_id=item["id"],
+                      category=cat, subcat=library.subcat_of(item))
     try:
         meta.tags_var.set(" ".join(item.get("tags") or []))
     except Exception:
@@ -2001,7 +2071,8 @@ def edit_item_dialog(master, cat, item, on_saved=None):
     name, label, tags = meta.result
     label = library.resolve_edited_label(
         item["name"], item.get("label", ""), name, label)
-    library.update_item(cat, item["id"], name=name, label=label, tags=tags)
+    library.update_item(cat, item["id"], name=name, label=label, tags=tags,
+                        subcat=meta.subcat)
     if on_saved:
         on_saved()
 
@@ -2174,13 +2245,14 @@ def _pop_topmost(win):
 # 실제 일은 export_palette_flow · export_items_flow · import_flow 가 한다.
 
 
-def open_manager(master, on_saved=None, cat=None):
+def open_manager(master, on_saved=None, cat=None, subcat=""):
     """라이브러리 창을 연다. cat 을 주면 그 탭이 **처음부터** 그 탭으로 열린다.
 
     2026-07-31: 만들고 나서 _switch_tab 으로 갈아타던 것을 생성자 인자로
     바꿨다 — 갈아타기는 이미 그린 탭을 부수고 다시 그리는 일이라, 특수기호
     격자를 열 때마다 같은 화면을 두 번 지었다.
+    subcat 을 주면 이 창에서 새로 만드는 물감의 하위 분류 기본값이 된다.
     """
-    win = LibraryManager(master, on_saved=on_saved, cat=cat)
+    win = LibraryManager(master, on_saved=on_saved, cat=cat, subcat=subcat)
     ui_fx.attach_all(win)              # 추가 버튼 등 tk.Button 에 호버 보간
     return win
