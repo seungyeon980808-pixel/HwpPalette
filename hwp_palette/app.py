@@ -815,8 +815,11 @@ def fn_undo_last():
                        "한글의 Ctrl+Z 를 써 주세요.")
 
 
-def run_palette_block(block):
+def run_palette_block(block, _anchor=None):
     """팔레트 블럭 클릭 — 종류에 따라 삽입/적용."""
+    if block.get("type") == "stack":
+        _open_stack(block, _anchor)
+        return
     name = _block_label(block).replace("\n", " ")
     if block.get("type") == "builtin":
         # 도구 블럭은 여기서 잠그지 않는다 — fn_convert 등이 스스로 잠근다
@@ -850,6 +853,39 @@ def run_palette_block(block):
     finally:
         _op_busy[0] = False
         _unbusy()
+
+
+def _open_stack(block, anchor=None):
+    r"""겹친 물감 — 안에 든 것 중 하나를 골라 실행한다 (2026-07-31).
+
+    왜 겹치나 (사용자 기획): "선지의 스타일이 5개인 경우 이거를 다 다른
+    버튼으로 하게 되면 공간의 낭비가 심각합니다." 애플의 폴더처럼 한 칸에
+    포개 두고, 누르면 안에서 고른다.
+
+    **섞기(꾸러미)와 다른 것이다.** 겹치기는 같은 자리에 보관했다가 쓸 때
+    하나만 고르는 것(택일)이고, 섞기는 여러 물감을 이어 하나로 만드는
+    것(합체)이다 (사용자 2026-07-31: "겹치기는 그냥 하나의 위계를 설정하는
+    것이고 섞기는 여러 물감을 섞어서 하나의 물감을 만든다").
+
+    고르는 화면은 **특수기호가 쓰는 팝오버 그대로**다 — 새로 배울 것이 없다.
+    """
+    items = [b for b in (block.get("items") or []) if isinstance(b, dict)]
+    if not items:
+        notify("info", "이 겹친 물감이 비어 있습니다 — 설정에서 채워 주세요")
+        return
+    if len(items) == 1:
+        run_palette_block(items[0])
+        return
+    try:
+        from hwp_palette.design.popover import Popover
+        pop = Popover(root, anchor or root)
+        for b in items:
+            pop.add(_block_label(b).replace("\n", " ") or "(이름 없음)",
+                    lambda bb=b: run_palette_block(bb))
+        pop.show()
+    except Exception as e:
+        applog.exc("겹친 물감 열기 실패 — 첫 물감을 바로 실행한다", e)
+        run_palette_block(items[0])
 
 
 def _form_item(block):
@@ -2072,6 +2108,10 @@ def _block_label(blk):
     if caption:
         return caption
     btype = blk.get("type")
+    if btype == "stack":
+        # 겹친 칸은 그룹 이름만 보인다 (무인 진행 규약 2026-07-31) —
+        # 마지막에 쓴 물감 이름까지 겉면에 적으면 칸이 두 얼굴이 된다.
+        return blk.get("name", "겹친 물감")
     if btype == "char":
         return blk.get("value", "")
     if btype == "builtin":
@@ -2093,6 +2133,11 @@ def _block_tooltip(blk):
     """
     btype = blk.get("type")
     name = _block_label(blk)
+    if btype == "stack":
+        inner = [_block_label(b).replace("\n", " ")
+                 for b in (blk.get("items") or [])]
+        return (f"겹친 물감 · {name}\n누르면 안에서 고릅니다 ({len(inner)}개)\n"
+                + "\n".join(f"· {t}" for t in inner[:8]))
     if btype == "builtin":
         key = blk.get("key")
         tip = f"도구 · {name}\n{builtin_actions.hint_of(key)}"
@@ -2298,8 +2343,13 @@ def _make_block_button(parent, blk, span=1, show_icon=True, cell_px=None):
     # 이름은 **굵게** (사용자 결정 2026-07-31) — 물감 창고 카드가 정갈해
     # 보인 것은 다른 서체가 아니라 같은 Pretendard 의 굵은 웨이트였다.
     # 블럭도 같은 무게로 맞춰 두 화면이 한 손글씨가 된다.
+    _btn_holder = []
     btn = RoundButton(parent, text=label,
-                      command=lambda b=blk: run_palette_block(b),
+                      # 겹친 칸은 팝오버를 **그 칸 아래**에 띄워야 하므로
+                      # 버튼 자신을 넘긴다. 아직 만들기 전이라 그릇에 담아
+                      # 두고, 아래에서 채운다.
+                      command=lambda b=blk, h=_btn_holder: run_palette_block(
+                          b, h[0] if h else None),
                       bg=bg, fg=theme.text_on(bg), radius=theme.RADIUS["ctl"],
                       font=_font(size, "bold"),
                       outline=theme.block_edge(), focus_color=ACCENT,
@@ -2313,6 +2363,7 @@ def _make_block_button(parent, blk, span=1, show_icon=True, cell_px=None):
                       icon_fg=_block_icon_fg(bg))
     # 도구 블럭은 이름표를 달아 둔다 — 튜토리얼이 '마크다운 변환' 버튼을
     # 짚으려면 그 위젯을 찾을 수 있어야 한다 (2026-07-26).
+    _btn_holder.append(btn)
     if blk.get("type") == "builtin" and blk.get("key"):
         _builtin_btns[blk["key"]] = btn
     # 이름이 안 잘려도 '무엇이 들었는지'를 보여주므로 늘 붙인다 (UI 제안 6).

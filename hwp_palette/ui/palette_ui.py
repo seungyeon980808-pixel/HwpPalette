@@ -107,6 +107,143 @@ def _rgb_int(r, g, b):
     return r + (g << 8) + (b << 16)
 
 
+def _block_name_of(blk):
+    """겹치기 확인창에 쓸 짧은 이름 — app._block_label 과 달리 창고를 안 읽는다."""
+    if blk.get("caption"):
+        return str(blk["caption"]).replace("\n", " ")
+    t = blk.get("type")
+    if t == "stack":
+        return blk.get("name", "겹친 물감")
+    if t == "char":
+        return blk.get("value", "")
+    if t == "template":
+        return blk.get("template", "템플릿")
+    if t == "form":
+        return blk.get("form", "양식")
+    if t == "builtin":
+        return builtin_actions.name_of(blk.get("key"))
+    return blk.get("name", "물감")
+
+
+class _StackNameDialog(tk.Toplevel):
+    """물감 겹치기 확인 + 겹친 이름 정하기 (2026-07-31)."""
+
+    def __init__(self, master, keep, added):
+        super().__init__(master)
+        self.result = None
+        self.title("물감 겹치기")
+        self.configure(bg=BG)
+        self.resizable(False, False)
+        self.attributes("-topmost", True)
+        tk.Label(self, text="물감을 겹치겠습니까?",
+                 font=(FONT, theme.fs(FS["title"]), "bold"),
+                 bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(14, 2))
+        tk.Label(self, text=f"‘{keep}’ 과 ‘{added}’ 이(가) 한 칸에 들어갑니다.\n"
+                            "누르면 안에서 골라 쓰게 됩니다.",
+                 justify="left", font=(FONT, theme.fs(FS["sub"])),
+                 bg=BG, fg=MUTED).pack(anchor="w", padx=16, pady=(0, 10))
+        row = tk.Frame(self, bg=BG, padx=16)
+        row.pack(fill="x")
+        tk.Label(row, text="겹친 이름", font=(FONT, theme.fs(FS["body"])),
+                 bg=BG, fg=TEXT).pack(side="left")
+        self.var = tk.StringVar(value=keep)
+        ent = tk.Entry(row, textvariable=self.var, width=18,
+                       font=(FONT, theme.fs(FS["head"])), relief="solid", bd=1)
+        ent.pack(side="left", padx=(8, 0))
+        ent.select_range(0, "end")
+        foot = tk.Frame(self, bg=BG, padx=16, pady=12)
+        foot.pack(fill="x")
+        _dialog_btn(foot, "겹치기", self._ok, primary=True).pack(side="right")
+        _dialog_btn(foot, "취소", self.destroy).pack(side="right", padx=(0, 6))
+        self.bind("<Return>", lambda e: self._ok())
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.update_idletasks()
+        self.geometry(f"+{master.winfo_rootx()+60}+{master.winfo_rooty()+50}")
+        ent.focus_set()
+        self.grab_set()
+
+    def _ok(self):
+        library_ui.commit_ime(self)
+        self.result = (self.var.get() or "").strip() or None
+        self.destroy()
+
+
+class _StackEditDialog(tk.Toplevel):
+    """겹친 칸 편집 — 이름·차례·빼기·통째로 풀기 (2026-07-31)."""
+
+    def __init__(self, master, blk):
+        super().__init__(master)
+        self.result = None
+        self._items = [dict(b) for b in (blk.get("items") or [])]
+        self.title("겹친 물감")
+        self.configure(bg=BG)
+        self.resizable(False, False)
+        self.attributes("-topmost", True)
+        tk.Label(self, text="겹친 물감", font=(FONT, theme.fs(FS["title"]), "bold"),
+                 bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(14, 2))
+        tk.Label(self, text="팔레트에서 이 칸을 누르면 아래에서 골라 씁니다.",
+                 font=(FONT, theme.fs(FS["sub"])), bg=BG, fg=MUTED
+                 ).pack(anchor="w", padx=16, pady=(0, 10))
+        row = tk.Frame(self, bg=BG, padx=16)
+        row.pack(fill="x")
+        tk.Label(row, text="이름", font=(FONT, theme.fs(FS["body"])),
+                 bg=BG, fg=TEXT).pack(side="left")
+        self.var = tk.StringVar(value=blk.get("name", ""))
+        tk.Entry(row, textvariable=self.var, width=18,
+                 font=(FONT, theme.fs(FS["head"])), relief="solid", bd=1
+                 ).pack(side="left", padx=(8, 0))
+        self._list = tk.Frame(self, bg=BG, padx=16, pady=8)
+        self._list.pack(fill="x")
+        self._draw()
+        foot = tk.Frame(self, bg=BG, padx=16, pady=12)
+        foot.pack(fill="x")
+        _dialog_btn(foot, "저장", self._ok, primary=True).pack(side="right")
+        _dialog_btn(foot, "취소", self.destroy).pack(side="right", padx=(0, 6))
+        _dialog_btn(foot, "겹침 풀기", self._unstack).pack(side="left")
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.update_idletasks()
+        self.geometry(f"+{master.winfo_rootx()+60}+{master.winfo_rooty()+50}")
+        self.grab_set()
+
+    def _draw(self):
+        for w in self._list.winfo_children():
+            w.destroy()
+        if not self._items:
+            tk.Label(self._list, text="비어 있습니다 — 저장하면 이 칸이 없어집니다",
+                     font=(FONT, theme.fs(FS["sub"])), bg=BG, fg=MUTED).pack(anchor="w")
+            return
+        for i, b in enumerate(self._items):
+            r = tk.Frame(self._list, bg=CARD, padx=8, pady=4,
+                         highlightbackground=BORDER, highlightthickness=1)
+            r.pack(fill="x", pady=2)
+            tk.Label(r, text=f"{i + 1}. {_block_name_of(b)}",
+                     font=(FONT, theme.fs(FS["body"])), bg=CARD, fg=TEXT,
+                     anchor="w").pack(side="left", fill="x", expand=True)
+            _dialog_btn(r, "빼기", lambda n=i: self._drop(n),
+                        zone_bg=CARD).pack(side="right")
+
+    def _drop(self, n):
+        if 0 <= n < len(self._items):
+            del self._items[n]
+        self._draw()
+
+    def _unstack(self):
+        self.result = "unstack"
+        self.destroy()
+
+    def _ok(self):
+        library_ui.commit_ime(self)
+        self.result = {"name": (self.var.get() or "").strip() or "겹친 물감",
+                       "items": self._items}
+        self.destroy()
+
+
+def _ask_stack_name(master, keep, added):
+    dlg = _StackNameDialog(master, keep, added)
+    master.wait_window(dlg)
+    return dlg.result
+
+
 def _dialog_btn(parent, text, command, primary=False, zone_bg=None):
     """대화상자 공용 버튼 — 저장/확인은 파랑, 취소는 흰 바탕 (애플 A안)."""
     bg = ACCENT if primary else CARD
@@ -2453,6 +2590,78 @@ class SettingsWindow(tk.Toplevel):
                         pass
             self._drag_cell_hint = new_cell
 
+    def _edit_stack(self, idx, blk):
+        """겹친 칸 편집 — 이름 바꾸기, 하나씩 빼기, 통째로 풀기."""
+        dlg = _StackEditDialog(self, blk)
+        self.wait_window(dlg)
+        if dlg.result is None:
+            return
+        if dlg.result == "unstack":
+            # 통째로 풀기 — 안의 물감을 빈자리에 하나씩 되돌려 놓는다
+            items = list(blk.get("items") or [])
+            palette.delete_block(self.sel_tab, idx)
+            for b in items:
+                palette.add_block(self.sel_tab, dict(b))
+        else:
+            new = dict(blk)
+            new["name"] = dlg.result["name"]
+            new["items"] = dlg.result["items"]
+            if not new["items"]:
+                palette.delete_block(self.sel_tab, idx)   # 다 뺐다 = 없앤다
+            elif len(new["items"]) == 1:
+                # 하나만 남으면 겹칠 이유가 없다 — 낱개로 되돌린다
+                one = dict(new["items"][0])
+                for k in ("row", "col", "span", "rows", "color"):
+                    if blk.get(k) is not None:
+                        one[k] = blk[k]
+                palette.update_block(self.sel_tab, idx, one)
+            else:
+                palette.update_block(self.sel_tab, idx, new)
+        self.sel_block = None
+        self._render_blocks()
+        self._notify()
+
+    def _stack_onto(self, src, target):
+        r"""블럭을 블럭 위에 놓았다 — 겹친 물감으로 묶는다 (2026-07-31).
+
+        "선지의 스타일이 5개인 경우 이거를 다 다른 버튼으로 하게 되면 공간의
+        낭비가 심각합니다. 애플에서 하는 것 처럼 블럭을 잡고 겹치면 물감을
+        겹치겠습니까? 알람이 뜨고 알겠다고 하면 그 겹친 물감의 전체 이름을
+        정하고" — 사용자 기획 그대로다.
+
+        이미 겹친 칸 위에 놓으면 **묻지 않고 그 안에 더한다** (애플과 같게) —
+        한 번 겹치기로 뜻을 밝힌 자리이므로 매번 확인할 이유가 없다.
+        """
+        blocks = palette.load_tabs()[self.sel_tab]["blocks"]
+        if not (0 <= src < len(blocks) and 0 <= target < len(blocks)):
+            self._clear_drag_paint()
+            return
+        a, b = dict(blocks[src]), dict(blocks[target])
+        # 겹친 칸에 담을 때는 자리·크기 정보를 떼어 낸다 — 자리는 겹친 칸이 갖는다
+        def _bare(blk):
+            return {k: v for k, v in blk.items()
+                    if k not in ("row", "col", "span", "rows")}
+        if b.get("type") == "stack":
+            items = list(b.get("items") or [])
+            items.extend(a.get("items") or [_bare(a)])
+            b["items"] = items
+        else:
+            name = _ask_stack_name(self, _block_name_of(b), _block_name_of(a))
+            if not name:
+                self._clear_drag_paint()
+                return
+            b = {"type": "stack", "name": name,
+                 "items": [_bare(b), *(a.get("items") or [_bare(a)])],
+                 "row": b.get("row"), "col": b.get("col"),
+                 "span": b.get("span", 2), "rows": b.get("rows", 1)}
+            if blocks[target].get("color"):
+                b["color"] = blocks[target]["color"]
+        palette.update_block(self.sel_tab, target, b)
+        palette.delete_block(self.sel_tab, src)
+        self.sel_block = None
+        self._render_blocks()
+        self._notify()
+
     def _tile_border_normal(self, i):
         """타일 테두리를 평상시 모습(선택이면 파랑, 아니면 회색)으로 되돌린다."""
         tile = getattr(self, "_tiles", {}).get(i)
@@ -2491,10 +2700,11 @@ class SettingsWindow(tk.Toplevel):
                 self._clear_drag_paint()  # 겹쳐서 실패 — 강조만 지운다
             return
         if target is not None and target != src:
-            palette.move_block_to(self.sel_tab, src, target)
-            self.sel_block = target
-            self._render_blocks()
-            self._notify()
+            # 블럭 **위에** 놓으면 겹친다 (사용자 기획 2026-07-31, 애플 폴더식).
+            # 예전에는 목록 순서만 맞바꿨는데(move_block_to), 칸 자리를 따로
+            # 갖는 격자에서 순서 바꾸기는 눈에 보이는 뜻이 거의 없었다.
+            # 자리 옮기기는 **빈칸에 놓기**가 이미 하고 있다.
+            self._stack_onto(src, target)
         else:
             # 제자리 — 강조만 원복한다. 여기서 _render_blocks() 를 부르면
             # **그냥 클릭할 때마다** 격자 전체(타일 수십 개 + 글꼴 측정)를
@@ -2630,6 +2840,9 @@ class SettingsWindow(tk.Toplevel):
             # 지적 2026-07-31: "왜 마크다운 변환 버튼인데 편집을 들어가니까
             # 서식 조합 블럭이 나오는지") — 저장하면 도구가 서식 블럭으로
             # 둔갑하는 사고까지 가능했다. 이름은 우클릭 → 이름 바꾸기.
+            return
+        if blk["type"] == "stack":
+            self._edit_stack(idx, blk)
             return
         if blk["type"] == "char":
             dlg = _CharDialog(self, prefill=blk.get("value", ""))
