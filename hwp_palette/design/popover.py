@@ -14,7 +14,7 @@ r"""앱과 같은 얼굴을 한 팝업 메뉴 (2026-07-25).
 
 동작 규칙:
   · anchor 버튼 바로 아래에 왼쪽을 맞춰 펼친다 (화면 밖이면 안으로 민다)
-  · 바깥 클릭 · Esc · 포커스 이탈 → 닫힘
+  · 바깥 클릭 · Esc → 닫힘 (바깥 클릭은 **닫히면서 원래 목적지로 통과**한다)
   · 항목 호버 = 옅은 파랑, 클릭 = 닫고 실행
   · show() 는 tk.Menu.tk_popup 과 달리 **바로 돌아온다** — 호출부는
     on_close 콜백으로 '닫힘'을 알 수 있다 (설정 버튼의 켜짐 표시용)
@@ -27,6 +27,81 @@ from hwp_palette.design import theme
 
 _C = theme.colors()
 
+# ── 열려 있는 판들과 바깥 클릭 감시 (2026-08-01, 피드백 038-b) ──
+#
+# 예전에는 판마다 `grab_set()` 으로 마우스를 잡고, 창 밖 클릭도 이 창의
+# 이벤트로 받아 좌표로 걸러 닫았다. 그래서 **바깥을 누른 첫 클릭은 판을 닫는
+# 데 쓰이고 원래 목적지로는 가지 않았다** — 창의 ✕ 를 눌러도 안 꺼지던 정체다.
+#
+# 이제 잡기를 쓰지 않는다. 판이 열려 있는 동안만 `bind_all` 로 클릭을 엿듣고,
+# 판 밖이면 닫는다. Tk 의 바인딩 차례상 위젯 제 처리가 **먼저** 돌고 이것이
+# 나중에 도므로, 클릭은 원래 목적지(✕·다른 버튼)에 그대로 닿는다 —
+# 사용자 관점에서 '닫히면서 통과'다.
+_open = []                  # 지금 열려 있는 판 (계단식이면 여럿)
+_watch_host = None          # bind_all 을 걸어 둔 위젯 (판보다 오래 사는 부모)
+
+_shown_hooks = []           # 판이 열릴 때마다 부를 것 (도킹 창 순서 재조정 등)
+
+
+def on_shown(fn):
+    r"""판이 열릴 때마다 부를 함수를 등록한다.
+
+    쓰는 곳: 한글 도킹 중에는 판이 뜨는 순간 창 순서를 다시 잡아야 한다
+    (피드백 035 — 판이 활성이 되면 우리 창 무리가 앞으로 나와 한글이 뒤로
+    밀렸다). design 층이 hwp 층을 직접 부르지 않도록 갈고리만 둔다.
+    """
+    _shown_hooks.append(fn)
+
+
+def _fire_shown():
+    for fn in list(_shown_hooks):
+        try:
+            fn()
+        except Exception:
+            pass                # 갈고리 하나가 실패해도 메뉴는 떠야 한다
+
+
+def _inside(widget, pop):
+    """그 위젯이 이 판(또는 그 안쪽)에 속하는가 — 위젯 이름길로 본다."""
+    w, p = str(widget), str(pop)
+    return w == p or w.startswith(p + ".")
+
+
+def _outside_click(e):
+    for pop in list(_open):
+        try:
+            if not pop._muted and not _inside(e.widget, pop):
+                pop.close()
+        except Exception:
+            pass
+
+
+def _watch_start(pop):
+    global _watch_host
+    if pop in _open:
+        return
+    _open.append(pop)
+    if _watch_host is None:
+        # 판이 아니라 **부모**에 건다 — 판이 죽어도 걷어낼 위젯이 남아 있어야 한다
+        _watch_host = pop._parent
+        try:
+            _watch_host.bind_all("<ButtonPress-1>", _outside_click, add="+")
+        except Exception:
+            _watch_host = None
+
+
+def _watch_stop(pop):
+    global _watch_host
+    if pop in _open:
+        _open.remove(pop)
+    if _open or _watch_host is None:
+        return                  # 계단식으로 아직 열려 있는 판이 있다
+    try:
+        _watch_host.unbind_all("<ButtonPress-1>")
+    except Exception:
+        pass
+    _watch_host = None
+
 
 class Popover(tk.Toplevel):
 
@@ -37,6 +112,7 @@ class Popover(tk.Toplevel):
         self._anchor = anchor
         self._on_close = on_close
         self._closed = False
+        self._muted = False          # 하위 메뉴가 열린 동안은 바깥 클릭을 무시
         self.wm_overrideredirect(True)      # 제목줄 없는 순수 판때기
         self.attributes("-topmost", True)
         # 판 둘레에 1px 테두리 — 그림자를 못 그리는 Tk 에서 바탕과 판을 가른다
@@ -118,15 +194,7 @@ class Popover(tk.Toplevel):
             y = self._anchor.winfo_rooty() - h - 2      # 자리가 없으면 위로
         x, y = screens.clamp_window(self, x, y, w, h)
         self.geometry(f"{w}x{h}+{x}+{y}")
-        self.deiconify()
-        self.lift()
-        self.bind("<ButtonPress-1>", self._maybe_close_outside)
-        self.bind("<Escape>", lambda e: self.close())
-        try:
-            self.focus_set()
-        except Exception:
-            pass
-        self._grab()
+        self._arm()
         return self
 
     def show_at(self, x, y, min_width=None):
@@ -150,15 +218,7 @@ class Popover(tk.Toplevel):
             y = y - h                       # 아래에 자리가 없으면 커서 위로
         x, y = screens.clamp_window(self, x, y, w, h)
         self.geometry(f"{w}x{h}+{x}+{y}")
-        self.deiconify()
-        self.lift()
-        self.bind("<ButtonPress-1>", self._maybe_close_outside)
-        self.bind("<Escape>", lambda e: self.close())
-        try:
-            self.focus_set()
-        except Exception:
-            pass
-        self._grab()
+        self._arm()
         return self
 
     # ── 계단식 하위 메뉴 (2026-07-31) ───────────────────
@@ -167,22 +227,23 @@ class Popover(tk.Toplevel):
     # 달랐다 (사용자 지적). 하위 메뉴도 같은 Popover 로, 항목 줄 오른쪽에
     # 한글의 계단식 메뉴처럼 붙인다.
     def suspend_grab(self):
-        """하위 메뉴가 클릭을 받도록 grab 을 잠시 내준다."""
-        try:
-            self.grab_release()
-        except Exception:
-            pass
+        """하위 메뉴가 열리는 동안 바깥 클릭 감지를 잠시 끈다.
+
+        (이름은 그대로 둔다 — 호출부가 쓰는 말이고, 하는 일도 같다. 안에서
+        잡기(grab)를 쓰지 않게 됐을 뿐이다.)
+        """
+        self._muted = True
 
     def resume_grab(self):
-        """하위 메뉴가 닫힌 뒤 grab 을 되찾는다 — 바깥 클릭 감지가 다시 산다."""
-        if not self._closed:
-            self._grab()
+        """하위 메뉴가 닫힌 뒤 바깥 클릭 감지를 되살린다."""
+        self._muted = False
 
     def show_beside(self, row):
         """다른 팝오버의 항목 줄(row) **오른쪽**에 계단식으로 펼친다.
 
         부모 판은 닫히지 않고 그대로 남는다 — 부모는 suspend_grab 으로
-        grab 만 내주고, 이 판이 닫힐 때 on_close 에서 resume_grab 한다.
+        바깥 클릭 감지만 잠시 끄고, 이 판이 닫힐 때 on_close 에서
+        resume_grab 한다.
         """
         self.update_idletasks()
         w = self.winfo_reqwidth()
@@ -191,44 +252,20 @@ class Popover(tk.Toplevel):
         y = row.winfo_rooty() - 1
         x, y = screens.clamp_window(self, x, y, w, h)
         self.geometry(f"{w}x{h}+{x}+{y}")
+        self._arm()
+        return self
+
+    def _arm(self):
+        """화면에 띄우고 바깥 클릭·Esc 감시를 건다 (show 세 갈래 공통)."""
         self.deiconify()
         self.lift()
-        self.bind("<ButtonPress-1>", self._maybe_close_outside)
         self.bind("<Escape>", lambda e: self.close())
         try:
             self.focus_set()
         except Exception:
             pass
-        self._grab()
-        return self
-
-    def _grab(self, tries=0):
-        """바깥 클릭 감지용 grab — 창이 아직 안 떴으면 잠깐 뒤 다시 시도.
-
-        deiconify 직후에는 창이 화면에 실리기 전이라 grab_set 이
-        'window not viewable' 로 실패할 수 있다 (Tk 의 타이밍 문제).
-        열 번(≈0.3초) 안 되면 포기한다 — grab 없이도 메뉴는 쓸 수 있고,
-        영원히 재시도하면 타이머만 계속 돈다.
-        """
-        if self._closed or not self.winfo_exists():
-            return
-        try:
-            if tries == 0:
-                # 창을 화면에 먼저 실어 **재시도 없이 한 번에** 잡는다
-                # (2026-07-31) — deiconify 직후에는 창이 안 떠 있어 30ms
-                # 재시도를 돌았고, 그 0.3초 동안 클릭이 어디에도 안 먹어
-                # 메뉴가 버벅이는 것처럼 느껴졌다.
-                self.update_idletasks()
-            self.grab_set()
-        except Exception:
-            if tries < 10:
-                self.after(30, lambda: self._grab(tries + 1))
-
-    def _maybe_close_outside(self, e):
-        # grab 중에는 창 밖 클릭도 이 창의 이벤트로 온다 — 좌표로 구분
-        if not (0 <= e.x_root - self.winfo_rootx() <= self.winfo_width()
-                and 0 <= e.y_root - self.winfo_rooty() <= self.winfo_height()):
-            self.close()
+        _watch_start(self)
+        _fire_shown()
 
     def _run(self, command):
         self.close()
@@ -239,10 +276,7 @@ class Popover(tk.Toplevel):
         if self._closed:
             return
         self._closed = True
-        try:
-            self.grab_release()
-        except Exception:
-            pass
+        _watch_stop(self)
         try:
             self.destroy()
         except Exception:

@@ -331,10 +331,10 @@
       <td>범위 결정 대기</td></tr>
   <tr><td class="num">031</td><td><b>버그</b></td>
       <td>양식 수정 — 버벅임 · 끝난 뒤 창이 커짐 · 빈 문서가 남음</td>
-      <td class="ok">다음 라운드</td></tr>
+      <td class="ok">파트 1 완료 (b·c 실기 확인)</td></tr>
   <tr><td class="num">032</td><td><b>버그</b></td>
       <td>도킹 소유권 위계 — 한글 창의 주인이 둘이 되어 왕복하며 버벅임</td>
-      <td class="ok">다음 라운드</td></tr>
+      <td class="ok">파트 1 완료</td></tr>
   <tr><td class="num">033</td><td><b>버그</b></td>
       <td>양식 빈칸 판독기 불일치(등록 2 vs 채우기 1) · 우클릭 ‘채워서 꽂기’ 미구현</td>
       <td class="ok">다음 라운드</td></tr>
@@ -343,10 +343,10 @@
       <td class="ok">다음 라운드</td></tr>
   <tr><td class="num">035</td><td><b>버그</b></td>
       <td>도킹 중 <b>팔레트 드롭다운</b>을 열면 도킹 화면이 안 보임</td>
-      <td class="ok">다음 라운드</td></tr>
+      <td class="ok">파트 1 완료</td></tr>
   <tr><td class="num">036</td><td><b>버그</b></td>
       <td>도킹 중 한글 미클릭 상태에서 <b>키를 누르면</b> 도킹 화면이 사라짐</td>
-      <td class="ok">다음 라운드</td></tr>
+      <td class="ok">파트 1 완료</td></tr>
   <tr><td class="num">037</td><td>표시</td>
       <td>한 칸에 여러 물감이 든 것을 <b>세로 띠</b>로 겉에서 알 수 있게<br>
           <span class="ref">아래 <b>3-1 잔결정 갱신</b> 참고 — 규약이 표시를 없앴던 자리다</span></td>
@@ -354,7 +354,7 @@
   <tr><td class="num">038</td><td>버그·기능</td>
       <td>창고 우클릭에 <b>삭제</b> 추가 · <b>지금 분류는 목록에서 빼기</b> ·
           옮기기는 <b>끌어놓기</b>로 · <b>팝오버가 창의 ✕ 를 먹는다</b></td>
-      <td>계획 완료 · 대기</td></tr>
+      <td><b>b 는 파트 1 완료</b> · a·c·d 는 파트 2</td></tr>
   <tr><td class="num">039</td><td>삭제</td>
       <td>도구 <b>‘라이브러리’</b> 폐지 — 창고가 같은 일을 더 잘한다</td>
       <td>계획 완료 · 대기</td></tr>
@@ -444,14 +444,59 @@
 <div class="card" style="border-left:3px solid #0969da">
   <h3 style="margin-top:0">작업 지시 <span class="ref">사용자, 2026-08-01</span></h3>
   <p style="margin-bottom:0">
-    <code>docs/FEEDBACK_post_0.3.0.md</code> 의 <b>031·032·033·034</b> 를 읽고,
-    네 건을 <b>한 라운드로</b> 고쳐라. 각 항목에 원인 분석과 수정 계획이 이미
-    적혀 있다 — 그 계획을 따르되, <b>계획에 적힌 실측(스파이크)을 구현 전에 먼저</b>
-    하라. 032 는 <b>“양식 수정 &gt; 메인 도킹” 위계</b>가 핵심이고, 034 는
-    <b>여러 셀에 걸친 선택은 1차 제외</b>다. 끝나면 <b>테스트 전체 실행과 실기 검증</b>
-    (도킹 → 양식 수정 → 저장 → 복귀, 표 안 자간 맞춤)까지 하고 <b>main 에 병합·푸시</b>하라.
-    <b>버전은 올리지 마라.</b>
+    <code>docs/FEEDBACK_post_0.3.0.md</code> 의 <b>031·032·035·036·038-b</b> 를
+    읽고 <b>한 라운드로</b> 고쳐라. 각 항목에 원인 분석과 수정 계획이 이미
+    적혀 있다 — 그 계획을 따른다. 032 는 <b>“양식 수정 &gt; 메인 도킹” 위계</b>가
+    핵심이다. 끝나면 <b>테스트 전체 실행과 실기 검증</b>까지 하고
+    <b>main 에 병합·푸시</b>하라. <b>버전은 올리지 마라.</b>
   </p>
+</div>
+
+<div class="card" style="border-left:3px solid #0a6b2e">
+  <h3 style="margin-top:0">진행 결과 — 2026-08-01</h3>
+  <table>
+    <tr><th>번호</th><th>고친 것</th><th>상태</th></tr>
+    <tr><td class="num">0</td>
+        <td><b>구멍 뚫기가 여태 죽어 있었다</b> — <code>_punch_hole</code>·
+            <code>clear_crop</code> 이 쓰는 <code>dpi_scale</code>·
+            <code>_RGN_DIFF</code> 의 <b>정의만</b> 커밋 <code>e84cc46</code> 에서
+            지워지고 호출은 남았다. 매번 NameError 로 실패해 로그에만 남았고,
+            그래서 도킹 화면은 <code>keep_order</code> 의 z 순서 <b>하나에만</b>
+            기대고 있었다 — 035·036 이 하얗게 보이던 바닥이다. 정의를 되살렸다.</td>
+        <td class="ok">완료</td></tr>
+    <tr><td class="num">032</td>
+        <td><code>hwp_dock</code> 에 <b>소유권 대장</b>(claim/release, LIFO) —
+            편집 100 · 메인 10. pause 는 <code>stop_follow()</code> 만,
+            resume 은 <code>ensure_visible</code> → <code>start()</code>.
+            메인 ◫ 는 편집이 주인일 때 <b>뺏지도 떼지도 않고 안내</b>한다.</td>
+        <td class="ok">완료</td></tr>
+    <tr><td class="num">031-a</td>
+        <td><code>_fit_window(settle=True)</code> — 판을 접었다 펴는 두 자리에서만
+            스스로 레이아웃을 정리하고 이른 반환도 건너뛴다.
+            편집 때의 큰 높이가 <code>minsize</code> 에 박히지 않는다.</td>
+        <td class="ok">완료</td></tr>
+    <tr><td class="num">031-b·c</td>
+        <td>따로 고칠 것이 없다고 판단 — 예측대로 <b>032 에 딸려 풀리는 자리</b>다.
+            메인 도킹이 제자리로 복귀하면 그 <code>빈 문서 1</code> 은 주인 있는
+            문서가 되고, 버벅임의 정체였던 <b>Dock 둘의 SetWindowPos 왕복</b>이
+            사라진다. <b>실기 검증에서 확인할 항목.</b></td>
+        <td>실기 확인 대기</td></tr>
+    <tr><td class="num">035·036</td>
+        <td><code>keep_order</code> 의 ‘우리 편’ 판정을
+            <code>GetAncestor(fg, GA_ROOTOWNER)</code> 로 넓혀 팝오버·대화상자를
+            포함. 팝오버가 뜰 때 <b>갈고리</b>로 순서를 한 번 강제.
+            도킹 중 ‘항상 위’는 <b>바꿀 수 없고</b>(키·버튼 한 길에서 막는다)
+            들어갈 때 끈 값을 기억했다 뗄 때 되돌린다.</td>
+        <td class="ok">완료</td></tr>
+    <tr><td class="num">038-b</td>
+        <td>팝오버가 <b>잡기(grab)를 쓰지 않는다.</b> 열려 있는 동안만
+            <code>bind_all</code> 로 클릭을 엿들어 밖이면 닫는다 — 그 클릭은
+            원래 목적지(창의 ✕)로 <b>그대로 통과</b>한다.</td>
+        <td class="ok">완료</td></tr>
+  </table>
+  <p style="margin-bottom:0">테스트 <b>750개</b> 통과 (기존 728 + 새 규칙 22).
+    새 검사는 <code>tests/test_dock_owner.py</code>.
+    <b>실기 검증 4종은 사용자 몫</b> — 아래 ‘검증 규약’ 참고.</p>
 </div>
 
 <p class="lead">
@@ -494,36 +539,17 @@
 </div></div>
 
 <div class="phase"><div class="no">3</div><div>
-  <h3>033 — 빈칸 판독기 불일치 · 채워서 꽂기</h3>
-  <p><b>a.</b> 등록은 <code>GetTextFile</code>(빈칸 2), 채우기 창은 HWPX run 스캔(빈칸 1).
-     둘째 <code>\</code> 가 <b>글상자/그리기 개체 안</b>이라 <code>RUN_RE</code> 가 못 연다.
-     <code>\본문\</code> 충돌이 아니다(실측 확정).</p>
-  <p><b>실측 먼저</b>: 그 <code>\</code> 가 HWPX 의 어떤 요소 안인지 부모 태그를 추적하고,
-     <b>읽기를 넓혔을 때 재주입(되쓰기)도 같은 경로로 안전한지</b> 함께 잰다 —
-     읽기만 넓히고 쓰기가 못 따라가면 반쪽이다.</p>
-  <p><b>안전망(실측이 부정적이면 이것만이라도)</b>: 채우기 창 머리에 불일치를 그대로
-     말한다 — “등록된 빈칸 2개 중 1개는 글상자 안에 있어 여기서 못 채웁니다”
-     (<code>_hidden_token_count</code> 활용).</p>
-  <p><b>b.</b> <b>우클릭 ‘채워서 꽂기’ 가 아직 없다</b> — 잔결정 목록에만 있고 미구현.
-     “눌러도 반응이 없다”의 정체. 왼쪽 클릭 = 빈칸인 채로 실행이라는 규칙은 그대로 둔다.</p>
+  <h3>038-b — 팝오버가 창의 ✕ 를 먹는다</h3>
+  <p>판이 <code>grab_set()</code> 으로 마우스를 잡고, 바깥 클릭까지 제 이벤트로 받아
+     <b>판을 닫는 데 써 버린다</b> — 그 클릭은 ✕ 로 가지 않는다.
+     “눌러도 안 꺼진다”의 정체.</p>
+  <p><b>잡기를 쓰지 않는다</b>: 판이 열려 있는 동안만 클릭을 엿듣고 밖이면 닫는다.
+     Tk 의 바인딩 차례상 위젯 제 처리가 먼저 도므로 클릭은 원래 목적지로 통과한다.</p>
+  <p class="why">035 와 <b>같은 파일</b>(<code>design/popover.py</code>)이고, 잡기 구조를
+     바꾸면 z 순서에도 영향이 간다 — 따로 하면 같은 자리를 두 번 만진다.</p>
 </div></div>
 
-<div class="phase"><div class="no">4</div><div>
-  <h3>034 — 자간 맞춤을 표 안에서도</h3>
-  <p><code>_selected_para_range()</code> 가 <b>본문(list 0)</b> 일 때만 범위를 준다.
-     그 아래 배관도 <code>SetPos(0, …)</code> 로 list 0 을 박아 쓴다. 좌표 배관 문제일 뿐이다
-     — 실제 구현은 폭을 재지 않고 ‘해 보고 확인’ 방식이라 <b>셀 폭 우려는 해당하지 않는다</b>.</p>
-  <p>범위를 <code>(list_id, first, last)</code> 로 넓히고 배관 전체에 <code>list_id</code> 를
-     꿴다. 줄 끝에서 <b>다음 셀로 튀는 것</b>을 막는 경계 방어를 더한다
-     (<code>nxt[0] != list_id</code>).</p>
-  <p><b>여러 셀에 걸친 선택은 1차 제외</b> — “셀 하나씩 선택해 주세요” 안내로 막고
-     셀 순회는 후속으로 남긴다.</p>
-  <p><b>실측 먼저(3건)</b>: ① 셀 안에서 <code>MoveLineBegin</code>/<code>MoveSelLineEnd</code>/
-     <code>MoveRight</code> 가 본문과 같게 노는가 ② <code>SelectText</code> 가 셀 좌표에서
-     동작하는가 ③ 어절 단위(ParagraphShape) 적용이 셀 문단에도 먹는가.</p>
-</div></div>
-
-<div class="phase p0"><div class="no">5</div><div>
+<div class="phase p0"><div class="no">4</div><div>
   <h3>035·036 — 도킹의 z 순서 주인이 둘이다 <span class="ref">2026-08-01 추가</span></h3>
   <p><b>035</b> 도킹 중 팔레트 드롭다운을 열면 도킹 화면이 안 보인다.
      <code>keep_order</code> 가 <code>fg</code> 를 한글·우리 창 <b>두 핸들과만</b>
@@ -546,13 +572,15 @@
 <h3>이 라운드의 검증 규약</h3>
 <div class="card">
   <ul>
-    <li><b>스파이크가 구현보다 먼저다</b> — 033·034 의 실측을 끝내고 결과를 문서에 남긴 뒤 코드를 짠다.</li>
-    <li><b>테스트 전체 실행</b> (현재 728개 기준, 새 규칙은 테스트로 못박는다).</li>
-    <li><b>실기 검증 4종</b> — ① 도킹 → 양식 수정 → 저장 → <b>메인 자동 복귀</b>
-        (취소 경로도) ② 표 안(보기 박스) 문단에 자간 맞춤 → 잘림 해소 · ↺ 한 번에 원복
-        ③ 도킹 중 <b>팔레트 드롭다운</b>을 열었다 닫아도 도킹이 그대로
+    <li><b>테스트 전체 실행</b> <span class="ok">✔ 750개 통과</span>
+        (기존 728 + 새 규칙 22 — <code>tests/test_dock_owner.py</code>).</li>
+    <li><b>실기 검증 5종</b> <span class="ref">— 한글이 필요해 사용자가 한다</span>
+        ① 도킹 → 양식 수정 → 저장 → <b>메인 자동 복귀</b> (취소 경로도)
+        ② 같은 경로에서 <b>창이 커지지 않고 빈 문서도 안 남는지</b> (031)
+        ③ 도킹 중 <b>팔레트 드롭다운</b>을 열었다 닫아도 도킹이 그대로 (035)
         ④ 도킹 중 한글 미클릭 상태에서 <b>PageUp</b> → 도킹 유지 + 안내
-        (도킹을 떼면 PageUp 이 다시 ‘항상 위’로 동작).</li>
+        (도킹을 떼면 PageUp 이 다시 ‘항상 위’로 동작) (036)
+        ⑤ 팝오버가 떠 있을 때 창의 <b>✕ 가 한 번에</b> 먹는지 (038-b).</li>
     <li>끝나면 <b>main 에 병합·푸시</b>.</li>
     <li><b>버전은 올리지 않는다</b> (기존 규약과 동일 — 사용자가 정한다).</li>
   </ul>

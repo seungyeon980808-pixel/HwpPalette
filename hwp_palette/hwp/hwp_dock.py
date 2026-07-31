@@ -75,6 +75,27 @@ _gdi32 = ctypes.windll.gdi32
 _MOVE_FLAGS = (win32con.SWP_SHOWWINDOW | win32con.SWP_NOACTIVATE
                | win32con.SWP_NOZORDER)
 
+_RGN_DIFF = 4                 # CombineRgn 모드 — A 에서 B 를 뺀다
+
+
+def dpi_scale(hwnd):
+    r"""그 창이 놓인 화면의 배율 (1.0 / 1.25 / 1.5 …).
+
+    우리 프로세스는 DPI 미인식이라 우리 창에 물어보면 늘 96 이 나온다. 그래서
+    **DPI 를 아는 창**(한글)에게 묻는다 — 창 영역(SetWindowRgn)의 좌표는
+    가상화되지 않은 실제 픽셀이므로, 이 배율로 곱해 줘야 자리가 맞는다.
+
+    (2026-08-01) 이 함수와 _RGN_DIFF 는 e84cc46(제목줄 잘라내기 철회)에서
+    **정의만 지워지고 호출부는 남아** 있었다. 그동안 _punch_hole 은 매번
+    NameError 로 실패했고(로그에만 남았다), 구멍이 없으니 도킹 화면은
+    keep_order 의 z 순서 하나에만 기대고 있었다 — 순서가 흔들리는 순간
+    (팝오버·항상 위) 판이 하얗게 보이던 035·036 증상의 바닥이다.
+    """
+    try:
+        return (_user32.GetDpiForWindow(hwnd) or 96) / 96.0
+    except Exception:
+        return 1.0
+
 
 def fit_on_screen(hwnd, w, h):
     r"""그 창을 w×h 로 키울 때 **화면 밖으로 안 나가는** 좌상단 좌표.
@@ -142,6 +163,104 @@ def clear_crop(hwnd):
         win32gui.SetWindowRgn(hwnd, full, True)
     except Exception as e:
         applog.exc("한글 창 잘라내기 해제 실패 — 창이 잘린 채 남을 수 있음", e)
+
+
+# ── 도킹 소유권 대장 (2026-08-01, 피드백 032) ──────────────
+#
+# 한글 창의 도킹 주인은 **한 번에 하나**다. 지금까지는 Dock 인스턴스가 둘
+# (메인 도킹 · 양식 수정) 살아 있을 수 있었고, 둘이 같은 hwnd 를 서로 제 판
+# 자리로 SetWindowPos 해서 한글이 두 자리를 왕복했다 — 사용자가 말한
+# 버벅임의 정체다.
+#
+# 두 호출부(app · palette_ui)는 서로를 모르므로, 둘이 함께 쓰는 이 모듈이
+# 심판이 된다. 겹치면 **더 구체적인 작업이 이긴다** (사용자 결정):
+# 양식 수정(편집 세션) > 메인 도킹.
+PRIORITY_EDIT = 100        # 양식 수정·내용 고치기 (편집 세션)
+PRIORITY_MAIN = 10         # 메인 창 도킹 (◫)
+
+_owner_lock = threading.RLock()
+_owner_stack = []          # [[dock, priority, on_resume]] — LIFO
+
+
+def owner():
+    """지금 한글 창을 쥐고 있는 Dock (없으면 None)."""
+    with _owner_lock:
+        return _owner_stack[-1][0] if _owner_stack else None
+
+
+def owner_priority():
+    """지금 주인의 우선순위 (주인이 없으면 0)."""
+    with _owner_lock:
+        return _owner_stack[-1][1] if _owner_stack else 0
+
+
+def claim(dock, priority, on_resume=None):
+    r"""이 Dock 이 한글 창의 주인이 된다. 잡았으면 True.
+
+    지금 주인이 **더 높은 우선순위**면 뺏지 않고 False 를 돌려준다 —
+    호출부는 안내만 하고 물러난다. 같거나 높으면 지금 주인을 재우고
+    (`stop_follow()` 만 — 창 복원은 하지 않는다. 새 주인이 곧바로 이어받으므로
+    제자리로 튕겼다 다시 붙는 깜빡임이 없어야 한다) 그 위에 쌓인다.
+    """
+    with _owner_lock:
+        if any(e[0] is dock for e in _owner_stack):
+            return True                     # 이미 주인이거나 스택 안에 있다
+        if _owner_stack and priority < _owner_stack[-1][1]:
+            return False
+        if _owner_stack:
+            try:
+                _owner_stack[-1][0].stop_follow()
+            except Exception as e:
+                applog.exc("도킹 주인 재우기 실패 — 두 창이 한글을 다툴 수 있음", e)
+        _owner_stack.append([dock, priority, on_resume])
+        return True
+
+
+def release(dock):
+    r"""주인 자리를 내려놓는다. 스택에 없으면 아무 일도 없다(이중 호출 안전).
+
+    맨 위에서 내려오면 **바로 아래 주인이 깨어난다** — 양식 수정을 끝내면
+    메인 도킹이 저절로 돌아오는 길이다.
+    """
+    with _owner_lock:
+        before = len(_owner_stack)
+        _owner_stack[:] = [e for e in _owner_stack if e[0] is not dock]
+        if len(_owner_stack) == before:
+            return                          # 주인이 아니었다
+        while _owner_stack:
+            nxt, _prio, on_resume = _owner_stack[-1]
+            if not win32gui.IsWindow(nxt.hwnd):
+                _owner_stack.pop()          # 그새 한글이 닫혔다 — 건너뛴다
+                continue
+            try:
+                if on_resume:
+                    on_resume()             # ensure_visible 등 (COM 은 호출부 몫)
+                nxt.start()
+            except Exception as e:
+                applog.exc("이전 도킹 주인 되살리기 실패 — 도킹이 풀린 채 남는다", e)
+                _owner_stack.pop()
+                continue
+            break
+
+
+def reorder_now():
+    r"""지금 주인에게 **창 순서를 다시 잡으라**고 시킨다 (팝오버가 열릴 때 등).
+
+    팝오버는 자체 hwnd 를 가진 창이라 우리 메인 창에 <Activate> 를 주지 않는다
+    — 순서를 다시 잡을 계기가 없어 도킹 판이 하얗게 비던 원인이다 (035).
+    """
+    d = owner()
+    if d is not None:
+        try:
+            d.keep_order(force=True)
+        except Exception as e:
+            applog.exc("도킹 창 순서 다시 잡기 실패", e)
+
+
+def _reset_owners_for_test():
+    """테스트 전용 — 대장을 비운다."""
+    with _owner_lock:
+        _owner_stack.clear()
 
 
 def is_hung(hwnd):
@@ -300,6 +419,27 @@ class Dock:
         except Exception as e:
             applog.exc("창 구멍 메우기 실패 — 창 가운데가 뚫린 채 남는다", e)
 
+    def _is_ours(self, fg):
+        r"""지금 앞에 나온 창이 **우리 편**인가 — 소유 사슬까지 본다 (035).
+
+        예전에는 핸들 둘(한글·우리 메인 창)과만 비교했다. 그런데 팝오버·
+        대화상자·툴팁은 **자체 hwnd 를 가진 창**이라, 그것이 활성이 되는 순간
+        '남의 프로그램'으로 읽혀 keep_order 가 그냥 돌아갔다 — 순서를 다시
+        잡아 줄 사람이 없어 도킹 판이 하얗게 비었다.
+
+        소유자(owner)를 끝까지 따라가 뿌리가 우리 창이면 우리 편으로 본다.
+        한글 쪽도 같은 방식이라 한글의 하위 대화상자까지 덮인다.
+        """
+        if not fg:
+            return False
+        mine = tuple(h for h in (self.hwnd, self._root_hwnd) if h)
+        if fg in mine:
+            return True
+        try:
+            return win32gui.GetAncestor(fg, win32con.GA_ROOTOWNER) in mine
+        except Exception:
+            return False
+
     def keep_order(self, force=False):
         r"""감싸는 동안 **우리 창은 늘 한글 아래**로 깔린다 (사용자 결정 2026-07-30).
 
@@ -323,8 +463,7 @@ class Dock:
             # 동기 호출이 멈춘 창을 기다리면 앱이 통째로 굳는다.
             if is_hung(self.hwnd):
                 return
-            fg = win32gui.GetForegroundWindow()
-            if not force and fg not in (self.hwnd, self._root_hwnd):
+            if not force and not self._is_ours(win32gui.GetForegroundWindow()):
                 return                      # 남의 프로그램을 쓰는 중 — 건드리지 않는다
             flags = (win32con.SWP_NOMOVE | win32con.SWP_NOSIZE
                      | win32con.SWP_NOACTIVATE)
