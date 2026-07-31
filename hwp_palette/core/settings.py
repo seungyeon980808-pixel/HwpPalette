@@ -14,6 +14,7 @@ from hwp_palette.core import backup
 import json
 import os
 import pathlib
+import shutil
 from hwp_palette.core import paths
 
 CONFIG_PATH = paths.DATA_DIR / "config.json"
@@ -104,6 +105,53 @@ def deep_merge(base, override):
 # 달라지므로 다음 호출에서 바로 알아챈다.
 _cfg_cache = {"tok": None, "data": None}
 
+# 설정을 **못 읽은 상태** 표식 (2026-07-31 안전 점검). True 인 동안 save_config
+# 는 쓰기를 거부한다 — 읽기 실패가 일시적 잠금(OneDrive·백신)이어도 여태는
+# {} 위에 기본값을 채워 **저장**해 버려, 멀쩡히 있던 팔레트·사진 폴더·창
+# 위치가 통째로 지워졌다. 다음 읽기가 성공하면 자동으로 풀린다.
+_load_failed = False
+
+# ── 저장 실패 알림 (CONTRACT C1) ───────────────────────
+# save_config 의 False 를 무시하는 호출부가 많다 — 파일에 안 남았는데
+# 사용자는 저장된 줄 안다. 실패하면 UI 가 등록한 함수를 불러 알린다.
+# 알림은 세션당 한 번만(같은 원인으로 창이 쏟아지면 그게 또 사고다),
+# 로그는 매번 남긴다.
+_save_error_notifier = None
+_save_error_notified = False
+# 알림 함수가 등록되기 **전**에 실패한 저장의 메시지 (2026-07-31 안전 점검
+# 후속). 앱이 뜨는 도중에는 알림 함수가 아직 없는데, 시작하자마자 설정이
+# 깨져 있으면 첫 거부가 바로 그 시점에 난다 — 예전에는 이때 '세션당 한 번'
+# 토큰만 태워, 이후 실패에도 알림이 영영 안 나갔다. 미뤄 뒀다가 등록되는
+# 순간 내보낸다.
+_save_error_pending = None
+
+
+def set_save_error_notifier(fn):
+    """저장 실패 시 부를 함수 fn(한국어 메시지) 을 등록한다. 앱 시작 때 건다.
+
+    등록 전에 이미 실패한 저장이 있으면(미뤄 둔 메시지) 지금 바로 알린다 —
+    앱이 뜨는 도중의 저장 거부도 사용자 눈에 보여야 한다.
+    """
+    global _save_error_notifier
+    _save_error_notifier = fn
+    if fn is not None and _save_error_pending is not None:
+        _notify_save_error(_save_error_pending)
+
+
+def _notify_save_error(msg):
+    global _save_error_notified, _save_error_pending
+    if _save_error_notified:
+        return                          # 세션당 한 번만
+    if _save_error_notifier is None:
+        _save_error_pending = msg       # 아직 알릴 곳이 없다 — 토큰은 안 태운다
+        return
+    _save_error_notified = True
+    _save_error_pending = None
+    try:
+        _save_error_notifier(msg)
+    except Exception as e:              # 알림 실패가 저장 흐름을 죽이면 안 된다
+        applog.exc("저장 실패 알림을 띄우지 못함", e)
+
 
 def config_token():
     """config.json 의 '세대' 표식 — (mtime_ns, 크기). 캐시 무효화의 열쇠."""
@@ -114,39 +162,105 @@ def config_token():
         return None
 
 
-def load_config():
-    r"""설정 전체(dict). **읽기 전용으로 다룰 것** — 캐시가 공유된다.
+def _atomic_write_text(path, text):
+    """같은 폴더의 임시 파일에 다 쓴 뒤 os.replace 로 바꿔치기.
 
+    쓰다가 강제 종료·디스크 오류가 나도 반쪽짜리 파일이 남지 않는다 —
+    반쪽이 남으면 다음 실행이 '깨진 파일'로 읽어 위의 복구 경로를 타게 된다.
+    """
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            tmp.unlink(missing_ok=True)     # 찌꺼기 청소 (최선 노력)
+        except OSError:
+            pass
+        raise
+
+
+def _recover_from_backup():
+    """깨진 config.json 을 백업(.bak1~3)에서 되살려 본다. 성공 시 dict, 실패 시 None.
+
+    망가진 원본은 config.json.damaged 로 남겨 둔다 — 복구된 백업이 최신
+    편집을 놓쳤을 수 있으므로, 조사할 실물을 지우지 않는다 (최선 노력).
+    """
+    for _n, bak, _size in backup.list_backups(CONFIG_PATH):
+        try:
+            data = json.loads(bak.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue                    # 이 백업도 못 쓴다 — 다음 것으로
+        if not isinstance(data, dict):
+            continue
+        applog.info(f"설정을 백업에서 복구 ({bak.name})")
+        try:
+            shutil.copyfile(CONFIG_PATH,
+                            CONFIG_PATH.with_name(CONFIG_PATH.name + ".damaged"))
+        except OSError:
+            pass
+        return data
+    return None
+
+
+def load_config():
+    r"""설정 전체(dict) — **깊은 사본**을 돌려준다.
+
+    (2026-07-31) 예전에는 캐시 원본을 그대로 돌려줘 '읽기 전용으로 다룰 것'
+    이라는 약속에 기댔다. 호출부가 실수로 고치면 저장 없이 캐시만 바뀌는
+    버그가 되므로, library.load 와 같은 방식으로 사본을 준다.
     고칠 때는 set_config_value/save_config 를 지나야 캐시와 파일이 함께
     맞는다. (settings 모듈 안의 cfg 수정→save_config 패턴은 그 규칙을 따른다.)
     """
+    global _load_failed
     if not CONFIG_PATH.exists():
-        return {}                      # 첫 실행 — 정상
+        _load_failed = False           # 첫 실행 — 정상. 저장해도 잃을 과거가 없다
+        return {}
     tok = config_token()
     if tok is not None and _cfg_cache["tok"] == tok:
-        return _cfg_cache["data"]
+        return copy.deepcopy(_cfg_cache["data"])
     try:
         data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
-        # 설정이 깨졌는데 조용히 {} 를 돌려주면 사용자의 팔레트가 통째로
-        # 사라진 것처럼 보인다 → 반드시 기록을 남긴다.
-        applog.exc(f"설정 파일을 읽지 못함 ({CONFIG_PATH.name}) — 기본값으로 시작", e)
-        return {}
+        # 설정이 깨졌는데(일시적 잠금 포함) 조용히 {} 를 돌려주면 뒤따르는
+        # save_config 가 기본값으로 **덮어써** 팔레트가 통째로 사라진다.
+        # 기록은 실패 '진입'에 한 번만 — 매 호출이 재시도하므로 매번 적으면
+        # 같은 줄이 로그를 가득 채운다 (렌더·3초 폴링이 이 길을 지난다).
+        if not _load_failed:
+            applog.exc(f"설정 파일을 읽지 못함 ({CONFIG_PATH.name})", e)
+        data = _recover_from_backup()
+        if data is None:
+            # 백업으로도 못 살렸다 — 저장을 잠근다. 캐시에 담지 않으므로
+            # 다음 호출이 다시 읽어 보고, 성공하는 순간 잠금이 풀린다.
+            _load_failed = True
+            return {}
+    _load_failed = False
     _cfg_cache["tok"] = tok
-    _cfg_cache["data"] = data
-    return data
+    _cfg_cache["data"] = copy.deepcopy(data)
+    return copy.deepcopy(data)
 
 
 def save_config(cfg):
+    if _load_failed:
+        # 설정을 못 읽은 채 저장하면 남아 있던 파일을 지금 메모리(대개
+        # 기본값)로 덮어쓴다 — 데이터를 지키는 쪽은 '저장 거부'다.
+        applog.exc(f"설정 저장 거부 ({CONFIG_PATH.name}) — "
+                   "설정 파일을 읽지 못한 상태라 덮어쓰지 않음")
+        _notify_save_error(
+            "설정 파일을 읽지 못해 저장을 멈췄습니다 — "
+            "프로그램을 다시 시작해 주세요. (기존 설정을 지키기 위한 조치입니다)")
+        return False
     try:
         backup.rotate(CONFIG_PATH)      # 저장 직전 상태를 .bak1 로 보관
-        CONFIG_PATH.write_text(
-            json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+        _atomic_write_text(
+            CONFIG_PATH, json.dumps(cfg, ensure_ascii=False, indent=2))
         _cfg_cache["tok"] = config_token()
-        _cfg_cache["data"] = cfg
+        _cfg_cache["data"] = copy.deepcopy(cfg)
         return True
     except (OSError, TypeError) as e:
         applog.exc(f"설정 저장 실패 ({CONFIG_PATH.name}) — 변경이 유실됨", e)
+        _notify_save_error(
+            "설정을 저장하지 못했습니다 — 방금 바꾼 내용이 파일에 남지 않았습니다.")
         return False
 
 

@@ -85,6 +85,28 @@ SRC_DATA_FOLDER_NAME = "data"
 _LEGACY_NAMES = ("config.json", "library.json", "app.log", "fragments",
                  "window_diag.log", "미리보기", "미리보기작업", "양식작업")
 
+# 첫 스캔을 마쳤다는 표식 파일. 이게 있으면 다음 실행부터 스캔을 통째로
+# 건너뛴다 — '한 번만'이라는 약속을 파일로 지킨다.
+_MIGRATED_MARKER = ".migrated"
+
+
+def _legacy_candidates():
+    """옮길 대상의 **정확한** 이름 목록.
+
+    예전에는 beside.glob(name + "*") 로 접두사를 긁었는데, 그러면 exe 옆에
+    있던 사용자의 무관한 파일·폴더('미리보기 자료', 'config.json.txt' 등)까지
+    조용히 쓸어 담았다 (2026-07-31 안전 점검). 백업까지 포함해 이름을 전부
+    나열하고, 정확히 일치하는 것만 옮긴다.
+    """
+    out = []
+    for name in _LEGACY_NAMES:
+        out.append(name)
+        if name.endswith(".json"):
+            # backup.py 의 롤링 백업 3벌 (.bak1~3). backup.KEEP 을 안 쓰는
+            # 이유: backup → applog → paths 라 여기서 임포트하면 순환이 된다.
+            out.extend(f"{name}.bak{n}" for n in range(1, 4))
+    return out
+
 
 def _migrate_legacy(beside, folder):
     """exe 옆에 흩어져 있던 예전 데이터를 새 폴더로 옮긴다 (한 번만).
@@ -93,18 +115,35 @@ def _migrate_legacy(beside, folder):
     폴더는 빈 채로 시작한다(사용자 눈에는 '처음 켠 것'처럼 보이지만, 원본이
     지워지지는 않는다).
     """
+    marker = folder / _MIGRATED_MARKER
+    try:
+        if marker.exists():
+            return 0                    # 이미 한 번 옮겼다 — 다시 훑지 않는다
+    except OSError:
+        pass
     moved = 0
-    for name in _LEGACY_NAMES:
-        for src in beside.glob(name + "*"):     # .bak1~3 까지 함께
-            if src.name in (DATA_FOLDER_NAME, SRC_DATA_FOLDER_NAME):
+    skipped = False         # OSError 로 못 옮기고 남긴 것이 하나라도 있었나
+    for name in _legacy_candidates():
+        src = beside / name
+        try:
+            if not src.exists():
                 continue
-            try:
-                dest = folder / src.name
-                if not dest.exists():
-                    src.replace(dest)
-                    moved += 1
-            except OSError:
-                pass            # 잠긴 파일 등 — 제자리에 두고 넘어간다
+            dest = folder / src.name
+            if not dest.exists():
+                src.replace(dest)
+                moved += 1
+        except OSError:
+            skipped = True  # 잠긴 파일 등 — 제자리에 두고 넘어간다
+    # 표식은 **하나도 안 남겼을 때만** 쓴다 (2026-07-31 안전 점검 후속).
+    # 첫 실행에 백신·OneDrive 가 파일을 잠그고 있으면 위에서 건너뛰는데,
+    # 그 순간 표식을 박으면 다음 실행이 스캔을 통째로 건너뛰어 잠겼던
+    # 데이터가 영영 밖에 남는다 — 다음 실행에 한 번 더 훑게 미룬다.
+    # (새 폴더에 이미 있어서 안 옮긴 것은 정상이라 표식을 막지 않는다.)
+    if not skipped:
+        try:
+            marker.write_text("", encoding="utf-8")
+        except OSError:
+            pass            # 표식을 못 남기면 다음 실행에 스캔만 한 번 더 한다
     return moved
 
 

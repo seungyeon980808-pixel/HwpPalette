@@ -13,6 +13,7 @@ library.json에는 그 파일명만 참조로 남긴다.
 
 import copy
 import json
+import os
 import pathlib
 import re
 import shutil
@@ -149,6 +150,12 @@ def set_tags(category, item_id, tags):
 # 돌려준다 — 사본이어야 "부를 때마다 새 객체"라는 기존 약속이 유지된다.
 _load_cache = {"tok": None, "data": None}
 
+# 창고를 **못 읽은 상태** 표식 (2026-07-31 안전 점검). 잘린 library.json 이
+# 조용히 '새 설치'처럼 보이면, 다음 save() 가 빈 창고를 그 위에 덮어써
+# 물감 전부를 잃는다 — True 인 동안 save() 는 예외를 올려 저장을 멈춘다.
+# 다음 읽기가 성공하면 자동으로 풀린다.
+_load_failed = False
+
 
 def _library_token():
     try:
@@ -158,14 +165,71 @@ def _library_token():
         return None
 
 
+def _atomic_write_text(path, text):
+    """같은 폴더의 임시 파일에 다 쓴 뒤 os.replace 로 바꿔치기.
+
+    쓰다가 강제 종료·디스크 오류가 나도 반쪽짜리 파일이 남지 않는다 —
+    반쪽이 남으면 다음 실행이 '깨진 파일'로 읽어 창고가 비어 보인다.
+    (settings._atomic_write_text 와 같은 도구 — library 는 settings 에
+    기대지 않는 모듈이라 여기 한 벌 더 둔다)
+    """
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            tmp.unlink(missing_ok=True)     # 찌꺼기 청소 (최선 노력)
+        except OSError:
+            pass
+        raise
+
+
+def _recover_from_backup():
+    """깨진 library.json 을 백업(.bak1~3)에서 되살려 본다. 성공 시 dict, 실패 시 None.
+
+    망가진 원본은 library.json.damaged 로 남겨 둔다 — 복구된 백업이 최신
+    편집을 놓쳤을 수 있으므로, 조사할 실물을 지우지 않는다 (최선 노력).
+    """
+    for _n, bak, _size in backup.list_backups(LIBRARY_PATH):
+        try:
+            data = json.loads(bak.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue                    # 이 백업도 못 쓴다 — 다음 것으로
+        if not isinstance(data, dict):
+            continue
+        applog.info(f"물감 창고를 백업에서 복구 ({bak.name})")
+        try:
+            shutil.copyfile(LIBRARY_PATH,
+                            LIBRARY_PATH.with_name(LIBRARY_PATH.name + ".damaged"))
+        except OSError:
+            pass
+        return data
+    return None
+
+
 def load():
+    global _load_failed
     tok = _library_token()
     if tok is not None and _load_cache["tok"] == tok:
         return copy.deepcopy(_load_cache["data"])
     try:
         data = json.loads(LIBRARY_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        data = {}
+    except FileNotFoundError:
+        data = {}                       # 첫 실행 (파일 없음) — 정상
+    except Exception as e:
+        # 파일은 있는데 못 읽었다(잘림·잠금 등) — '새 설치'가 아니다.
+        # 기록은 실패 '진입'에 한 번만 — 매 호출이 재시도하므로 매번 적으면
+        # 같은 줄이 로그를 가득 채운다.
+        if not _load_failed:
+            applog.exc(f"물감 창고 파일을 읽지 못함 ({LIBRARY_PATH.name})", e)
+        data = _recover_from_backup()
+        if data is None:
+            # 백업으로도 못 살렸다 — 저장을 잠근다. 캐시에 담지 않으므로
+            # 다음 호출이 다시 읽어 보고, 성공하는 순간 잠금이 풀린다.
+            _load_failed = True
+            return copy.deepcopy(_EMPTY)
+    _load_failed = False
     out = copy.deepcopy(_EMPTY)
     migrated = False
     for cat in CATEGORIES:
@@ -224,10 +288,19 @@ def get_item(category, item_id=None, name=None):
 
 
 def save(data):
+    if _load_failed:
+        # 창고를 못 읽은 상태의 저장은 무엇이 됐든 진짜 파일을 빈 목록으로
+        # 덮어쓰는 길이다 — settings 처럼 False 를 돌려주지 않고 예외를
+        # 올리는 이유: 여기 호출부 대부분이 반환값을 보지 않는다.
+        applog.exc(f"물감 창고 저장 거부 ({LIBRARY_PATH.name}) — "
+                   "창고 파일을 읽지 못한 상태라 덮어쓰지 않음")
+        raise RuntimeError(
+            "물감 창고 파일을 읽지 못한 상태라 저장을 멈췄습니다 — "
+            "프로그램을 다시 시작해 주세요. (기존 물감을 지키기 위한 조치입니다)")
     _ensure_dirs()
     backup.rotate(LIBRARY_PATH)         # 저장 직전 상태를 .bak1 로 보관
-    LIBRARY_PATH.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    _atomic_write_text(
+        LIBRARY_PATH, json.dumps(data, ensure_ascii=False, indent=2))
     _load_cache["tok"] = _library_token()
     _load_cache["data"] = copy.deepcopy(data)
 
@@ -636,19 +709,27 @@ def template_path(item):
 
 
 def delete_item(category, item_id):
-    """id로 항목 삭제. 팔레트에 남은 참조(고아 블럭)도 함께 정리한다."""
+    """id로 항목 삭제. 팔레트에 남은 참조(고아 블럭)도 함께 정리한다.
+
+    순서가 중요하다 (2026-07-31): **목록 저장이 먼저, 조각 파일 삭제가 나중.**
+    파일부터 지웠는데 저장이 실패하면, 목록에는 남았는데 실체가 없는
+    유령 항목이 된다(누르면 그때서야 터진다). 반대로 저장은 됐는데 파일
+    삭제가 실패하면 조각 하나가 남을 뿐이라 무해하다 — 기록만 남긴다.
+    """
     data = load()
     items = data.get(category, [])
     target = next((it for it in items if it.get("id") == item_id), None)
     if target is None:
         return False
-    if category in _FILE_CATEGORIES:
-        try:
-            (FRAGMENTS_DIR / target["file"]).unlink(missing_ok=True)
-        except OSError:
-            pass
+    # 구 데이터에는 file 키가 없는 항목도 있다 — KeyError 로 죽지 않는다
+    fname = target.get("file") if category in _FILE_CATEGORIES else None
     data[category] = [it for it in items if it.get("id") != item_id]
     save(data)
+    if fname:
+        try:
+            (FRAGMENTS_DIR / fname).unlink(missing_ok=True)
+        except OSError as e:
+            applog.exc(f"조각 파일 삭제 실패 (남아 있어도 무해) — {fname}", e)
     _purge_palette_refs(category, item_id)
     return True
 

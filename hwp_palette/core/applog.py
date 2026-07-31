@@ -18,7 +18,7 @@ import traceback
 from hwp_palette.core import paths
 
 LOG_PATH = paths.DATA_DIR / "app.log"
-MAX_BYTES = 512 * 1024          # 512KB 넘으면 새로 시작
+MAX_BYTES = 512 * 1024          # 512KB 넘으면 app.log.old 로 밀고 새로 시작
 _console = False                # True 면 콘솔에도 출력 (개발용)
 
 
@@ -33,7 +33,10 @@ def _write(level, msg):
         print(line)
     try:
         if LOG_PATH.exists() and LOG_PATH.stat().st_size > MAX_BYTES:
-            LOG_PATH.unlink(missing_ok=True)
+            # 지우지 않고 .old 로 민다 (2026-07-31) — 오류가 쏟아져 한도를
+            # 넘는 바로 그 순간에 지워 버리면, 정작 원인을 찾을 기록이
+            # 사라진다. 한 세대 전까지는 남긴다 (있던 .old 는 교체).
+            LOG_PATH.replace(LOG_PATH.with_name(LOG_PATH.name + ".old"))
         with open(LOG_PATH, "a", encoding="utf-8") as f:
             f.write(line + "\n")
     except OSError:
