@@ -1750,7 +1750,7 @@ class SettingsWindow(tk.Toplevel):
             self.pal_hint.config(text=self._pal_hint_text(), fg=MUTED)
             self.bind("<Escape>", lambda e: self._close())
             return
-        dlg = _ToolPickDialog(self, span, rows)
+        dlg = _BlockKindDialog(self, span, rows)
         self.wait_window(dlg)
         self._pending_area = (row, col, span, rows)
         self._pending_color = getattr(dlg, "color", None)
@@ -2639,7 +2639,7 @@ class SettingsWindow(tk.Toplevel):
         # "이름 — 설명"을 한 줄로 이어 콤보박스에 넣던 옛 방식은 콤보박스
         # 폭에서 설명이 잘려 무엇을 고르는지 알 수 없었다 (사용자 지적
         # 2026-07-31). 이름과 설명을 두 줄로 보여주는 전용 목록으로 바꿨다.
-        pick = _ToolPickDialog(self, builtin_actions.BUILTIN_ACTIONS)
+        pick = _BuiltinPickDialog(self, builtin_actions.BUILTIN_ACTIONS)
         self.wait_window(pick)
         if not pick.result:
             return
@@ -2840,8 +2840,15 @@ class _SourceDialog(tk.Toplevel):
         self.destroy()
 
 
-class _ToolPickDialog(tk.Toplevel):
+class _BuiltinPickDialog(tk.Toplevel):
     r"""도구 고르기 — 이름과 설명을 **두 줄**로 보여준다 (2026-07-31).
+
+    이름 주의 (2026-07-31 버그 수정): 예전엔 이 클래스도 `_ToolPickDialog`
+    였다. 파일 아래쪽의 '무엇을 넣을까' 창과 **이름이 똑같아** 나중 정의가
+    이것을 덮어썼고, `_add_builtin` 이 부르면 엉뚱한 창이 열리며 도구 목록이
+    제목 라벨에 날 데이터로 찍혔다("어떤 도구를 사용할 수 있는지 알 수가
+    없습니다"). 무엇을 고르는 창인지가 이름에 드러나야 한다 —
+    여기는 **붙박이 도구(builtin)** 고르기, 저기는 **블럭 종류** 고르기다.
 
     예전에는 "이름 — 설명"을 한 줄로 이어 콤보박스(_ChoiceDialog)에 넣었는데,
     콤보박스 폭에서 설명이 잘려 무엇을 고르는지 알 수 없었다 (사용자 지적:
@@ -3134,8 +3141,12 @@ class _CaptionDialog(tk.Toplevel):
         self.destroy()
 
 
-class _ToolPickDialog(tk.Toplevel):
-    """빈칸을 끌어 칸 수를 정한 뒤 '무엇을 넣을지' 고르는 창."""
+class _BlockKindDialog(tk.Toplevel):
+    """빈칸을 끌어 칸 수를 정한 뒤 '무엇을 넣을지' 고르는 창.
+
+    이름 주의: 위쪽 `_BuiltinPickDialog`(붙박이 도구 고르기)와 이름이 겹치면
+    안 된다 — 겹쳤을 때 어떤 일이 벌어졌는지는 그 클래스의 설명 참고.
+    """
 
     _TOOLS = [
         ("char", "특수기호", "특수기호·자주 쓰는 문구를 커서 자리에 삽입"),
