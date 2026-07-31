@@ -144,6 +144,14 @@ class StorePanel(tk.Frame):
         self.multi = set()                  # {(분류, id)} — 내보내기 대상
         self._free_hint = ""                # 담은 게 없을 때 머리말에 쓸 말
         self._tiles = {}
+        self._order = []
+        # 분류마다 만들어 둔 판 — 탭을 갈아탈 때 다시 만들지 않는다 (2026-07-31)
+        self._cat_cache = {}
+        self._cat_shown = None
+        self._where_memo = None             # (배치, 지금 탭 이름) — 판 지을 때 공유
+        self._states_dirty = False          # 배치가 바뀌어 다시 칠해야 하는가
+        self._counts = {}                   # 분류별 개수 — 탭에 적는 숫자
+        self._chip_w = {}                   # 분류 탭 위젯 — 한 번 만들고 색만 바꾼다
         self._photo = None                  # ⚠ 참조를 붙들어야 그림이 안 사라진다
         self._name_font = None              # 카드 이름 재기용 Font — 만들기가 비싸 재사용
         self._states_job = None             # refresh_states 모아치기 예약 (after id)
@@ -210,8 +218,10 @@ class StorePanel(tk.Frame):
                             style="App.Vertical.TScrollbar",
                             command=self.canvas.yview)
         self.body = tk.Frame(self.canvas, bg=CARD)
-        self.body.bind("<Configure>", lambda e: self.canvas.configure(
-            scrollregion=self.canvas.bbox("all")))
+        self.body.grid_columnconfigure(0, weight=1)
+        # 스크롤 범위는 _sync_scroll 이 **보이는 판**의 높이로 잡는다
+        # (판을 겹쳐 두므로 bbox("all") 은 가장 큰 판을 가리킨다)
+        self.body.bind("<Configure>", lambda e: self._sync_scroll())
         self._win = self.canvas.create_window((0, 0), window=self.body,
                                               anchor="nw")
         self.canvas.bind("<Configure>",
@@ -227,6 +237,20 @@ class StorePanel(tk.Frame):
 
         self.refresh()
 
+    def _sync_scroll(self, frame=None):
+        """스크롤 범위를 **지금 보이는 판**의 높이에 맞춘다."""
+        if frame is None:
+            got = self._cat_cache.get(self._cat_shown)
+            frame = got["frame"] if got else None
+        if frame is None:
+            return
+        try:
+            h = max(frame.winfo_reqheight(), 1)
+            self.canvas.configure(
+                scrollregion=(0, 0, max(self.canvas.winfo_width(), 1), h))
+        except Exception:
+            pass
+
     def on_wheel(self, e):
         """마우스 휠 — 커서가 창고 위일 때만 굴린다. 부모가 한 곳에서 불러 준다."""
         try:
@@ -239,8 +263,12 @@ class StorePanel(tk.Frame):
             pass
 
     # ── 데이터 ────────────────────────────────────
-    def _items(self, lib=None):
-        """[(분류, 항목)] — 지금 고른 칩에 맞는 것만, 분류 순서대로.
+    def _items(self, lib=None, key=None):
+        r"""[(분류, 항목)] — **key 분류**의 물감들. key 를 안 주면 지금 켠 분류.
+
+        key 를 받는 이유 (2026-07-31): 분류 판을 미리 지어 둘 때는 화면에 켜진
+        분류와 **다른** 분류를 짓는다. self.filter 를 보면 미리 지은 판이 전부
+        지금 분류의 목록으로 채워진다 (실측: 다섯 판 모두 템플릿 24개가 들어갔다).
 
         lib 는 refresh 가 한 번 읽어 건네주는 library.load() 결과다 —
         분류마다 list_items 를 부르면 그때마다 창고 전체를 다시 읽는다(깊은
@@ -248,19 +276,15 @@ class StorePanel(tk.Frame):
         """
         if lib is None:
             lib = library.load()
-        if self.filter == "도구":
+        if key is None:
+            key = self.filter
+        if key == "도구":
             # 도구는 라이브러리에 없다 — 프로그램이 가진 기능 목록이다.
             # 항목 모양(id·name)만 맞춰 주면 아래 그리기가 그대로 돈다.
             return [("도구", {"id": f"builtin:{a['key']}", "name": a["name"],
                               "hint": a.get("hint", ""), "key": a["key"]})
                     for a in builtin_actions.BUILTIN_ACTIONS]
-        out = []
-        for _label, key in CATS:
-            if key != self.filter:
-                continue
-            for it in lib.get(key, []):
-                out.append((key, it))
-        return out
+        return [(key, it) for it in lib.get(key, [])]
 
     def _placement(self):
         """{항목 id: set(탭 이름)} — 어느 팔레트에 놓여 있는지.
@@ -301,30 +325,75 @@ class StorePanel(tk.Frame):
         # 한 번 그리는 데 여덟아홉 번을 읽었다. 여기서 읽어 둘이 나눠 쓴다.
         lib = library.load()
         self._draw_chips(lib)
+        # 만들어 둔 분류 판을 통째로 버린다 — 물감이 늘거나 줄었으므로
+        for got in self._cat_cache.values():
+            try:
+                got["frame"].destroy()
+            except Exception:
+                pass
+        self._cat_cache = {}
+        self._cat_shown = None
+        self._where_memo = None
         for w in self.body.winfo_children():
             w.destroy()
-        self._tiles = {}
-        where = self._placement()
-        here = self.tab_name_fn()
-        items = self._items(lib)
+        self._show_cat(lib)
+        # 나머지 분류는 **한가할 때 미리 지어 둔다** — 그래야 첫 전환도
+        # 기다림 없이 넘어간다. 한 번에 하나씩 지어 화면이 멎지 않게 한다.
+        self._prebuild_rest(lib)
+
+    def _prebuild_rest(self, lib=None):
+        rest = [k for _l, k in CATS if k not in self._cat_cache]
+        if not rest:
+            return
+        def step(keys, lib_):
+            if not keys or not self.winfo_exists():
+                return
+            k = keys[0]
+            if k not in self._cat_cache:
+                try:
+                    got = self._build_cat(k, lib_)   # 지어만 두고 안 보인다
+                    self._cat_cache[k] = got
+                except Exception as e:
+                    applog.exc(f"창고: '{k}' 미리 짓기 실패", e)
+            self.after(30, lambda: step(keys[1:], lib_))
+        try:
+            self.after(120, lambda: step(rest, lib or library.load()))
+        except Exception:
+            pass
+
+    def _build_cat(self, key, lib=None):
+        """분류 하나의 판을 만든다 — 여기서만 타일을 새로 만든다."""
+        if lib is None:
+            lib = library.load()
+        frame = tk.Frame(self.body, bg=CARD)
+        # 모든 분류 판이 **같은 칸**을 쓴다. 보이는 것 하나만 grid() 로 두고
+        # 나머지는 grid_remove() — 자리 정보(row/column)는 남아 있어 되돌릴 때
+        # 다시 계산하지 않는다. pack/pack_forget 보다 이쪽이 가볍다.
+        frame.grid(row=0, column=0, sticky="new")
+        frame.grid_remove()
+        tiles = {}
+        # 배치 정보는 **한 번만** 읽는다 — 분류 다섯 판을 지으면서 팔레트
+        # 전체를 다섯 번 다시 읽을 이유가 없다. refresh() 가 이 기억을 비운다.
+        if self._where_memo is None:
+            self._where_memo = (self._placement(), self.tab_name_fn())
+        where, here = self._where_memo
+        items = self._items(lib, key)
         # 안 쓰는 물감이 늘 위에 온다 (사용자 결정) — 정렬은 여기서만 한다.
         # 고를 때마다 다시 정렬하면 눌렀던 것이 눈앞에서 도망간다.
         rank = {"free": 0, "here": 1, "away": 2, "plain": 3}
         items.sort(key=lambda ci: rank[self._state(ci[0], ci[1], where, here)])
-        self._order = items
 
         free_n = sum(1 for c, i in items
                      if self._state(c, i, where, here) == "free")
-        self._free_hint = (f"안 쓰는 물감 {free_n}개" if free_n
-                           else "모두 팔레트에 놓여 있습니다")
-        self._sync_share()
+        free_hint = (f"안 쓰는 물감 {free_n}개" if free_n
+                     else "모두 팔레트에 놓여 있습니다")
 
         # 폭은 **다시 계산하지 않는다** (사용자 결정 2026-07-31). 예전에는 가장
         # 긴 이름을 재서 판을 늘렸는데, 그 바람에 물감이 있고 없고·분류를
         # 바꿀 때마다 좌우 폭이 출렁였다 ("변형되어서는 안 됩니다"). 이름이
         # 길면 카드 안에서 말줄임으로 처리하고, 판은 STORE_W 로 고정한다.
 
-        grid = tk.Frame(self.body, bg=CARD)
+        grid = tk.Frame(frame, bg=CARD)
         grid.pack(fill="x")
         for c in range(COLS):
             grid.columnconfigure(c, weight=1, uniform="tile")
@@ -334,61 +403,82 @@ class StorePanel(tk.Frame):
                               self._state(cat, item, where, here))
             tile.grid(row=n // COLS, column=n % COLS, sticky="ew",
                       padx=3, pady=3)
-            self._tiles[key] = tile
+            tiles[key] = tile
         if not items:
             # 비었다고 판이 좁아지지는 않는다(폭 고정) — 대신 여기서 무엇을
             # 하면 되는지 말해 준다. 읽기 전용 분류에는 ＋ 가 없으므로 안내도 다르다.
             msg = ("이 분류에 물감이 없습니다."
-                   if self.filter in READONLY_CATS
-                   else f"아직 {_cat_label(self.filter)}이(가) 없습니다.\n"
+                   if key in READONLY_CATS
+                   else f"아직 {_cat_label(key)}이(가) 없습니다.\n"
                         "위의 ＋ 로 하나 만들어 보세요.")
-            tk.Label(self.body, text=msg, justify="center",
+            tk.Label(frame, text=msg, justify="center",
                      font=(FONT, theme.fs(FS["sub"])), bg=CARD, fg=MUTED).pack(pady=SP["xl"])
-        self._paint_selection()
+        return {"frame": frame, "tiles": tiles, "order": items,
+                "free_hint": free_hint}
 
     def _draw_chips(self, lib=None):
-        """분류 탭 한 줄 — 이름 위, 개수 아래. 켜진 하나만 흰 칸으로 뜬다."""
-        for w in self.chip_box.winfo_children():
-            w.destroy()
-        if lib is None:                     # refresh 가 읽어 둔 것을 나눠 쓴다
-            lib = library.load()
-        counts = {key: len(lib.get(key, [])) for _l, key in CATS}
-        counts["도구"] = len(builtin_actions.BUILTIN_ACTIONS)
-        for i, (label, key) in enumerate(CATS):
+        r"""분류 탭 한 줄 — 이름 위, 개수 아래. 켜진 하나만 흰 칸으로 뜬다.
+
+        위젯은 **한 번만 만들고 색만 바꾼다** (2026-07-31). 탭을 누를 때마다
+        다섯 칸을 부수고 다시 만들면 그때마다 판 전체 배치가 다시 계산돼,
+        전환이 눈에 띄게 무거워졌다(실측: update() 한 번에 100ms 넘게).
+        """
+        if lib is not None:                 # 창고를 방금 읽었다 — 개수를 새로 센다
+            counts = {key: len(lib.get(key, [])) for _l, key in CATS}
+            counts["도구"] = len(builtin_actions.BUILTIN_ACTIONS)
+            self._counts = counts
+        counts = self._counts
+        if not self._chip_w:
+            for i, (label, key) in enumerate(CATS):
+                cell = tk.Frame(self.chip_box, bg=SUBBG, cursor="hand2",
+                                highlightthickness=1, highlightbackground=SUBBG)
+                cell.grid(row=0, column=i, sticky="nsew", padx=1, pady=1)
+                nm = tk.Label(cell, text=label,
+                              font=(FONT, theme.fs(FS["caption"])),
+                              bg=SUBBG, fg=MUTED, pady=0)
+                nm.pack(fill="x", pady=(3, 0))
+                ct = tk.Label(cell, text="", font=(FONT, theme.fs(FS["caption"])),
+                              bg=SUBBG, fg=BORDER, pady=0)
+                ct.pack(fill="x", pady=(0, 3))
+                for w in (cell, nm, ct):
+                    w.bind("<Button-1>", lambda e, k=key: self._pick_chip(k))
+                self._chip_w[key] = (cell, nm, ct)
+            for c in range(len(CATS)):
+                self.chip_box.columnconfigure(c, weight=1, uniform="cat")
+        for label, key in CATS:
+            cell, nm, ct = self._chip_w[key]
             on = (self.filter == key)
-            cell = tk.Frame(self.chip_box, bg=CARD if on else SUBBG,
-                            cursor="hand2",
-                            highlightbackground=BORDER if on else SUBBG,
-                            highlightthickness=1 if on else 0)
-            cell.grid(row=0, column=i, sticky="nsew", padx=1, pady=1)
-            nm = tk.Label(cell, text=label,
+            bg = CARD if on else SUBBG
+            try:
+                cell.config(bg=bg, highlightbackground=BORDER if on else SUBBG)
+                nm.config(bg=bg, fg=TEXT if on else MUTED,
                           font=(FONT, theme.fs(FS["caption"]),
-                                "bold" if on else "normal"),
-                          bg=CARD if on else SUBBG,
-                          fg=TEXT if on else MUTED, pady=0)
-            nm.pack(fill="x", pady=(3, 0))
-            ct = tk.Label(cell, text=str(counts.get(key, 0)),
-                          font=(FONT, theme.fs(FS["caption"])),
-                          bg=CARD if on else SUBBG,
-                          fg=MUTED if on else BORDER, pady=0)
-            ct.pack(fill="x", pady=(0, 3))
-            for w in (cell, nm, ct):
-                w.bind("<Button-1>", lambda e, k=key: self._pick_chip(k))
-        for c in range(len(CATS)):
-            self.chip_box.columnconfigure(c, weight=1, uniform="cat")
+                                "bold" if on else "normal"))
+                ct.config(bg=bg, fg=MUTED if on else BORDER,
+                          text=str(counts.get(key, 0)))
+            except tk.TclError:
+                pass
         self._sync_new_btn()
 
     def _sync_new_btn(self):
-        """＋ 줄 — 글씨는 켜 놓은 분류를 따라가고, 읽기 전용 분류에선 숨는다."""
+        r"""＋ 줄 — 글씨는 켜 놓은 분류를 따라가고, 읽기 전용 분류에선 안내로 바뀐다.
+
+        **배치에서 빼지 않는다** (2026-07-31). 예전에는 '도구' 탭에서
+        pack_forget 으로 감췄는데, 줄 하나가 사라졌다 나타날 때마다 판과 창이
+        통째로 다시 배치돼 전환이 100ms 씩 걸렸다(실측). 자리는 그대로 두고
+        생김새만 바꾼다 — 덤으로 "왜 도구에만 ＋ 가 없지"에 답까지 된다.
+        """
         try:
             if self.filter in READONLY_CATS or self.on_new is None:
-                self.new_btn.pack_forget()
-                return
-            self.new_btn.config(text=f"＋ 새 {_cat_label(self.filter)} 만들기")
-            if not self.new_btn.winfo_ismapped():
-                # 목록(wrap)보다 먼저 붙어야 분류 바로 아래에 온다
-                self.new_btn.pack(fill="x", padx=8, pady=(5, 5),
-                                  before=self._list_wrap)
+                self.new_btn.config(
+                    text="도구는 프로그램이 가진 기능입니다",
+                    fg=MUTED, bg=CARD, cursor="",
+                    highlightbackground=BORDER)
+            else:
+                self.new_btn.config(
+                    text=f"＋ 새 {_cat_label(self.filter)} 만들기",
+                    fg=ACCENT, bg=CARD, cursor="hand2",
+                    highlightbackground=SEL_LINE)
         except Exception as e:
             applog.exc("창고: ＋ 줄 갱신 실패", e)
 
@@ -402,12 +492,69 @@ class StorePanel(tk.Frame):
             applog.exc("창고: 새 물감 만들기 실패", e)
 
     def _pick_chip(self, key):
+        r"""분류 탭 누르기 — **다시 만들지 않고 갈아 끼운다** (2026-07-31).
+
+        예전에는 탭을 누를 때마다 refresh() 로 타일을 전부 부수고 다시 만들었다.
+        템플릿 24개면 RoundTile 24개(각각 Canvas 폴리곤)를 새로 그리는 일이라
+        전환 한 번에 190~330ms 가 걸렸다 — 사용자 지적 "물감 창고에서 영역을
+        이동할때 버벅거리는 느낌이 강합니다" 의 정체다.
+
+        이제 분류마다 만들어 둔 판을 pack/pack_forget 으로 바꿔 끼운다. 두
+        번째부터는 새로 만드는 일이 없다. 물감 목록 자체가 바뀌면(등록·삭제)
+        refresh() 가 이 저장분을 통째로 버린다.
+        """
+        if key == self.filter and key in self._cat_cache:
+            return
         self.filter = key
-        self.refresh()
+        # 이미 지어 둔 분류면 **창고를 다시 읽지 않는다** — library.load() 는
+        # 전체 깊은 복사라, 탭을 누를 때마다 부르면 캐시로 아낀 시간을 도로
+        # 쓴다. 탭에 적힌 개수는 refresh() 가 세어 둔 것을 그대로 쓴다.
+        cached = key in self._cat_cache
+        lib = None if cached else library.load()
+        self._draw_chips(lib)
+        self._show_cat(lib)
         # 스크롤을 맨 위로 되돌린다 — 안 그러면 항목이 줄어든 만큼 위쪽이
         # 텅 빈 채로 남는다 (실측 2026-07-27: #양식 3개를 골랐는데 화면
         # 아래쪽에 붙어 보였다)
         self.canvas.yview_moveto(0)
+
+    def _show_cat(self, lib=None):
+        r"""지금 분류의 판을 앞으로 — 없으면 그때 한 번 만든다.
+
+        판을 같은 칸에 겹쳐 두고 tkraise 로 올리는 방법을 시도했다가 물렀다
+        (2026-07-31): 더 빠르긴 했지만 **도구 탭에 템플릿 카드가 그대로
+        보이는** 어긋남이 났다. 짧은 판을 올려도 뒤에 있는 긴 판의 아랫부분이
+        비어져 나온다. 30ms 아끼자고 틀린 목록을 보여줄 수는 없다.
+
+        속도는 다른 데서 벌었다 — 타일을 분류마다 한 번만 만들고(_cat_cache),
+        탭 위젯을 다시 만들지 않고, 창고를 매번 읽지 않고, ＋ 줄을 배치에서
+        빼지 않는다. 그것만으로 330ms → 70ms 가 됐다.
+        """
+        cur = self._cat_shown
+        if cur is not None and cur in self._cat_cache:
+            try:
+                self._cat_cache[cur]["frame"].grid_remove()
+            except Exception:
+                pass
+        key = self.filter
+        got = self._cat_cache.get(key)
+        if got is None:
+            got = self._build_cat(key, lib)
+            self._cat_cache[key] = got
+        got["frame"].grid()
+        self._cat_shown = key
+        self._sync_scroll(got["frame"])
+        self._tiles = got["tiles"]
+        self._order = got["order"]
+        self._free_hint = got["free_hint"]
+        self._sync_share()
+        # 색 다시 칠하기는 **배치가 실제로 바뀌었을 때만** 한다. 전환할 때마다
+        # 칠하면 타일 24개를 다시 그리고 팔레트도 디스크에서 다시 읽어, 캐시로
+        # 아낀 시간을 그대로 도로 쓴다 (실측 2026-07-31: 54ms → 134ms 로 악화).
+        if self._states_dirty:
+            self._paint_states_now()
+        else:
+            self._paint_selection()
 
     def _colors(self, state):
         if state == "here":
@@ -670,6 +817,7 @@ class StorePanel(tk.Frame):
         180ms 안에 또 오면 앞 예약을 물리고 다시 재므로 손을 멈춘 뒤 한 번만
         칠한다 — 마지막 예약은 취소되지 않으니 최종 상태는 반드시 반영된다.
         """
+        self._states_dirty = True        # 배치가 바뀌었다 — 다음 전환 때 칠한다
         if self._states_job is not None:
             try:
                 self.after_cancel(self._states_job)
@@ -700,6 +848,9 @@ class StorePanel(tk.Frame):
             return
         where = self._placement()
         here = self.tab_name_fn()
+        # 새로 읽은 배치를 판 짓기 쪽과도 나눠 쓴다 (아직 안 지은 분류가 있다)
+        self._where_memo = (where, here)
+        self._states_dirty = False
         free_n = 0
         for cat, item in getattr(self, "_order", []):
             state = self._state(cat, item, where, here)
