@@ -2114,6 +2114,28 @@ class SettingsWindow(tk.Toplevel):
 
     def _place(self, block):
         """새 블럭을 지금 지정한 자리에 넣는다 (없으면 첫 빈자리)."""
+        # 완전히 같은 도구는 한 팔레트에 **한 번만** (사용자 결정 2026-07-31).
+        # 도구는 내용물이 없어서 두 개가 정확히 같은 단추다 — 실수로 두 번
+        # 놓는 것 말고는 쓸모가 없다. 겹친 칸 안에 든 것까지 함께 센다.
+        # (템플릿·문자는 막지 않는다 — 이름이 같아도 내용이 다를 수 있다)
+        if block.get("type") == "builtin":
+            try:
+                blocks = palette.load_tabs()[self.sel_tab].get("blocks", [])
+            except Exception:
+                blocks = []
+            key = block.get("key")
+
+            def _has(b):
+                if b.get("type") == "builtin" and b.get("key") == key:
+                    return True
+                return any(_has(x) for x in (b.get("items") or []))
+            if any(_has(b) for b in blocks):
+                messagebox.showinfo(
+                    "이미 있는 도구",
+                    f"'{builtin_actions.name_of(key)}' 은(는) 이 팔레트에 "
+                    "이미 있습니다.\n같은 도구는 한 팔레트에 하나면 됩니다.",
+                    parent=self)
+                return
         area = getattr(self, "_pending_area", None)
         color = getattr(self, "_pending_color", None)
         if color:
@@ -3060,7 +3082,7 @@ class SettingsWindow(tk.Toplevel):
         # "이름 — 설명"을 한 줄로 이어 콤보박스에 넣던 옛 방식은 콤보박스
         # 폭에서 설명이 잘려 무엇을 고르는지 알 수 없었다 (사용자 지적
         # 2026-07-31). 이름과 설명을 두 줄로 보여주는 전용 목록으로 바꿨다.
-        pick = _BuiltinPickDialog(self, builtin_actions.BUILTIN_ACTIONS)
+        pick = _BuiltinPickDialog(self, builtin_actions.visible_actions())
         self.wait_window(pick)
         if not pick.result:
             return

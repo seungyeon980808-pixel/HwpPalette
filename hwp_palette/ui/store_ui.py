@@ -253,6 +253,12 @@ class StorePanel(tk.Frame):
             h = max(frame.winfo_reqheight(), 1)
             self.canvas.configure(
                 scrollregion=(0, 0, max(self.canvas.winfo_width(), 1), h))
+            # 목록은 **반드시 위에서부터** 시작한다 (사용자 지적 2026-07-31:
+            # "위쪽 정렬이 아닌 경우가 발생합니다"). 긴 분류에서 굴려 내려간
+            # 채로 짧은 분류로 갈아타면, 옛 스크롤 위치가 남아 카드가 아래에
+            # 붙어 보였다. 내용이 화면보다 짧으면 무조건 맨 위로 되돌린다.
+            if h <= self.canvas.winfo_height():
+                self.canvas.yview_moveto(0)
         except Exception:
             pass
 
@@ -263,6 +269,15 @@ class StorePanel(tk.Frame):
             if not (self.winfo_rootx() <= x <= self.winfo_rootx() + self.winfo_width()
                     and self.winfo_rooty() <= y <= self.winfo_rooty() + self.winfo_height()):
                 return
+            # 내용이 화면보다 짧으면 굴리지 않는다 — 짧은 목록이 위로 밀려
+            # 올라가 '아래 정렬'처럼 보이던 원인 하나 (2026-07-31).
+            got = self._cat_cache.get(self._cat_shown)
+            if got is not None:
+                try:
+                    if got["frame"].winfo_reqheight() <= self.canvas.winfo_height():
+                        return
+                except Exception:
+                    pass
             self.canvas.yview_scroll(-1 if e.delta > 0 else 1, "units")
         except Exception:
             pass
@@ -288,7 +303,7 @@ class StorePanel(tk.Frame):
             # 항목 모양(id·name)만 맞춰 주면 아래 그리기가 그대로 돈다.
             return [("도구", {"id": f"builtin:{a['key']}", "name": a["name"],
                               "hint": a.get("hint", ""), "key": a["key"]})
-                    for a in builtin_actions.BUILTIN_ACTIONS]
+                    for a in builtin_actions.visible_actions()]
         return [(key, it) for it in lib.get(key, [])]
 
     def _placement(self):
@@ -430,7 +445,7 @@ class StorePanel(tk.Frame):
         """
         if lib is not None:                 # 창고를 방금 읽었다 — 개수를 새로 센다
             counts = {key: len(lib.get(key, [])) for _l, key in CATS}
-            counts["도구"] = len(builtin_actions.BUILTIN_ACTIONS)
+            counts["도구"] = len(builtin_actions.visible_actions())
             self._counts = counts
         counts = self._counts
         if not self._chip_w:
@@ -549,6 +564,7 @@ class StorePanel(tk.Frame):
         got["frame"].grid()
         self._cat_shown = key
         self._sync_scroll(got["frame"])
+        self.canvas.yview_moveto(0)         # 어느 길로 왔든 새 분류는 맨 위부터
         self._tiles = got["tiles"]
         self._order = got["order"]
         self._free_hint = got["free_hint"]
@@ -633,6 +649,13 @@ class StorePanel(tk.Frame):
             tile._rib = rib
         tile._parts = (nm, sub)
         tile._state = state
+        # 도구 카드는 둘째 줄이 말줄임으로 잘린다 — 커서를 올리면 **설명
+        # 전문**을 말풍선으로 보여준다 (사용자 결정 2026-07-31). 다른 분류는
+        # 미리보기 판이 그 역할을 하므로 여기서만 단다.
+        if cat == "도구":
+            from hwp_palette.ui.palette_ui import _tip      # 순환 참조 회피 (지연)
+            for w in (tile, nm, sub):
+                _tip(w, f"{item.get('name', '')}\n{item.get('hint', '')}")
         # 누르면 고르고, 그대로 끌면 팔레트 격자로 가져간다 (사용자 결정
         # 2026-07-28 — '팔레트에 놓기' 버튼 대신 끌어다 놓기)
         for w in (tile, nm, sub):

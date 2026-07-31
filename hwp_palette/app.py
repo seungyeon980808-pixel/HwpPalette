@@ -2716,6 +2716,35 @@ def fn_dock_hwp():
     if _dock["dock"] is not None:
         _exit_dock()
         return
+    # 열려 있는 한글 창이 없으면 **무엇을 감쌀지 먼저 묻는다** (사용자 결정
+    # 2026-07-31). 예전 규칙("문서를 만들지도 열지도 묻지도 않는다")은 한글이
+    # 떠 있을 때의 이야기였고, 안 떠 있으면 connect 가 빈 문서를 몰래 만들어
+    # 그걸 감싸는 — 묻지 않은 결정이 이미 일어나고 있었다. 물을 것이 있으면
+    # 묻는 편이 규칙에 맞다. 한글이 떠 있으면 예전처럼 아무것도 묻지 않는다.
+    if not hwp_engine._hwp_window_handles():
+        choice = messagebox._ask(
+            root, "한글이 떠 있지 않습니다", "무엇과 도킹할까요?",
+            [("취소", None, "normal"), ("새 문서", "new", "normal"),
+             ("파일 불러오기", "open", "primary")], cancel=None)
+        if choice is None:
+            return
+        if choice == "open":
+            path = filedialog.askopenfilename(
+                parent=root, title="도킹할 한글 파일",
+                filetypes=[("한글 문서", "*.hwp *.hwpx"), ("모든 파일", "*.*")])
+            if not path:
+                return
+            if not ensure_hwp():
+                return
+            try:
+                # strip_markers 없이 그냥 연다 — 사용자의 파일을 고치지 않는다
+                engine_library.open_form(path)
+            except Exception as e:
+                applog.exc("도킹: 파일 열기 실패", e)
+                notify("error", "파일을 열지 못해 도킹하지 못했습니다")
+                return
+        # "new" 는 그냥 지나간다 — 아래 ensure_hwp() 의 connect 가 한글을
+        # 띄우고, 한글이 제 빈 문서를 만든다 (우리가 만드는 게 아니다).
     if not ensure_hwp():
         return
     try:

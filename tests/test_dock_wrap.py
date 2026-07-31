@@ -249,17 +249,30 @@ class AppRules(unittest.TestCase):
         self.assertIn("_exit_dock()", body)
         self.assertLess(body.index("_exit_dock()"), body.index("set_window_pos"))
 
-    def test_도킹은_문서를_만들지_않는다(self):
-        r"""사용자 지적 2026-07-30: "왜 한글과 도킹을 눌렀을 때 새 한글 파일이
-        열리는 건데. 희망하지 않은 기능은 넣지를 마세요."
+    def test_한글이_떠_있으면_도킹은_묻지도_만들지도_않는다(self):
+        r"""규칙의 내력 — 두 결정이 겹쳐 있다.
 
-        도킹은 **창을 감싸는 일**이다 — 지금 열려 있는 한글을 그대로 감싼다.
-        새 문서든 파일 열기든 한글에서 할 일이라, 묻지도 만들지도 않는다.
+        2026-07-30: "왜 한글과 도킹을 눌렀을 때 새 한글 파일이 열리는 건데.
+        희망하지 않은 기능은 넣지를 마세요." → 한글이 **떠 있으면** 그것을
+        그대로 감싼다. 묻지도 만들지도 않는다.
+
+        2026-07-31: "아무런 선택이 안 되어 있는 경우에는 도킹 버튼을 눌렀을 때
+        한글파일을 불러올것인지 새 창에서 열 것인지를 물어보게" → 한글이
+        **안 떠 있으면** 물어본다. (예전에도 이때는 connect 가 빈 문서를 몰래
+        만들었으므로, 묻는 쪽이 7-30 결정의 취지에도 맞다.)
+
+        그래서 지키는 것: 파일 열기(askopenfilename)는 반드시 '창이 없는지
+        확인' **뒤에만** 나온다.
         """
         body = _fn_body(_read("app"), "fn_dock_hwp")
-        for banned in ("new_document", "ask_choice", "askopenfilename",
-                       "open_document"):
-            self.assertNotIn(banned, body, f"도킹이 {banned} 를 부른다")
+        self.assertIn("_hwp_window_handles", body,
+                      "한글 창이 떠 있는지 확인하지 않는다")
+        self.assertIn("askopenfilename", body,
+                      "창이 없을 때 파일을 물어보는 갈래가 없다")
+        self.assertLess(body.index("_hwp_window_handles"),
+                        body.index("askopenfilename"),
+                        "창 확인보다 먼저 파일을 물어본다 — 떠 있는 한글을 "
+                        "감싸는 길이 막힌다")
 
 
 if __name__ == "__main__":
