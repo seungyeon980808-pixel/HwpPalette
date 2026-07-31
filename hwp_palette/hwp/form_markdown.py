@@ -16,23 +16,35 @@ r"""양식/템플릿 → AI 프롬프트 (2026-07-25, 사용자 기획 18번).
 XML 이다. XML 을 못 얻으면 순수 텍스트로만 만든다 (표가 줄글로 펴진다).
 """
 
-import re
 import xml.etree.ElementTree as ET
 
 from hwp_palette.core import applog
 from hwp_palette.hwp import engine_library
+from hwp_palette.model import form_fill                    # 자리 토큰 규칙(TOKEN_RE) 한 벌로
 
-# 빈칸 표시 — 문서 속 역슬래시(\) 하나가 빈칸 하나다 (캡처 규칙과 동일).
+# 빈칸 표시 — 자리 토큰(form_fill.TOKEN_RE) 하나가 빈칸 하나다.
 # AI 가 순서를 셀 수 있게 【빈칸1】 처럼 번호를 붙여 보여준다.
 SLOT_MARK = "【빈칸{n}】"
+# 이름표 자리(\학년\)는 이름을 같이 보여준다 — AI 가 무슨 칸인지 알 수 있게
+NAMED_SLOT_MARK = "【빈칸{n}:{name}】"
+
+
+def _para_text(p):
+    """문단 하나의 글자 — CHAR 는 서식이 바뀌는 지점마다 쪼개질 뿐이라
+    사이에 공백을 넣지 않고 붙인다. 공백을 넣으면 "학년" 이 "학 년" 이
+    된다 (2026-07-31)."""
+    return "".join(ch.text for ch in p.iter("CHAR") if ch.text)
 
 
 def _cell_text(cell):
-    """표 칸 안의 글자 (안에 또 표가 있으면 그 글자까지 평평하게)."""
-    parts = []
-    for ch in cell.iter("CHAR"):
-        if ch.text:
-            parts.append(ch.text)
+    """표 칸 안의 글자 (안에 또 표가 있으면 그 글자까지 평평하게).
+
+    같은 문단 안의 CHAR 는 붙이고, 문단(P) 사이에만 공백을 둔다 —
+    줄바꿈이 진짜 경계이기 때문이다.
+    """
+    parts = [_para_text(p) for p in cell.iter("P")]
+    if not parts:                       # P 없이 CHAR 만 있는 별난 구조 대비
+        parts = ["".join(ch.text for ch in cell.iter("CHAR") if ch.text)]
     return " ".join(" ".join(parts).split())
 
 
@@ -49,7 +61,8 @@ def _own_text(p, parents):
             e = parents.get(e)
         if not inside_table and ch.text:
             parts.append(ch.text)
-    return " ".join(" ".join(parts).split())
+    # 같은 문단 안의 CHAR 는 서식 경계일 뿐 — 공백 없이 붙인다 (2026-07-31)
+    return " ".join("".join(parts).split())
 
 
 def _table_md(table):
@@ -98,15 +111,26 @@ def xml_to_markdown(xml_str):
 
 
 def _number_slots(md):
-    r"""역슬래시 빈칸에 순서 번호를 붙인다. (본문 표시 \본문\ 은 빈칸이 아니다)"""
+    r"""빈칸 자리에 순서 번호를 붙인다. (본문 표시 \본문\ 은 빈칸이 아니다)
+
+    자리 하나 = form_fill.TOKEN_RE 토큰 하나다 — `\\` 도 `\학년\` 도 자리
+    **하나**다. 예전엔 역슬래시 낱개마다 번호를 붙여서, 이름표 하나가 빈칸
+    둘로 잡히고 개수가 채우는 쪽(library.count_slots)의 두 배로 부풀려졌다 —
+    AI 답 줄이 밀려 둘째 답부터 엉뚱한 칸에 들어갔다 (2026-07-31 수정).
+    """
     md = md.replace(engine_library.BODY_ANCHOR, "〔여기부터 본문〕")
     count = [0]
 
-    def rep(_m):
+    def rep(m):
+        name = m.group(1)
+        if name in form_fill.RESERVED_NAMES:
+            return m.group(0)           # \본문\ — 빈칸이 아니다
         count[0] += 1
+        if name:
+            return NAMED_SLOT_MARK.format(n=count[0], name=name)
         return SLOT_MARK.format(n=count[0])
 
-    return re.sub(r"\\", rep, md), count[0]
+    return form_fill.TOKEN_RE.sub(rep, md), count[0]
 
 
 def build_structure_md(path):

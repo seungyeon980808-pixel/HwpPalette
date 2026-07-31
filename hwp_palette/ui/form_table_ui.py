@@ -146,6 +146,23 @@ class FormTableWindow(tk.Toplevel):
             self.destroy()
             return
         if not self.slots:
+            # 빈칸이 전부 줄바꿈·탭 태그에 가려진 양식을 '자리 없음'으로
+            # 오판하면 안 된다 — 그 길로 strip_markers=True 로 열면 사용자가
+            # 채워야 할 표시(\)가 아무것도 안 채워진 채 지워진다 (2026-07-31)
+            try:
+                hidden = form_fill.hidden_slot_count(self.hwpx)
+            except Exception as e:
+                applog.exc(f"가려진 빈칸 세기 실패 ({self.src.name})", e)
+                hidden = 0
+            if hidden:
+                messagebox.showwarning(
+                    "빈칸을 읽지 못했습니다",
+                    f"빈칸 {hidden}개가 줄바꿈·탭으로 나뉘어 있어 표로 "
+                    "만들지 못했습니다.\n표시(\\)를 지우지 않고 그대로 열 "
+                    "테니 한글에서 직접 채워 주세요.", parent=self)
+                self.destroy()
+                engine_library.open_form(self.src)
+                return
             messagebox.showinfo(
                 "채울 자리 없음",
                 "이 양식에는 채울 자리(\\)가 없습니다.\n"
@@ -240,7 +257,7 @@ class FormTableWindow(tk.Toplevel):
 
     def _paste_md(self):
         text = clipboard.get_text() or ""
-        vals = form_fill.parse_named_markdown(text)
+        vals, dropped = form_fill.parse_named_markdown(text)
         if not vals:
             messagebox.showwarning(
                 "읽을 것 없음",
@@ -252,12 +269,25 @@ class FormTableWindow(tk.Toplevel):
             if name in vals:
                 var.set(vals[name])
                 hit += 1
-        self.status.set(f"{hit}칸을 채웠습니다." if hit else
-                        "이름이 맞는 칸이 없습니다 — 이름을 바꾸지 마세요.")
+        # 정직하게 알린다 — 이름이 안 맞는 줄과 형식이 어긋난 줄은
+        # 조용히 버리지 않고 개수를 보여준다 (2026-07-31)
+        unknown = [n for n in vals if n not in self.vars]
+        msg = (f"{hit}칸을 채웠습니다." if hit else
+               "이름이 맞는 칸이 없습니다 — 이름을 바꾸지 마세요.")
+        extra = []
+        if unknown:
+            extra.append(f"이름이 안 맞는 줄 {len(unknown)}개는 건너뛰었습니다")
+        if dropped:
+            extra.append(f"'이름: 값' 꼴이 아닌 줄 {len(dropped)}개는 무시했습니다")
+        if extra:
+            msg += " (" + ", ".join(extra) + ")"
+        self.status.set(msg)
 
     def _apply(self):
-        values = {k: v for k, v in self._values().items() if v}
-        if not values:
+        # 빈 값도 그대로 넘긴다 — "이 칸은 비워라(토큰만 지워라)"는 뜻이다.
+        # 표에 없는 이름만 fill_named 가 문서에 그대로 남긴다 (2026-07-31)
+        values = self._values()
+        if not any(values.values()):
             if not messagebox.askyesno(
                     "빈 채로 열기",
                     "채운 칸이 하나도 없습니다.\n"
@@ -266,22 +296,33 @@ class FormTableWindow(tk.Toplevel):
                 return
         dst = self._work_dir() / (self.src.stem + "_완성.hwpx")
         try:
-            filled, wiped = form_fill.fill_named(self.hwpx, dst, values)
+            report = form_fill.fill_named(self.hwpx, dst, values)
             hwp_engine.connect()
             engine_library.open_form(dst)
         except Exception as e:
             applog.exc(f"양식 채우기 실패 ({self.src.name})", e)
             messagebox.showerror("실패", f"{type(e).__name__}: {e}", parent=self)
             return
+        msg = f"{report['filled']}자리를 채워 열었습니다."
+        if report["wiped"]:
+            msg += f" (안 채운 자리 {report['wiped']}개는 지웠습니다)"
+        if report["missing"]:
+            n = sum(report["missing"].values())
+            msg += f" — {n}자리는 이름이 맞지 않아 그대로 남겨 두었습니다"
+        self.status.set(msg)
+        # 경고는 이 창이 아직 -topmost 일 때 띄운다 — 아래에서 한글을 앞으로
+        # 보낸 뒤에 띄우면 경고창이 한글 뒤에 숨어 못 보고 지나간다 (2026-07-31)
+        if report["hidden"]:
+            messagebox.showwarning(
+                "못 읽은 빈칸",
+                f"빈칸 {report['hidden']}개는 줄바꿈·탭으로 나뉘어 있어 "
+                "채우지 못했습니다.\n"
+                "한글에서 남은 빈칸(\\)을 직접 확인해 주세요.", parent=self)
         # 이 창이 -topmost 라 방금 연 한글 문서가 그 뒤에 가려 안 보이는
         # 문제와 같은 원인이다 (library_ui.edit_content 진단 참고, 2026-07-27).
         # 채우기가 끝나면 이 창의 역할도 끝난 것이므로 그냥 꺼 둔다.
         self.attributes("-topmost", False)
         hwp_engine.bring_to_front()
-        msg = f"{filled}자리를 채워 열었습니다."
-        if wiped:
-            msg += f" (안 채운 자리 {wiped}개는 지웠습니다)"
-        self.status.set(msg)
 
 
 def open_form_table(master, src_path, title=None):

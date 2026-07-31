@@ -16,15 +16,25 @@ r"""양식 채우기 — HWPX에서 채울 자리를 뽑고, 채운 내용을 �
   조각 통째로 돌려받는다**. 사람이 읽기에도 이쪽이 자연스럽다.
 """
 
+import os
 import re
 import xml.sax.saxutils as saxutils
 import zipfile
+
+from hwp_palette.core import applog
 
 # HWPX 안에서 본문이 들어 있는 파일들 (구역이 여러 개면 section1, 2 … 로 늘어난다)
 SECTION_RE = re.compile(r"Contents/section\d+\.xml$")
 
 # 글자 한 조각. HWPX 는 서식이 바뀌는 지점마다 이 태그를 나눈다.
-RUN_RE = re.compile(r"<hp:t>([^<]*)</hp:t>")
+# 여는 태그에 속성이 붙을 수 있다 (xml:space="preserve" 실측, 2026-07-31) —
+# <hp:t> 만 찾으면 그런 조각의 빈칸이 통째로 안 보인다. 속성까지 잡되,
+# 바꿔 쓸 때 여는 태그(1번 묶음)를 그대로 살려야 속성이 안 사라진다.
+RUN_RE = re.compile(r"(<hp:t\b[^>]*>)([^<]*)</hp:t>")
+
+# 안에 줄바꿈·탭 같은 자식 태그가 든 조각까지 통째로 잡는 판 — 이런 조각은
+# RUN_RE 로 바꿔 쓸 수 없지만, "못 읽은 빈칸이 있다"는 경고용으로는 세어야 한다.
+ANY_RUN_RE = re.compile(r"<hp:t\b[^>]*>(.*?)</hp:t>", re.S)
 
 SLOT_MARK = "\\"        # 템플릿 빈칸 표시 — 이게 든 조각을 '채울 자리'로 본다
 
@@ -65,8 +75,46 @@ def read_runs(hwpx_path):
         for name in _section_names(zf):
             xml = zf.read(name).decode("utf-8")
             for m in RUN_RE.finditer(xml):
-                runs.append((len(runs), saxutils.unescape(m.group(1))))
+                runs.append((len(runs), saxutils.unescape(m.group(2))))
     return runs
+
+
+def _count_tokens(text):
+    """채울 자리 토큰 수 — 본문 표시(\\본문\\)는 빼고 센다."""
+    return sum(1 for t in TOKEN_RE.finditer(text)
+               if t.group(1) not in RESERVED_NAMES)
+
+
+def _hidden_token_count(xml):
+    r"""RUN_RE 가 못 여는 조각 속의 자리 토큰 수 (경고용).
+
+    줄바꿈(<hp:lineBreak/>)·탭 같은 자식 태그가 든 조각은 RUN_RE 로 바꿔 쓸
+    수 없어, 그 안의 빈칸은 조용히 안 채워진다. 통째 판(ANY_RUN_RE)으로 센
+    전체에서 RUN_RE 가 보는 만큼을 빼면 '가려진' 개수가 남는다. 자식 태그
+    자리는 공백으로 바꾼다 — 태그 양쪽의 홑 \ 가 한 쌍으로 붙어 보이는
+    오인을 막기 위함.
+    """
+    total = 0
+    for m in ANY_RUN_RE.finditer(xml):
+        flat = saxutils.unescape(re.sub(r"<[^>]+>", " ", m.group(1)))
+        total += _count_tokens(flat)
+    exposed = sum(_count_tokens(saxutils.unescape(m.group(2)))
+                  for m in RUN_RE.finditer(xml))
+    return max(0, total - exposed)
+
+
+def hidden_slot_count(hwpx_path):
+    r"""파일 전체에서 RUN_RE 가 못 여는 조각 속의 자리 토큰 수.
+
+    표 창이 "채울 자리 없음"을 판정하기 전에 부른다 — 빈칸이 **전부**
+    줄바꿈·탭 태그에 가려진 양식을 '자리 없음'으로 오판해 표시(\)를
+    지워 버리고 열면 안 되기 때문 (2026-07-31 안전 감사 후속).
+    """
+    total = 0
+    with zipfile.ZipFile(hwpx_path) as zf:
+        for name in _section_names(zf):
+            total += _hidden_token_count(zf.read(name).decode("utf-8"))
+    return total
 
 
 def slots(hwpx_path):
@@ -116,36 +164,21 @@ def parse_worksheet(text):
     return out
 
 
-def fill(src_hwpx, dst_hwpx, replacements):
-    """replacements({번호: 글자})를 넣어 새 HWPX 로 저장. 반환: 실제로 바꾼 개수.
+def _write_zip(zf, dst_path, rewritten):
+    r"""바꾼 파일만 갈아끼워 dst 로 쓴다 — **임시 파일에 다 쓴 뒤 바꿔치기**.
 
-    바꾸지 않는 파일은 **읽은 그대로 다시 쓴다** — 압축 방식과 순서까지 유지해야
-    한글이 군말 없이 연다.
+    바꾸지 않는 파일은 **읽은 그대로 다시 쓴다** — 압축 방식과 순서까지
+    유지해야 한글이 군말 없이 연다.
+
+    dst 를 바로 "w" 로 열면 그 순간 기존 파일이 0바이트로 잘린다 — 중간에
+    실패하면 깨진 .hwpx 가 남고, 같은 이름(_완성.hwpx)을 다시 쓰는 흐름에선
+    멀쩡하던 이전 결과물까지 날아간다. 임시 파일에 완성한 뒤 os.replace 로
+    바꿔치기하면 실패해도 원래 파일이 그대로다 (2026-07-31).
     """
-    changed = 0
-    with zipfile.ZipFile(src_hwpx) as zf:
-        sections = set(_section_names(zf))
-        counter = [-1]
-
-        def _sub(m):
-            counter[0] += 1
-            if counter[0] not in replacements:
-                return m.group(0)
-            return "<hp:t>%s</hp:t>" % saxutils.escape(replacements[counter[0]])
-
-        rewritten = {}
-        for name in _section_names(zf):
-            xml = zf.read(name).decode("utf-8")
-            before = counter[0]
-            new_xml = RUN_RE.sub(_sub, xml)
-            if new_xml != xml:
-                rewritten[name] = new_xml.encode("utf-8")
-            del before
-
-        changed = sum(1 for i in replacements
-                      if 0 <= i <= counter[0])
-
-        with zipfile.ZipFile(dst_hwpx, "w") as out:
+    dst = os.fspath(dst_path)
+    tmp = dst + ".tmp"
+    try:
+        with zipfile.ZipFile(tmp, "w") as out:
             for item in zf.infolist():
                 data = rewritten.get(item.filename)
                 if data is None:
@@ -154,8 +187,46 @@ def fill(src_hwpx, dst_hwpx, replacements):
                 info.compress_type = item.compress_type
                 info.external_attr = item.external_attr
                 out.writestr(info, data)
-        del sections
-    return changed
+        os.replace(tmp, dst)
+    except BaseException:
+        try:
+            os.remove(tmp)              # 실패한 찌꺼기는 치운다
+        except OSError:
+            pass
+        raise
+
+
+def fill(src_hwpx, dst_hwpx, replacements):
+    """replacements({번호: 글자})를 넣어 새 HWPX 로 저장. 반환: 실제로 바꾼 개수.
+
+    바꾼 개수는 치환 콜백 안에서 직접 센다 — 예전처럼 "요청한 번호가 범위
+    안인가"로 세면, 실제로는 못 바꾼 것도 바꾼 것처럼 보고된다 (2026-07-31).
+    """
+    changed = [0]
+    with zipfile.ZipFile(src_hwpx) as zf:
+        counter = [-1]
+
+        def _sub(m):
+            counter[0] += 1
+            if counter[0] not in replacements:
+                return m.group(0)
+            changed[0] += 1
+            return "%s%s</hp:t>" % (
+                m.group(1), saxutils.escape(replacements[counter[0]]))
+
+        rewritten = {}
+        hidden = 0
+        for name in _section_names(zf):
+            xml = zf.read(name).decode("utf-8")
+            hidden += _hidden_token_count(xml)
+            new_xml = RUN_RE.sub(_sub, xml)
+            if new_xml != xml:
+                rewritten[name] = new_xml.encode("utf-8")
+        if hidden:
+            applog.warn("양식 채우기: 빈칸 %d개가 줄바꿈·탭 태그에 가려 "
+                        "목록에 안 잡혔습니다" % hidden)
+        _write_zip(zf, dst_hwpx, rewritten)
+    return changed[0]
 
 
 def _walk_tokens(text, counter):
@@ -210,50 +281,63 @@ def named_slots(hwpx_path):
 
 
 def fill_named(src_hwpx, dst_hwpx, values):
-    r"""이름표 자리에 값을 넣어 새 HWPX 로 저장. 반환: (채운 자리 수, 지운 자리 수).
+    r"""이름표 자리에 값을 넣어 새 HWPX 로 저장.
 
-    안 채운 이름표는 **지운다** — 그대로 두면 `\교시\` 가 인쇄물에 남는다.
+    반환: {"filled": 채운 수, "wiped": 지운 수,
+           "missing": {이름: 횟수}, "hidden": 못 읽은 빈칸 수}.
+
+    지우는 것은 **이름이 values 에 있는데 값이 빈 경우**뿐이다 — 사용자가
+    그 칸을 비워 둔 것이니 토큰만 걷어낸다 (그대로 두면 `\교시\` 가 인쇄물에
+    남는다). 이름이 values 에 **아예 없으면**(AI 가 이름을 바꿔 온 경우 등)
+    토큰을 문서에 그대로 남기고 missing 으로 센다 — 예전엔 이 경우도 지워
+    버려서, 이름이 어긋나면 양식 전체가 빈 채로 나오는데 성공으로 보고됐다
+    (2026-07-31). hidden 은 줄바꿈·탭 태그에 가려 아예 못 읽는 빈칸 수다.
     나머지 바이트는 건드리지 않으므로 표·병합·글꼴은 그대로다 (fill 과 같은 이유).
     """
     filled = wiped = 0
+    missing = {}
     counter = [0]
 
     def _sub_run(m):
         nonlocal filled, wiped
-        # <hp:t> 안쪽 글자만 토큰 치환한다 (태그는 건드리지 않는다)
-        inner = saxutils.unescape(m.group(1))
+        # <hp:t> 안쪽 글자만 토큰 치환한다 (여는 태그의 속성도 그대로 살린다)
+        inner = saxutils.unescape(m.group(2))
         out, last = [], 0
         for tm, name in _walk_tokens(inner, counter):
+            if name not in values:
+                # 이름이 안 맞는 토큰 — 지우지 말고 그대로 남긴다
+                missing[name] = missing.get(name, 0) + 1
+                continue
             out.append(inner[last:tm.start()])
-            val = values.get(name)
-            if val:
-                out.append(val)
+            if values[name]:
+                out.append(values[name])
                 filled += 1
             else:
-                wiped += 1              # 값이 없으면 토큰만 사라진다
+                wiped += 1              # 일부러 비워 둔 칸 — 토큰만 사라진다
             last = tm.end()
         if not out:
-            return m.group(0)           # 채울 자리가 없던 조각 — 그대로 둔다
+            return m.group(0)           # 바꿀 것이 없던 조각 — 그대로 둔다
         out.append(inner[last:])
-        return "<hp:t>%s</hp:t>" % saxutils.escape("".join(out))
+        return "%s%s</hp:t>" % (m.group(1), saxutils.escape("".join(out)))
 
     with zipfile.ZipFile(src_hwpx) as zf:
         rewritten = {}
+        hidden = 0
         for name in _section_names(zf):
             xml = zf.read(name).decode("utf-8")
+            hidden += _hidden_token_count(xml)
             new_xml = RUN_RE.sub(_sub_run, xml)
             if new_xml != xml:
                 rewritten[name] = new_xml.encode("utf-8")
-        with zipfile.ZipFile(dst_hwpx, "w") as out:
-            for item in zf.infolist():
-                data = rewritten.get(item.filename)
-                if data is None:
-                    data = zf.read(item.filename)
-                info = zipfile.ZipInfo(item.filename, date_time=item.date_time)
-                info.compress_type = item.compress_type
-                info.external_attr = item.external_attr
-                out.writestr(info, data)
-    return filled, wiped
+        if hidden:
+            applog.warn("양식 채우기: 빈칸 %d개가 줄바꿈·탭 태그에 가려 "
+                        "채우지 못했습니다" % hidden)
+        if missing:
+            applog.warn("양식 채우기: 이름이 맞지 않아 남겨 둔 자리 — %s"
+                        % ", ".join(f"{n}×{c}" for n, c in missing.items()))
+        _write_zip(zf, dst_hwpx, rewritten)
+    return {"filled": filled, "wiped": wiped,
+            "missing": missing, "hidden": hidden}
 
 
 def to_named_markdown(slots, values=None, title="양식"):
@@ -269,17 +353,28 @@ def to_named_markdown(slots, values=None, title="양식"):
 
 
 def parse_named_markdown(text):
-    """채워서 돌려받은 글자 → {이름: 값}. 주석(#)과 빈 줄은 무시."""
-    out = {}
+    """채워서 돌려받은 글자 → ({이름: 값}, 못 읽은 줄 목록).
+
+    주석(#)과 빈 줄은 무시한다. ':' 이 없는 줄은 **못 읽은 줄**로 모아
+    돌려준다 — 예전엔 소리 없이 버려져서, AI 가 형식을 어겨도 몇 줄이
+    사라졌는지 알 길이 없었다 (2026-07-31).
+    """
+    out, dropped = {}, []
     for raw in (text or "").splitlines():
         line = raw.strip()
-        if not line or line.startswith("#") or ":" not in line:
+        if not line or line.startswith("#"):
+            continue
+        if ":" not in line:
+            dropped.append(line)
             continue
         name, _, val = line.partition(":")
-        val = val.split("#")[0].strip()     # 꼬리 주석 제거
+        # 꼬리 주석 제거 — **공백 뒤에 오는 #** 만 주석으로 본다.
+        # to_named_markdown 이 붙이는 "   # 2곳에 들어갑니다" 꼴이 대상이다.
+        # 예전처럼 # 앞을 몽땅 자르면 "C# 프로그래밍" 이 "C" 가 된다 (2026-07-31).
+        val = re.sub(r"\s+#.*$", "", val).strip()
         if name.strip():
             out[name.strip()] = val
-    return out
+    return out, dropped
 
 
 def unfilled_marks(hwpx_path):

@@ -231,16 +231,35 @@ def insert_question(data, num=1, use_num=True):
         act.Execute("ParagraphShape", ps2.HParaShape.HSet)
         act.Run("BreakPara")
 
-    # 보기박스 - 글자 수 짧은 순서 정렬
+    # 보기박스 — 출제자가 쓴 순서 그대로. 예전엔 글자 수 짧은 순으로 다시
+    # 정렬했는데, 그러면 출제자가 ㄱ으로 쓴 진술이 ㄷ 라벨로 찍혀
+    # 정답표가 조용히 어긋난다 (2026-07-31 제거)
     if data['bogi']:
-        sorted_bogi = sorted(data['bogi'], key=lambda x: len(x))
-        insert_bogi_box(sorted_bogi)
+        insert_bogi_box(data['bogi'])
 
     # 선지
     if data['choices']:
         _insert_choices(data)
 
     return use_num and not data['num']
+
+
+_JAMO_ORDER = ['ㄱ','ㄴ','ㄷ','ㄹ','ㅁ','ㅂ','ㅅ','ㅇ','ㅈ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ']
+
+
+def _fmt_choice(c):
+    r"""순수 자모 선지("ㄱ,ㄴ")만 "ㄱ, ㄴ" 꼴로 고르게 다듬는다.
+
+    자모와 구분자(쉼표·가운뎃점·공백)만으로 된 선지는 쉼표+공백으로 통일하고,
+    "ㄱ만 옳다" 처럼 다른 글자가 섞이면 출제자가 쓴 그대로 둔다 — 예전엔
+    자모가 하나라도 있으면 나머지 글자를 전부 버려서, "ㄱ만 옳다" 가
+    시험지에 "ㄱ" 으로 찍히는 사고가 있었다 (2026-07-31).
+    """
+    s = c.strip()
+    jamo = [ch2 for ch2 in s if ch2 in _JAMO_ORDER]
+    pure = bool(jamo) and all(
+        ch2 in _JAMO_ORDER or ch2 in ",·、" or ch2.isspace() for ch2 in s)
+    return ', '.join(jamo) if pure else s
 
 
 def _insert_choices(data):
@@ -251,14 +270,8 @@ def _insert_choices(data):
     ctype = data.get('choices_type', '5')
     row_h = hwp_engine.S["choices"]["row_height_mm"]
     total_mm = _col_width_mm()
-    jamo_order = ['ㄱ','ㄴ','ㄷ','ㄹ','ㅁ','ㅂ','ㅅ','ㅇ','ㅈ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ']
 
-    def fmt_choice(c):
-        chars = list(c.strip())
-        result = [ch2 for ch2 in chars if ch2 in jamo_order]
-        return ', '.join(result) if result else c.strip()
-
-    ch = [fmt_choice(c) for c in data['choices'][:5]]
+    ch = [_fmt_choice(c) for c in data['choices'][:5]]
     parts = [f"{circles[i]} {c}" for i, c in enumerate(ch)]
 
     def _draw_choice_table(rows, cols, layout):
