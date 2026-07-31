@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>하위 분류 시안 — 물감 창고 (2026-07-31)</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;padding:24px 20px 80px;background:#e7e9ec;color:#0d1117;
+    font-family:"IBM Plex Sans KR","Pretendard","맑은 고딕",sans-serif}
+  h1{font-size:19px;margin:0 0 4px;letter-spacing:-.3px}
+  .lead{font-size:12.5px;color:#57606a;margin:0 0 20px;line-height:1.75;max-width:880px}
+  .lead b{color:#0d1117}
+  .rack{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start}
+  .slot{width:360px}
+  .slot h2{font-size:14px;margin:0 0 5px;display:flex;gap:7px;align-items:center}
+  .slot h2 b{font-size:11px;color:#fff;background:#24292f;border-radius:4px;padding:2px 7px}
+  .why{font-size:12px;color:#57606a;line-height:1.7;margin:0 0 10px}
+  .why strong{color:#0d1117}
+
+  .pane{background:#fff;border:1px solid #d8dce2;border-radius:8px;padding:11px 12px;
+    box-shadow:0 6px 18px rgba(16,22,26,.10)}
+  .ptitle{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+  .ptitle b{font-size:14px}
+  .chip{font-size:10px;border:1px solid;border-radius:4px;padding:1px 5px}
+  .g{border-color:#a7d8b8;color:#0a6b2e;background:#f0f9f3}
+  .r{border-color:#f0b8ae;color:#9a3412;background:#ffefe9}
+  .b{border-color:#a8c7e8;color:#0a4f9c;background:#eaf3ff}
+
+  .tabs{display:flex;gap:2px;background:#f2f4f7;border:1px solid #e2e6eb;border-radius:6px;
+    padding:2px;font-size:11px;margin-bottom:6px}
+  .tab{flex:1;text-align:center;padding:3px 1px;border-radius:4px;color:#57606a}
+  .tab b{display:block}
+  .tab s{display:block;text-decoration:none;color:#a2a9b1;font-size:10px}
+  .tab.on{background:#fff;color:#0d1117;font-weight:600;box-shadow:0 1px 2px rgba(16,22,26,.1)}
+
+  /* 하위 분류 줄 */
+  .subs{display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-bottom:6px;
+    padding:5px 6px;background:#fafbfc;border:1px solid #eceff2;border-radius:6px}
+  .sub{font-size:10.5px;border:1px solid #d0d7de;border-radius:10px;padding:2px 9px;
+    background:#fff;color:#57606a;cursor:default}
+  .sub.on{background:#0d1117;border-color:#0d1117;color:#fff;font-weight:600}
+  .sub.plus{border-style:dashed;color:#0969da;border-color:#a8c7e8}
+  .sub s{text-decoration:none;color:#a2a9b1;margin-left:3px;font-size:9.5px}
+  .sub.on s{color:#8b939c}
+
+  .newrow{border:1px solid #a8c7e8;border-radius:6px;padding:6px;text-align:center;
+    color:#0969da;font-weight:600;font-size:11.5px;background:#fff;margin-bottom:6px}
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+  .card{border:1px solid #d8dce2;border-radius:6px;padding:7px 4px;text-align:center;
+    background:#fff;font-size:11.5px}
+  .card b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .card s{display:block;text-decoration:none;color:#8b939c;font-size:10.5px}
+  .card.use{background:#f0f9f3;border-color:#a7d8b8}
+  .divider{grid-column:1/-1;font-size:10px;color:#a2a9b1;text-align:left;
+    border-bottom:1px solid #eceff2;padding:4px 2px 2px;margin-top:2px}
+
+  /* 저장 대화상자 */
+  .dlg{border:1px solid #c9ced6;border-radius:8px;overflow:hidden;background:#f5f5f7}
+  .tb{display:flex;align-items:center;gap:8px;height:27px;padding:0 8px;background:#f3f3f3;
+    border-bottom:1px solid #e3e3e3;font-size:11px}
+  .tb i{width:11px;height:11px;border-radius:3px;background:#0071e3;font-style:normal}
+  .dbody{padding:12px 14px}
+  .dbody h6{margin:0 0 8px;font-size:13px}
+  .frow{display:flex;align-items:center;gap:8px;font-size:11.5px;margin:7px 0}
+  .frow label{flex:0 0 46px;color:#57606a}
+  .inp{flex:1;border:1px solid #d0d7de;border-radius:4px;background:#fff;padding:4px 8px}
+  .sel{border:1px solid #a8c7e8;border-radius:4px;background:#f7fbff;padding:4px 8px;
+    display:flex;justify-content:space-between;flex:1}
+  .sel u{text-decoration:none;color:#8b939c}
+  .drop{margin-left:54px;border:1px solid #c9ced6;border-radius:6px;background:#fff;
+    width:200px;box-shadow:0 6px 16px rgba(16,22,26,.15);font-size:11.5px}
+  .drop div{padding:5px 10px}
+  .drop .cur{background:#eaf3ff;color:#0a4f9c;font-weight:600}
+  .drop .new{color:#0969da;border-top:1px solid #eceff2}
+  .foot{display:flex;justify-content:flex-end;gap:6px;padding:10px 14px;background:#f5f5f7}
+  .btn{border:1px solid #d0d7de;border-radius:5px;background:#fff;padding:5px 13px;font-size:11.5px}
+  .btn.p{background:#0969da;border-color:#0969da;color:#fff;font-weight:600}
+
+  .kv{width:100%;border-collapse:collapse;font-size:12px;background:#fff}
+  .kv th,.kv td{border:1px solid #e4e7eb;padding:6px 9px;text-align:left;vertical-align:top}
+  .kv th{background:#f6f8fa;width:96px;font-weight:600}
+  .note{font-size:11.5px;color:#8a5300;background:#fffaf0;border:1px solid #f0dcb0;
+    border-radius:6px;padding:8px 11px;margin-top:10px;line-height:1.7}
+</style>
+</head>
+<body>
+
+<h1>하위 분류 — 물감 창고 (시안)</h1>
+<p class="lead">
+  분류(특수기호·템플릿·서식·양식·도구) 아래에 <b>하위 분류</b>를 둡니다.
+  기본은 <b>미분류</b>이고, 저장할 때 드롭다운에서 고르지 않으면 그냥 미분류로 들어갑니다.
+  <b>아직 확정 아님</b> — 보고 결정해 주세요.
+</p>
+
+<div class="rack">
+
+  <div class="slot">
+    <h2><b>K-1</b> 창고 화면 — 분류 탭 아래 하위 분류 줄</h2>
+    <p class="why">
+      하위 분류는 탭이 아니라 <strong>둥근 칩 한 줄</strong>입니다 — 분류 탭(네모)과
+      생김새를 갈라야 위계가 읽힙니다. <strong>전체</strong>가 기본이라 평소에는
+      지금과 똑같이 다 보이고, 칩을 누르면 그 하위 분류만 남습니다.
+      ＋ 로 그 자리에서 새 하위 분류를 만듭니다.
+    </p>
+    <div class="pane">
+      <div class="ptitle"><b>물감 창고</b>
+        <span style="margin-left:auto"></span>
+        <span class="chip g">쓰는 중</span><span class="chip r">이 팔레트</span><span class="chip b">고른 것</span>
+      </div>
+      <div class="tabs">
+        <div class="tab"><b>특수기호</b><s>1</s></div>
+        <div class="tab on"><b>템플릿</b><s>24</s></div>
+        <div class="tab"><b>서식</b><s>0</s></div>
+        <div class="tab"><b>양식</b><s>3</s></div>
+        <div class="tab"><b>도구</b><s>7</s></div>
+      </div>
+      <div class="subs">
+        <span class="sub on">전체 <s>24</s></span>
+        <span class="sub">미분류 <s>15</s></span>
+        <span class="sub">내신 <s>6</s></span>
+        <span class="sub">수능 <s>3</s></span>
+        <span class="sub plus">＋</span>
+      </div>
+      <div class="newrow">＋ 새 템플릿 만들기</div>
+      <div class="cards">
+        <div class="divider">내신 (6)</div>
+        <div class="card"><b>합답형실험3선지</b><s>빈칸 11</s></div>
+        <div class="card"><b>학교정답0사진1선지</b><s>빈칸 8</s></div>
+        <div class="divider">수능 (3)</div>
+        <div class="card use"><b>합답형1사진3선지</b><s>빈칸 12</s></div>
+        <div class="card"><b>3보기</b><s>빈칸 3</s></div>
+        <div class="divider">미분류 (15)</div>
+        <div class="card"><b>가정통신문머리</b><s>빈칸 2</s></div>
+        <div class="card"><b>지문박스</b><s></s></div>
+      </div>
+    </div>
+    <p class="why" style="margin-top:8px">
+      '전체'로 볼 때는 위처럼 <strong>하위 분류별 소제목 줄</strong>로 묶어 보여줍니다 —
+      정렬은 늘 위에서부터, 미분류가 맨 아래(이름 없는 것들이 앞을 가리지 않게).
+      칩 하나를 고르면 소제목 없이 그 물감들만 남습니다.
+    </p>
+  </div>
+
+  <div class="slot">
+    <h2><b>K-2</b> 저장할 때 — 등록 창의 '분류' 한 줄</h2>
+    <p class="why">
+      템플릿 등록·문서 해체 담기·섞기 저장 — 물감이 생기는 모든 창의 등록 정보에
+      <strong>분류 드롭다운 한 줄</strong>이 붙습니다. 기본값이 미분류라
+      <strong>안 고르고 저장해도 그냥 진행</strong>됩니다. 묻는 창이 하나 더 뜨는 게 아닙니다.
+    </p>
+    <div class="dlg">
+      <div class="tb"><i></i><span>템플릿 등록</span></div>
+      <div class="dbody">
+        <h6>등록 정보</h6>
+        <div class="frow"><label>이름</label><span class="inp">합답형 문항 틀</span></div>
+        <div class="frow"><label>분류</label><span class="sel">미분류<u>▾</u></span></div>
+        <div class="drop">
+          <div class="cur">미분류</div>
+          <div>내신</div>
+          <div>수능</div>
+          <div class="new">＋ 새 분류 만들기…</div>
+        </div>
+      </div>
+      <div class="foot"><span class="btn">취소</span><span class="btn p">저장</span></div>
+    </div>
+    <p class="why" style="margin-top:8px">
+      드롭다운 맨 아래 <strong>＋ 새 분류 만들기</strong>로 저장하던 김에 분류를
+      만들 수 있습니다 — 창고에 갔다 올 필요가 없습니다.
+    </p>
+  </div>
+
+  <div class="slot">
+    <h2><b>K-3</b> 규칙</h2>
+    <table class="kv">
+      <tr><th>기본값</th><td><b>미분류.</b> 드롭다운을 안 건드리면 미분류로 들어간다 — 분류는 의무가 아니라 선택이다.</td></tr>
+      <tr><th>범위</th><td>하위 분류는 <b>분류마다 따로</b>다. 템플릿의 '내신'과 양식의 '내신'은 남남 — 섞일 일이 없다. '도구'에는 하위 분류가 없다(프로그램 것이라).</td></tr>
+      <tr><th>옮기기</th><td>물감 우클릭 → '분류 옮기기', 또는 수정 창의 드롭다운. 여러 개는 Ctrl+클릭으로 담아 한 번에.</td></tr>
+      <tr><th>분류 관리</th><td>칩 우클릭 → 이름 바꾸기·지우기. <b>지우면 그 안의 물감은 미분류로</b> 돌아간다 — 물감이 지워지는 일은 없다.</td></tr>
+      <tr><th>정렬</th><td>어느 화면에서든 <b>위에서부터 차례대로</b>. '전체' 보기는 하위 분류 소제목으로 묶고, 미분류 묶음은 맨 아래.</td></tr>
+      <tr><th>해체·섞기</th><td>문서 해체로 담을 때도 같은 드롭다운이 있다 — 시험지 하나를 해체하며 "수능" 분류로 몰아넣는 식. 꾸러미(MIX)도 하위 분류를 가질 수 있다.</td></tr>
+    </table>
+    <div class="note">
+      <b>결정 필요</b> — ① '전체' 보기의 소제목 묶음 vs 그냥 한 목록(소제목 없이).
+      ② 미분류를 맨 아래 둘지 맨 위 둘지. ③ 하위 분류 개수 제한(제안: 제한 없음, 줄바꿈 허용).
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
