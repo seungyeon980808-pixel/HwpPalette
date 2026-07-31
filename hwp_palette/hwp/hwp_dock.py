@@ -209,7 +209,12 @@ def claim(dock, priority, on_resume=None):
             return False
         if _owner_stack:
             try:
-                _owner_stack[-1][0].stop_follow()
+                prev = _owner_stack[-1][0]
+                prev.stop_follow()
+                # 오려 낸 자리도 메운다 — 한글은 새 주인에게 갔으므로 그 구멍에는
+                # 비칠 것이 없다. 안 메우면 잠든 창에 바탕화면이 뚫려 보인다.
+                # (깨어날 때 start() 가 다시 뚫는다.)
+                prev.clear_hole()
             except Exception as e:
                 applog.exc("도킹 주인 재우기 실패 — 두 창이 한글을 다툴 수 있음", e)
         _owner_stack.append([dock, priority, on_resume])
@@ -375,6 +380,9 @@ class Dock:
         except Exception as e:
             applog.exc("한글 창 도킹 실패 — 도킹 없이 계속", e)
             self._placement = None
+            # 여기 오기 전에 구멍을 이미 뚫었을 수 있다 — 실패한 채 남기면
+            # 창에 눌리지도 그려지지도 않는 자리가 생긴다 (2026-08-01).
+            self.clear_hole()
             return False
 
     def _punch_hole(self):

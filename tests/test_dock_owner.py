@@ -37,6 +37,9 @@ class _FakeDock:
     def stop_follow(self):
         self.log.append("pause")
 
+    def clear_hole(self):
+        self.log.append("fill")
+
     def start(self):
         self.log.append("resume")
         return True
@@ -67,7 +70,7 @@ class OwnerLedger(unittest.TestCase):
         main, edit = _FakeDock(), _FakeDock()
         self.assertTrue(hwp_dock.claim(main, hwp_dock.PRIORITY_MAIN))
         self.assertTrue(hwp_dock.claim(edit, hwp_dock.PRIORITY_EDIT))
-        self.assertEqual(main.log, ["pause"])
+        self.assertEqual(main.log, ["pause", "fill"])
         self.assertIs(hwp_dock.owner(), edit)
 
     def test_편집이_끝나면_메인이_저절로_돌아온다(self):
@@ -79,7 +82,7 @@ class OwnerLedger(unittest.TestCase):
         hwp_dock.claim(main, hwp_dock.PRIORITY_MAIN)
         hwp_dock.claim(edit, hwp_dock.PRIORITY_EDIT)
         hwp_dock.release(edit)
-        self.assertEqual(main.log, ["pause", "resume"])
+        self.assertEqual(main.log, ["pause", "fill", "resume"])
         self.assertIs(hwp_dock.owner(), main)
 
     def test_되살릴_때_호출부의_준비를_먼저_부른다(self):
@@ -125,7 +128,7 @@ class OwnerLedger(unittest.TestCase):
         hwp_dock.claim(main, hwp_dock.PRIORITY_MAIN)
         hwp_dock.claim(edit, hwp_dock.PRIORITY_EDIT)
         hwp_dock.release(edit)
-        self.assertEqual(main.log, ["pause"])       # resume 이 없다
+        self.assertEqual(main.log, ["pause", "fill"])   # resume 이 없다
         self.assertIsNone(hwp_dock.owner())
 
     def test_판이_열리면_순서를_다시_잡는다(self):
@@ -156,6 +159,52 @@ class HoleNamesExist(unittest.TestCase):
         for name in ("dpi_scale", "_RGN_DIFF"):
             self.assertIn(f"{name} =" if name.startswith("_") else f"def {name}",
                           code, f"{name} 의 정의가 없다 — 호출부만 남으면 조용히 죽는다")
+
+
+class HoleAlwaysFilled(unittest.TestCase):
+    r"""오려 낸 판 자리는 **어느 길로 끝나든 메운다** (2026-08-01, 사용자 지적).
+
+        "왜 잘려버리는거야 심지어 강제로 창 닫기도 안되네"
+
+    `_punch_hole` 은 `SetWindowRgn` 으로 창의 그 자리를 **없앤다** — 그리지도
+    눌리지도 않는다. 안 메우면 창이 잘린 채 남고, 제목줄 ✕ 가 그 안에 들면
+    창을 닫을 수조차 없다.
+
+    메인 도킹은 `Dock.stop()` 이 메우는데 **양식 수정 경로에만 빠져 있었다.**
+    여태 안 드러난 이유는 구멍 뚫기 자체가 죽어 있어서다 (HoleNamesExist 참고)
+    — 되살리는 순간 잠자던 이 버그가 났다.
+    """
+
+    def setUp(self):
+        hwp_dock._reset_owners_for_test()
+        p = mock.patch.object(hwp_dock, "win32gui", _AliveWin32)
+        p.start()
+        self.addCleanup(p.stop)
+        self.addCleanup(hwp_dock._reset_owners_for_test)
+
+    def test_양식_수정을_끝내면_메운다(self):
+        body = _read("palette_ui").split("def _exit_dock_layout")[1] \
+                                  .split("\n    def ")[0]
+        self.assertIn("clear_hole()", body,
+                      "구멍을 안 메우면 창이 잘린 채 남아 ✕ 도 안 먹는다")
+        self.assertLess(body.index("clear_hole()"), body.index(".restore()"),
+                        "되돌리기 전에 메워야 잘린 창이 눈에 안 띈다")
+
+    def test_메인_도킹을_떼면_메운다(self):
+        body = _read("hwp_dock").split("def stop(")[1].split("\n    def ")[0]
+        self.assertIn("clear_hole", body)
+
+    def test_잠들_때도_메운다(self):
+        """한글은 새 주인에게 갔다 — 잠든 창의 구멍에는 비칠 것이 없다."""
+        main, edit = _FakeDock(), _FakeDock()
+        hwp_dock.claim(main, hwp_dock.PRIORITY_MAIN)
+        hwp_dock.claim(edit, hwp_dock.PRIORITY_EDIT)
+        self.assertIn("fill", main.log)
+
+    def test_시작에_실패하면_제_구멍을_메운다(self):
+        """start() 는 구멍을 먼저 뚫는다 — 그 뒤 실패하면 잘린 창만 남는다."""
+        body = _read("hwp_dock").split("def start(")[1].split("\n    def ")[0]
+        self.assertIn("clear_hole()", body)
 
 
 class ZOrderOwner(unittest.TestCase):

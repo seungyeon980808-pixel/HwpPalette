@@ -1474,6 +1474,15 @@ class SettingsWindow(tk.Toplevel):
         안 보인다 (사용자 지적 2026-07-28: "저장하면 깜빡거린다")."""
         if self._dock is not None:
             self._dock.stop_follow()
+            # 오려 낸 판 자리를 **반드시 메운다** (2026-08-01, 사용자 지적:
+            # "왜 잘려버리는거야 심지어 강제로 창 닫기도 안되네").
+            #
+            # 메인 도킹은 Dock.stop() 이 이 일을 하는데 이 경로만 빠져 있었다.
+            # 여태 안 드러난 이유는 구멍 뚫기 자체가 죽어 있어서다(dpi_scale
+            # 정의가 지워져 매번 NameError) — 되살리는 순간 잠자던 버그가 났다.
+            # 안 메우면 창의 그 자리에 창이 아예 없는 상태로 남아, 그리지도
+            # 눌리지도 않는다. 제목줄 ✕ 까지 그 안에 들면 창을 닫을 수도 없다.
+            self._dock.clear_hole()
             if pre_restore:
                 try:
                     pre_restore()
