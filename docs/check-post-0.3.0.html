@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HwpPalette 실기 확인 체크리스트 — 027~040 (2026-08-01)</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;padding:0;background:#f6f8fa;color:#0d1117;
+    font-family:"IBM Plex Sans KR","Pretendard","맑은 고딕",sans-serif;line-height:1.75}
+  .wrap{max-width:980px;margin:0 auto;padding:36px 22px 90px}
+
+  h1{font-size:23px;margin:0 0 4px;letter-spacing:-.3px}
+  .meta{font-size:12.5px;color:#57606a;margin-bottom:6px}
+  .meta code{background:#fff;border:1px solid #d0d7de;border-radius:4px;padding:1px 6px;font-size:11.5px;
+    font-family:"IBM Plex Mono",Consolas,monospace}
+  .stamp{display:inline-block;background:#0969da;color:#fff;font-size:12px;font-weight:700;
+    border-radius:4px;padding:3px 10px;letter-spacing:.5px;margin:8px 0 0}
+
+  h2{font-size:17px;margin:44px 0 4px;padding-bottom:8px;border-bottom:2px solid #0d1117;letter-spacing:-.2px}
+  h2 small{font-weight:400;font-size:12px;color:#57606a;margin-left:8px}
+  p{margin:8px 0;font-size:13.5px}
+  .lead{color:#57606a;font-size:13px;margin:2px 0 14px}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;background:#fff;margin:10px 0}
+  th,td{border:1px solid #d0d7de;padding:9px 11px;text-align:left;vertical-align:top}
+  th{background:#eef1f4;font-weight:600}
+  th.c{width:34px;text-align:center}
+  th.n{width:52px;white-space:nowrap}
+  .num{white-space:nowrap;color:#57606a;font-size:12px;font-weight:600}
+  td.c{text-align:center;vertical-align:middle}
+  input[type=checkbox]{width:17px;height:17px;accent-color:#0969da;cursor:pointer;margin:2px 0 0}
+  tr.done td{background:#f2f8f4}
+  tr.done .num{color:#0a6b2e}
+
+  .card{background:#fff;border:1px solid #d0d7de;border-radius:8px;padding:16px 18px;margin:12px 0}
+  .card h3{margin:0 0 8px;font-size:14px}
+  .card ol,.card ul{margin:6px 0 0;padding-left:20px}
+  .card li{margin:5px 0;font-size:13.5px}
+
+  .ref{font-size:11.5px;color:#8b939c}
+  .was{color:#8b939c;font-size:12.5px}
+  kbd{background:#fff;border:1px solid #b6bcc4;border-bottom-width:2px;border-radius:4px;
+    padding:1px 6px;font-size:12px;font-family:"IBM Plex Mono",Consolas,monospace}
+  code{background:#eef1f4;border-radius:4px;padding:1px 5px;font-size:12px;
+    font-family:"IBM Plex Mono",Consolas,monospace}
+
+  .warn{background:#fffaf0;border:1px solid #f0dcb0;border-radius:8px;padding:13px 16px;margin:14px 0;font-size:13px}
+  .warn b{color:#8a5300}
+  .bar{position:sticky;top:0;background:#f6f8fa;border-bottom:1px solid #d0d7de;
+    padding:10px 0 9px;margin-bottom:-4px;z-index:5;font-size:13px;display:flex;
+    align-items:center;gap:14px;flex-wrap:wrap}
+  .bar b{color:#0969da;font-size:15px}
+  .bar button{font:inherit;font-size:12px;background:#fff;border:1px solid #d0d7de;
+    border-radius:6px;padding:4px 11px;cursor:pointer;color:#57606a}
+  .bar button:hover{background:#eef1f4}
+  footer{margin-top:56px;border-top:1px solid #d0d7de;padding-top:14px;font-size:11.5px;color:#8b939c;line-height:1.9}
+  @media print{.bar{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>실기 확인 체크리스트 — 3차 피드백 027~040</h1>
+<div class="meta">
+  대상 <code>main</code> · 파트 1~4 전량 반영 · 테스트 806개 통과 ·
+  작성 2026-08-01
+</div>
+<div class="stamp">문제 · 목표 동작 · 확인점</div>
+
+<div class="bar">
+  <b><span id="done">0</span> / <span id="total">0</span></b>
+  <span class="ref">확인한 항목은 체크하면 브라우저에 저장됩니다</span>
+  <button onclick="reset()">전부 지우기</button>
+</div>
+
+<p class="lead">
+  준비: 한글을 먼저 띄워 두고 <code>python main.py</code> 로 프로그램을 실행합니다.
+  <b>①~③ 은 한글이 필요하고, ④~⑦ 은 프로그램만으로 확인됩니다.</b>
+  이상한 것이 보이면 <code>내 물감</code> 폴더의 <code>app.log</code> 를 함께 알려 주십시오 —
+  실패가 로그로만 남는 자리가 몇 군데 있습니다.
+</p>
+
+
+<h2>① 양식 수정 왕복 <small>031 · 032 — 이번 라운드에서 가장 중요</small></h2>
+<p class="lead">
+  <b>◫</b>(<kbd>Ctrl</kbd>+<kbd>D</kbd>)로 도킹 → <b>⚙</b>(<kbd>Ctrl</kbd>+<kbd>+</kbd>) →
+  창고에서 <b>템플릿</b>/<b>양식</b> 물감 → <b>[수정]</b> → <b>[양식 수정]</b> →
+  <b>[덮어씌워 저장]</b>. 그다음 <b>[취소]</b>로도 한 번.
+</p>
+<table>
+<thead><tr><th class="c">✓</th><th class="n">번호</th><th>문제 (예전 모습)</th><th>목표 동작</th><th>확인점</th></tr></thead>
+<tbody>
+<tr><td class="c"><input type="checkbox"></td><td class="num">032</td>
+  <td>한글이 <b>두 자리를 왕복</b>하며 버벅였다. 메인 도킹과 양식 수정이 같은 한글 창을 서로 끌어당겼다.</td>
+  <td>주인은 <b>하나</b>. 양식 수정이 메인 도킹보다 세다 — 시작할 때 한 번, 끝날 때 한 번만 옮긴다.</td>
+  <td>편집으로 들어가고 나올 때 한글이 <b>딱 한 번씩만</b> 움직이는가. 왕복·떨림이 없는가.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">032</td>
+  <td>양식 수정 중에 메인 <b>◫</b> 를 누르면 두 창이 한글을 다퉜다.</td>
+  <td>낮은 쪽은 <b>뺏지 않는다</b> — 안내만 뜨고 아무 일도 안 일어난다.</td>
+  <td>편집 중 <b>◫</b> → “양식 수정이 한글을 쓰고 있습니다” 안내만 뜨는가.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">031-a</td>
+  <td>편집을 마치면 설정 창이 <b>세로로 길쭉하게 커지고</b>, 마우스로 줄일 수도 없었다.</td>
+  <td>편집 전 크기로 돌아온다. 커졌더라도 <b>마우스로 줄일 수 있다</b>.</td>
+  <td>저장/취소 뒤 창 크기가 그대로인가. 모서리를 끌어 <b>줄여지는가</b>.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">031-b</td>
+  <td>편집이 끝나면 한글에 <b>빈 문서 1</b> 이 남았다.</td>
+  <td>쓰고 난 임시 문서를 정리한다.</td>
+  <td>편집 뒤 한글 탭에 <b>쓸데없는 빈 문서가 안 남는가</b>.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">구멍</td>
+  <td>편집을 마치면 창의 판 자리가 <b>통째로 잘려</b> 초록 바탕이 비쳤고, <b>✕ 도 안 먹었다</b>.</td>
+  <td>오려 낸 자리를 <b>어느 길로 끝나든 메운다</b>(저장·취소·실패 전부).</td>
+  <td>저장/취소 뒤 창이 <b>안 잘리는가</b>. <b>✕ 로 닫히는가</b>.</td></tr>
+</tbody>
+</table>
+
+
+<h2>② 도킹 화면이 안 비는가 <small>035 · 036</small></h2>
+<table>
+<thead><tr><th class="c">✓</th><th class="n">번호</th><th>문제 (예전 모습)</th><th>목표 동작</th><th>확인점</th></tr></thead>
+<tbody>
+<tr><td class="c"><input type="checkbox"></td><td class="num">035</td>
+  <td>도킹 중 <b>팔레트 고르개(▾)</b> 를 열면 판이 <b>하얗게 비었다</b>. 팝오버가 뜨는 순간 창 순서가 어긋났다.</td>
+  <td>판이 열려도 한글이 계속 보인다 — 판이 뜰 때 창 순서를 다시 잡는다.</td>
+  <td>도킹 상태에서 팔레트 고르개를 열었다 닫는다 → <b>한글이 계속 보이는가</b>.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">036</td>
+  <td><kbd>PageUp</kbd>(항상 위 토글)을 누르면 도킹 화면이 <b>하얗게 비었다</b>. 우리 창이 최상위 띠로 올라가 한글을 그 아래 둘 수 없었다.</td>
+  <td>도킹 중에는 ‘항상 위’를 <b>바꿀 수 없다</b> — 안내만 뜬다.</td>
+  <td>도킹 중 <kbd>PageUp</kbd> → 도킹이 유지되고 “도킹 중에는 바꿀 수 없습니다” 안내가 뜨는가.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">036</td>
+  <td>—</td>
+  <td>원래 기능은 <b>안 죽였다</b>.</td>
+  <td>도킹을 <b>뗀 뒤</b> <kbd>PageUp</kbd> → ‘항상 위’가 정상으로 켜졌다 꺼지는가.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">구멍</td>
+  <td>구멍 뚫기가 죽어 있어(정의가 지워짐) 도킹이 창 순서 하나에만 기대고 있었다.</td>
+  <td>판 자리를 실제로 오려 내어 한글이 그 자리에 보인다.</td>
+  <td>도킹한 채 메인 창을 <b>끌어 옮겨</b> 본다 → 한글이 어긋남 없이 따라오고, <b>한글 안이 클릭·타이핑</b> 되는가.</td></tr>
+</tbody>
+</table>
+
+
+<h2>③ 누르면 무슨 일이 일어나는가 <small>040 · 033 · 034 — 한글 필요</small></h2>
+<table>
+<thead><tr><th class="c">✓</th><th class="n">번호</th><th>문제 (예전 모습)</th><th>목표 동작</th><th>확인점</th></tr></thead>
+<tbody>
+<tr><td class="c"><input type="checkbox"></td><td class="num">040</td>
+  <td><code>\</code> 만 있는 물감은 <b>바로 꽂히고</b>, <code>\이름\</code> 이 있으면 <b>표가 떴다</b> —
+      물감마다 동작이 달라 예측이 안 됐다.</td>
+  <td><b>안 A(확정).</b> 빈칸이 있으면 <b>늘 같은 옵션 팝오버</b>가 그 칸 아래에 뜬다:
+      <b>빈칸인 채로 꽂기 / 채워 넣고 꽂기</b>. 빈칸이 없으면 즉시 꽂는다.</td>
+  <td><code>\</code> 만 있는 템플릿과 <code>\이름\</code> 있는 양식을 각각 눌러 본다 →
+      <b>둘 다 같은 팝오버</b>가 뜨는가. 빈칸 없는 물감은 <b>바로 꽂히는가</b>.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">040</td>
+  <td>이름 없는 <code>\</code> 만인 템플릿은 채우기 표로 갈 길이 없었다.</td>
+  <td>표가 <b>‘빈칸 1, 2…’</b> 로 받는다.</td>
+  <td><code>\</code> 만 있는 템플릿에서 <b>채워 넣고 꽂기</b> → 표가 뜨고 빈칸이 번호로 나오는가.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">033-a</td>
+  <td><b>수능양식</b>: 카드에는 “빈칸 2”인데 채우기 창은 <b>“채울 자리 1개”</b> 였다.
+      <span class="was">원인은 글상자가 아니라 <code>&lt;hp:fwSpace/&gt;</code>(고정폭 공백) 뒤에 숨은 <code>\</code> 였다.</span></td>
+  <td>등록할 때와 채울 때가 <b>같은 개수</b>를 본다.</td>
+  <td>수능양식을 눌러 채우기 창을 연다 → <b>빈칸이 2개 다 나오는가</b>.
+      둘 다 채워 꽂으면 <b>문서에 둘 다 들어가는가</b>.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">034</td>
+  <td>표 안 문단을 선택해 <b>자간 맞춤</b> → “다듬을 문단을 찾지 못했습니다 <b>(표 안은 제외됩니다)</b>”.</td>
+  <td>표 셀 안에서도 동작한다. 어절 단위 줄나눔 + 자간 좁히기가 셀 문단에 걸린다.</td>
+  <td>보기 박스(ㄱㄴㄷ) <b>셀 하나</b>를 선택해 자간 맞춤 실행 →
+      <b>잘림이 사라지는가</b>. <kbd>Ctrl</kbd>+<kbd>Z</kbd> <b>한 번</b>에 원복되는가.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">034</td>
+  <td>—</td>
+  <td>여러 셀에 걸친 선택은 <b>1차 제외</b> — 안내로 막는다.</td>
+  <td>셀 <b>두 개 이상</b>을 걸쳐 선택해 실행 → “표에서는 <b>셀 하나씩</b> 선택해 주세요” 가 뜨는가.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">034</td>
+  <td>—</td>
+  <td>본문 동작은 <b>안 건드렸다</b>.</td>
+  <td>표 <b>바깥</b> 본문 문단에 자간 맞춤 → 예전처럼 정상인가 <span class="ref">(회귀 확인)</span>.</td></tr>
+</tbody>
+</table>
+
+
+<h2>④ 특수기호 창 <small>028 — 회귀 복원</small></h2>
+<p class="lead">여는 곳 두 군데를 <b>둘 다</b> 봐야 합니다: 팔레트 <b>빈칸 클릭 → 특수기호</b>,
+  그리고 <b>⚙ → 창고 → 특수기호 → ＋</b>.</p>
+<table>
+<thead><tr><th class="c">✓</th><th class="n">번호</th><th>문제 (예전 모습)</th><th>목표 동작</th><th>확인점</th></tr></thead>
+<tbody>
+<tr><td class="c"><input type="checkbox"></td><td class="num">028</td>
+  <td>팔레트에서 연 특수기호 창에 <b>종류별 묶음이 없었다</b> — 검색칸 하나뿐.
+      <span class="was">022 를 반영할 때 기능이 적은 창으로 합친 것이 원인.</span></td>
+  <td>왼쪽에 <b>묶음 목록 21갈래</b>(전체 · 내가 등록 · 원문자 · 로마숫자 · 수학 …).</td>
+  <td>팔레트 빈칸에서 연 창에 <b>왼쪽 묶음 목록</b>이 있는가. 눌러 보면 그 묶음만 나오는가.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">028</td>
+  <td><b>내가 등록한 기호</b>가 그 창에 안 보였다.</td>
+  <td>‘전체’와 ‘내가 등록’에 함께 나오고 <b>검색에도 걸린다</b>.</td>
+  <td>내가 만든 특수기호 물감이 <b>보이는가</b>. 이름으로 <b>검색되는가</b>.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">028</td>
+  <td>425개 중 <b>앞 96개만</b> 보이고 나머지는 검색으로만 찾을 수 있었다.</td>
+  <td>상한 폐지. 대신 <b>나눠 그리기</b>로 버벅임을 막는다.</td>
+  <td>‘전체’를 골라도 <b>끝까지 다 나오는가</b>. 창이 <b>버벅이지 않는가</b>.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">028</td>
+  <td>두 창이 각자 목록을 만들어 <b>한쪽만 기능이 빠졌다</b>.</td>
+  <td>목록 규칙은 한 곳(<code>char_source</code>)이고 두 창이 공유한다.</td>
+  <td>창고 ‘특수기호’ 탭과 팔레트 쪽 창의 <b>묶음·개수가 같은가</b>.</td></tr>
+</tbody>
+</table>
+
+
+<h2>⑤ 창고에서 하는 일 <small>038-a · c · d · 039</small></h2>
+<table>
+<thead><tr><th class="c">✓</th><th class="n">번호</th><th>문제 (예전 모습)</th><th>목표 동작</th><th>확인점</th></tr></thead>
+<tbody>
+<tr><td class="c"><input type="checkbox"></td><td class="num">038-a</td>
+  <td>물감 우클릭에 <b>삭제가 없었다</b> — 지우려면 다른 창으로 가야 했다.</td>
+  <td>우클릭 = <b>삭제 전용</b>. 지우기 전에 <b>함께 사라지는 팔레트 자리 수</b>를 세어 보여준다.</td>
+  <td>물감 우클릭 → <b>삭제</b>만 있는가. 팔레트에 놓아 둔 물감을 지우려 하면
+      <b>“팔레트에 놓여 있는 N자리도 함께 사라집니다”</b> 가 뜨는가.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">038-a</td>
+  <td>—</td>
+  <td>꾸러미(섞기)가 쓰는 물감은 <b>못 지운다</b> — 지우면 빈칸 수가 조용히 줄어 시험지가 어긋난다.</td>
+  <td>꾸러미에 든 요소 물감을 지워 본다 → <b>막히고, 누가 쓰는지 이름이 나오는가</b>.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">038-c</td>
+  <td>‘옮기기’ 목록에 <b>지금 있는 분류까지</b> 떠서, 눌러도 아무 일이 없는 항목이 늘 하나 있었다.</td>
+  <td>목록 자체가 없어졌다(아래 038-d).</td>
+  <td>우클릭에 <b>‘… 로 옮기기’ 가 아예 없는가</b>.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">038-d</td>
+  <td>분류 옮기기가 <b>우클릭 메뉴</b>였다.</td>
+  <td>물감을 <b>위쪽 하위 분류 탭에 끌어다 놓으면</b> 그 분류로 간다.</td>
+  <td>물감을 하위 분류 탭 위로 끌어 놓는다 → <b>그 분류로 옮겨지는가</b>.
+      끌고 지나갈 때 <b>탭이 강조되는가</b>.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">038-d</td>
+  <td>—</td>
+  <td><kbd>Ctrl</kbd> 로 담아 둔 것은 <b>전부</b> 옮긴다. 탭 <b>밖</b>에 놓으면 예전처럼 팔레트로 간다.</td>
+  <td><kbd>Ctrl</kbd> 로 여럿 담고 하나를 끈다 → <b>전부 옮겨지는가</b>.
+      탭 밖(팔레트 격자)에 놓으면 <b>블럭이 꽂히는가</b> <span class="ref">(회귀 확인)</span>.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">039</td>
+  <td>도구 <b>‘라이브러리’</b> 는 설정 창을 통째로 여는 버튼일 뿐이었다 — 창고가 같은 일을 더 잘한다.</td>
+  <td>도구 목록에서 없어지고, <b>이미 팔레트에 놓여 있던 블럭도 걷힌다</b>.</td>
+  <td>도구 목록·창고 ‘도구’ 탭에 <b>라이브러리가 안 보이는가</b>(7개 → 6개).
+      놓아 뒀던 칸이 <b>사라졌는가</b>.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">039</td>
+  <td>—</td>
+  <td>설정 창 자체는 <b>남긴다</b> — 특수기호·사진이 같은 창을 다른 입구로 쓴다.</td>
+  <td>도구 <b>특수기호</b>와 <b>사진 폴더 관리</b>가 <b>그대로 동작하는가</b> <span class="ref">(회귀 확인)</span>.</td></tr>
+</tbody>
+</table>
+
+
+<h2>⑥ 겉에서 보이는 표시 <small>037 — 안 B</small></h2>
+<table>
+<thead><tr><th class="c">✓</th><th class="n">번호</th><th>문제 (예전 모습)</th><th>목표 동작</th><th>확인점</th></tr></thead>
+<tbody>
+<tr><td class="c"><input type="checkbox"></td><td class="num">037</td>
+  <td>한 칸에 물감이 <b>여러 개 겹쳐 있어도 겉에서 알 수 없었다</b> —
+      “답안” 칸에 여섯 개가 든 것을 눌러 보기 전에는 몰랐다.</td>
+  <td>칸 오른쪽에 <b>청록 세로 띠 + 개수</b>.</td>
+  <td>겹친 칸(예: <b>답안</b>)에 <b>청록 띠와 숫자</b>가 보이는가. 개수가 맞는가.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">037</td>
+  <td>꾸러미(섞은 물감)도 구분이 안 됐다.</td>
+  <td>꾸러미는 <b>보라 MIX</b> 띠.</td>
+  <td>꾸러미 물감 칸에 <b>보라 MIX</b> 가 보이는가.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">037</td>
+  <td>—</td>
+  <td>표시는 한 부품(<code>ribbon</code>)이고 <b>세 화면이 같은 것</b>을 쓴다. 칸 크기는 안 변한다.</td>
+  <td><b>메인 팔레트 · 설정 격자 · 창고 카드</b> 세 곳의 표시가 <b>같은 모양인가</b>.
+      띠가 붙었다고 <b>칸이 커지거나 글자가 밀리지 않는가</b>.</td></tr>
+</tbody>
+</table>
+
+
+<h2>⑦ 도구 판 · 서식 만들기 창 <small>027 · 029 · 030</small></h2>
+<table>
+<thead><tr><th class="c">✓</th><th class="n">번호</th><th>문제 (예전 모습)</th><th>목표 동작</th><th>확인점</th></tr></thead>
+<tbody>
+<tr><td class="c"><input type="checkbox"></td><td class="num">029</td>
+  <td>사진 폴더를 연결하려면 <b>[설정] 단추가 다섯 탭짜리 창을 통째로</b> 열었다 —
+      “전혀 바뀐 게 없다”던 그 자리.</td>
+  <td>폴더 관리가 <b>도구 판 안</b>으로. 폴더마다 이름 · 장수 · <b>[↑][↓][해제]</b>,
+      맨 아래 <b>[＋ 폴더 연결]</b>.</td>
+  <td>창고에서 도구 <b>사진</b> 을 고른다 → 오른쪽 판 안에서 <b>폴더를 연결·해제할 수 있는가</b>.
+      딴 창이 안 뜨는가.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">029</td>
+  <td>폴더 <b>순서를 바꿀 길이 없었다</b> — 순서가 곧 이름 충돌 우선순위인데도.</td>
+  <td><b>[↑][↓]</b> 로 순서를 바꾼다.</td>
+  <td>폴더를 <b>↑↓ 로 올리고 내릴 수 있는가</b>. 바꾼 순서가 <b>다시 열어도 유지되는가</b>.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">027</td>
+  <td>도구를 골랐을 때 오른쪽 판의 <b>아래쪽이 비어 있었다</b>.</td>
+  <td>그 자리에 <b>사용법</b>이 들어간다.</td>
+  <td>도구를 몇 개 눌러 본다 → 판에 <b>사용법 설명이 나오는가</b>.
+      도구마다 <b>내용이 다른가</b>(한 문구가 돌려쓰이지 않는가).</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">030</td>
+  <td>서식 만들기 창이 <b>17줄이 죽 늘어선</b> 모양이고,
+      윈도우 기본 체크박스·수치칸이라 <b>프로그램과 얼굴이 달랐다</b>.</td>
+  <td><b>글자 · 문단 · 여백</b> 세 카드로 묶고, 자체 <b>Check</b>(둥근 네모, 켜지면 강조색+✓)와
+      <b>Spin</b>(수치칸+▴▾)으로 갈았다.</td>
+  <td>서식 만들기 창이 <b>세 카드</b>로 묶여 있는가. 체크·수치칸이 <b>프로그램 얼굴</b>인가.
+      <b>▴▾ 로 숫자가 오르내리는가</b>.</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">030</td>
+  <td>—</td>
+  <td>카탈로그에 새 항목이 생겼는데 카드 목록에 없으면 <b>맨 아래에라도 나온다</b> — 조용히 사라지지 않게.</td>
+  <td>서식 항목이 <b>하나도 빠지지 않았는가</b>(예전 창과 개수 비교).</td></tr>
+<tr><td class="c"><input type="checkbox"></td><td class="num">030</td>
+  <td>—</td>
+  <td>만든 서식은 <b>예전과 똑같이 동작</b>해야 한다.</td>
+  <td>세 카드에서 값을 고쳐 서식 물감을 만들고 실행 → <b>한글에 그대로 먹는가</b> <span class="ref">(회귀 확인)</span>.</td></tr>
+</tbody>
+</table>
+
+
+<div class="warn">
+  <b>참고 — 확인과 무관한 환경 문제 하나.</b>
+  작업 중 <code>pywin32</code> 의 COM 캐시(<code>%TEMP%\gen_py</code>)가 비워져
+  한글 연결이 실패하는 일이 몇 번 있었습니다. 프로그램 잘못이 아니라
+  <b>임시 폴더가 청소되면서</b> 생기는 것으로 보입니다.
+  <b>“한글에 연결하지 못했습니다”가 이유 없이 뜨면</b> 프로그램을 껐다 켜 보시고,
+  그래도 계속되면 알려 주십시오 — 캐시를 안전한 곳으로 옮기는 방법이 있습니다.
+</div>
+
+<footer>
+  HwpPalette 실기 확인 체크리스트 · 3차 피드백 027~040 · 2026-08-01<br>
+  근거 문서: <code>docs/FEEDBACK_post_0.3.0.md</code> · <code>docs/plan-post-0.3.0.html</code><br>
+  실측 기록: <code>spikes/cell_spacing_spike.py</code> · <code>cell_fit_verify.py</code> · <code>hidden_slot_spike.py</code>
+</footer>
+
+</div>
+<script>
+  const boxes = [...document.querySelectorAll('input[type=checkbox]')];
+  const KEY = 'hwp-check-0.3.0';
+  document.getElementById('total').textContent = boxes.length;
+
+  function paint(){
+    let n = 0;
+    boxes.forEach(b => {
+      b.closest('tr').classList.toggle('done', b.checked);
+      if (b.checked) n++;
+    });
+    document.getElementById('done').textContent = n;
+  }
+  function save(){
+    localStorage.setItem(KEY, JSON.stringify(boxes.map(b => b.checked)));
+  }
+  try {
+    const saved = JSON.parse(localStorage.getItem(KEY) || '[]');
+    saved.forEach((v, i) => { if (boxes[i]) boxes[i].checked = v; });
+  } catch (e) {}
+  boxes.forEach(b => b.addEventListener('change', () => { paint(); save(); }));
+  function reset(){ boxes.forEach(b => b.checked = false); paint(); save(); }
+  paint();
+</script>
+</body>
+</html>
