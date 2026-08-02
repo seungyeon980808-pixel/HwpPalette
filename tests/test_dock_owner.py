@@ -442,3 +442,31 @@ class OwnerWiring(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SettingsWindowFitsScreen(unittest.TestCase):
+    r"""설정 창은 **화면보다 큰 최소 크기**를 갖지 않는다 (2026-08-02).
+
+    전 화면 훑기(spikes/ui_sweep.py)에서 나왔다: 이 창의 내용 폭은 1151px 인데
+    선생님 주모니터는 세로(1080×1920)다. 내용 크기를 그대로 minsize 로 박으면
+    오른쪽 71px 이 화면 밖으로 나가고 **줄일 수조차 없다** — 하필 잘리는 쪽이
+    미리보기 판의 [수정]·[양식 수정] 단추라 그 기능에 손이 아예 안 닿는다.
+
+    못 줄이는 것보다 줄일 수 있는 편이 낫다.
+    """
+
+    def test_최소_크기를_화면_안으로_묶는다(self):
+        code = _read("palette_ui")
+        self.assertIn("def _capped_min", code)
+        # minsize 를 그대로 박는 자리가 남아 있으면 안 된다 — 한 곳만 고치면
+        # _fit_window 의 갱신이 곧바로 덮어쓴다
+        raw = [ln for ln in code.splitlines()
+               if "self.minsize(" in ln and "_capped_min" not in ln]
+        self.assertEqual(raw, [],
+                         f"화면 밖으로 나갈 수 있는 minsize 가 남아 있다: {raw}")
+
+    def test_묶는_함수가_화면_크기를_본다(self):
+        body = _read("palette_ui").split("def _capped_min")[1] \
+                                  .split("\n    def ")[0]
+        self.assertIn("winfo_screenwidth", body)
+        self.assertIn("winfo_screenheight", body)

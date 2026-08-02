@@ -962,7 +962,15 @@ class SettingsWindow(tk.Toplevel):
         # 최소 크기를 600×380 으로 못박아 두었더니, 안을 정리해 내용이 작아져도
         # 창만 그대로 커서 오른쪽에 빈 여백이 남았다 (2026-07-25).
         # **내용이 최소 크기**다 — 팔레트 격자가 넓어지면 창도 따라 넓어진다.
-        self.minsize(self.winfo_reqwidth(), self.winfo_reqheight())
+        #
+        # 다만 **화면보다 커지지는 않게** 묶는다 (2026-08-02, 전 화면 훑기에서
+        # 발견): 세로 모니터(1080×1920)에서 이 창의 내용 폭은 1151px 이라,
+        # 내용을 그대로 minsize 로 박으면 오른쪽 71px 이 화면 밖으로 나가고
+        # **줄일 수조차 없다.** 잘려 나가는 것이 하필 미리보기 판의
+        # [수정]·[양식 수정] 단추 쪽이라 그 기능에 손이 아예 안 닿는다.
+        # 못 줄이는 것보다 줄일 수 있는 편이 낫다.
+        self.minsize(*self._capped_min(self.winfo_reqwidth(),
+                                       self.winfo_reqheight()))
         # 크기는 지정하지 않는다 — _fit_window 가 내용에 맞춰 잡는다(줄이 늘면 커짐)
         #
         # 자리는 **메인 창을 완전히 덮는 자리** (사용자 결정 2026-07-28) —
@@ -2049,6 +2057,23 @@ class SettingsWindow(tk.Toplevel):
         self._render_blocks()
         self._notify()
 
+    def _capped_min(self, w, h):
+        r"""최소 크기를 **화면 안으로** 묶는다 (2026-08-02).
+
+        내용 크기를 그대로 minsize 로 박으면, 화면이 그보다 좁을 때 창을
+        줄일 방법이 사라진다 — 잘린 부분에 있는 단추는 영영 못 누른다.
+        실제로 세로 모니터(1080×1920)에서 이 창의 내용 폭 1151px 이 그랬다.
+
+        창이 놓인 모니터의 작업 영역을 쓰고 싶지만 Tk 는 그것을 모른다 —
+        전체 화면 크기에서 창틀·작업 표시줄 몫을 넉넉히 뺀다.
+        """
+        try:
+            sw = self.winfo_screenwidth() - 24
+            sh = self.winfo_screenheight() - 80
+            return max(360, min(int(w), sw)), max(300, min(int(h), sh))
+        except Exception:
+            return int(w), int(h)
+
     def _fit_window(self, settle=False):
         """내용에 맞춰 창 높이를 다시 잡는다 — 줄이 늘면 창도 커진다.
 
@@ -2086,8 +2111,10 @@ class SettingsWindow(tk.Toplevel):
         self._last_req = req
         # 최소 크기도 내용에 맞춰 갱신한다 — 안 하면 한 번 커진 뒤로는 minsize 가
         # 창을 붙들어, 칸을 줄여도 오른쪽에 빈 여백이 남는다 (2026-07-25).
+        # 여기서도 화면 안으로 묶는다 (2026-08-02) — 이 갱신이 위 __init__ 의
+        # 묶음을 곧바로 덮어써서, 안 막으면 고친 의미가 없다.
         try:
-            self.minsize(self.winfo_reqwidth(), self.winfo_reqheight())
+            self.minsize(*self._capped_min(*req))
         except Exception:
             pass
         # geometry("") = "내용에 맞춰라". 크기를 직접 계산해 넣으면 그 순간의
