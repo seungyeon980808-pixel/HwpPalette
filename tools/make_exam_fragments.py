@@ -53,6 +53,23 @@ def build_jungdap_photo():
     exam_engine._insert_choices({"choices": [BLANK] * 5, "choices_type": "1"})
 
 
+def build_school_habdap_photo():
+    """사진 칸이 있는 합답형 — 발문을 조각에 박지 않는다.
+
+    발문이 박힌 기존 합답형 조각은 부정발문("옳지 않은")을 표현할 수 없다.
+    지문 칸에 발문을 함께 넣으면 발문이 두 번 찍히고, 안 넣으면 부정이 사라진다.
+    """
+    _head_line()
+    _act().Run("ParagraphShapeAlignCenter")
+    hwp_engine._text(BLANK)
+    _act().Run("BreakPara")
+    _act().Run("ParagraphShapeAlignLeft")
+    exam_engine.insert_bogi_box([BLANK, BLANK, BLANK])
+    _act().Run("MoveDocEnd")
+    exam_engine._insert_choices({"choices": [BLANK] * 5, "choices_type": "5"})
+    _act().Run("MoveDocEnd")
+
+
 def build_essay():
     _head_line()
     hwp_engine._create_table(1, 1, hwp_engine._col_width_mm(), [45])
@@ -61,6 +78,7 @@ def build_essay():
 
 PLAN = [
     ("학교합답0사진5선지", build_school_habdap, 11),
+    ("학교합답1사진5선지", build_school_habdap_photo, 12),
     ("정답형1사진",       build_jungdap_photo, 9),
     ("서술형",            build_essay,          3),
 ]

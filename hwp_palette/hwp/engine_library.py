@@ -207,16 +207,81 @@ def capture_fragment(dest_path):
     return preview
 
 
+def _png_size_mm(path):
+    r"""PNG 에 새겨진 '실제 인쇄 크기'(mm). 없으면 None.
+
+    5E 가 내보낸 그림에는 300dpi 가 pHYs 청크로 박혀 있다. 이 값을 안 쓰면
+    한글이 제 나름의 기준으로 넣어 시험지에 그림이 지나치게 크게 박힌다
+    (2026-08-03 실측: 80mm 도판이 130mm 로 들어갔다).
+    """
+    try:
+        with open(path, "rb") as f:
+            if f.read(8) != b"\x89PNG\r\n\x1a\n":
+                return None
+            w = h = ppm_x = ppm_y = None
+            while True:
+                head = f.read(8)
+                if len(head) < 8:
+                    break
+                ln = int.from_bytes(head[:4], "big")
+                typ = head[4:8]
+                data = f.read(ln)
+                f.read(4)                       # CRC
+                if typ == b"IHDR":
+                    w = int.from_bytes(data[0:4], "big")
+                    h = int.from_bytes(data[4:8], "big")
+                elif typ == b"pHYs":
+                    if len(data) >= 9 and data[8] == 1:      # 단위 1 = 미터
+                        ppm_x = int.from_bytes(data[0:4], "big")
+                        ppm_y = int.from_bytes(data[4:8], "big")
+                    break
+                elif typ == b"IDAT":
+                    break                       # 픽셀 데이터 전까지만 본다
+            if not (w and h and ppm_x and ppm_y):
+                return None
+            return w / ppm_x * 1000.0, h / ppm_y * 1000.0
+    except Exception as e:
+        applog.exc(f"PNG 크기 읽기 실패 ({path}) — 한글 기본 크기로 넣는다", e)
+        return None
+
+
+def _insert_picture_sized(hwp, path):
+    r"""그림 삽입. 셀 밖이면 PNG 에 새겨진 실제 크기로, 셀 안이면 셀에 맞춘다.
+
+    셀 안은 예전 그대로 sizeoption=3 (셀 크기에 맞춰 비율 유지) — 자료 상자에
+    꽉 차게 들어가는 것이 시험지에서 맞다. 셀 밖에서는 한글이 그림을 **판면 폭까지
+    늘려서** 넣기 때문에(실측: 80mm 도판이 150mm 로) 실제 크기를 되돌려 준다.
+
+    InsertPicture 의 Width/Height 인자는 이 버전에서 무시된다(실측) — 넣은 뒤
+    개체 속성으로 지정해야 먹는다. 판면보다 넓은 그림은 비율을 지켜 줄인다.
+    """
+    ctrl = hwp.insert_picture(str(path), treat_as_char=True, embedded=True,
+                              sizeoption=3)
+    size = None if hwp_engine.in_table() else _png_size_mm(path)
+    if not size or ctrl is None:
+        return
+    w_mm, h_mm = size
+    limit = hwp_engine._col_width_mm()
+    if limit and w_mm > limit:
+        h_mm *= limit / w_mm
+        w_mm = limit
+    try:
+        pset = ctrl.Properties
+        pset.SetItem("Width", hwp.MiliToHwpUnit(round(w_mm, 1)))
+        pset.SetItem("Height", hwp.MiliToHwpUnit(round(h_mm, 1)))
+        ctrl.Properties = pset
+    except Exception as e:
+        applog.exc(f"그림 크기 지정 실패 ({path}) — 한글이 넣은 크기로 둔다", e)
+
+
 def insert_photo(path):
     r"""사진 파일을 커서 자리에 글자처럼 삽입 (물감 설정 '사진' 탭의 삽입).
 
-    옵션은 마크다운 변환의 \사진이름\ 삽입(insert_rich_line)과 같다 —
-    embedded=True 로 문서에 포함, sizeoption=3 으로 셀 안이면 셀에 맞춤.
+    옵션은 마크다운 변환의 \사진이름\ 삽입(insert_rich_line)과 같다.
     삽입 직후 한글이 그림 개체를 선택한 채로 두므로 선택을 풀어 준다.
     """
     hwp = _h()
-    hwp.insert_picture(str(path), treat_as_char=True, embedded=True,
-                       sizeoption=3)
+    _insert_picture_sized(hwp, path)
     try:
         hwp.HAction.Run("Cancel")
     except Exception as e:
@@ -1205,6 +1270,46 @@ def normalize_marks_to_pairs():
     return singles
 
 
+def apply_exam_page(gap_mm=8.0, top_mm=20.0):
+    r"""문서를 시험지 판형(2단)으로 바꾼다. 성공 여부.
+
+    왜 단 폭에 맞춰 여백을 정하나: 문항 조판이 쓰는 표(자료 상자·보기 상자·선지
+    표)는 전부 활성 스펙의 `column_width_mm` 로 만들어진다. 단 폭이 그보다 좁으면
+    표가 단을 넘어가 깨진다 — 그래서 여백을 '단 폭 두 개 + 사이 간격'에 맞춘다.
+
+    A4 기준: 단 폭 94mm 면 좌우 여백은 (210 - 94*2 - 8) / 2 = 7mm 가 된다.
+    """
+    hwp = _h()
+    col = hwp_engine._col_width_mm()
+    try:
+        act, ps = hwp.HAction, hwp.HParameterSet
+        act.GetDefault("PageSetup", ps.HSecDef.HSet)
+        pd = ps.HSecDef.PageDef
+        paper_mm = hwp.HwpUnitToMili(pd.PaperWidth) or 210.0
+        side = max((paper_mm - (col * 2 + gap_mm)) / 2.0, 5.0)
+        pd.LeftMargin = pd.RightMargin = hwp.MiliToHwpUnit(round(side, 1))
+        pd.TopMargin = pd.BottomMargin = hwp.MiliToHwpUnit(top_mm)
+        pd.HeaderLen = pd.FooterLen = hwp.MiliToHwpUnit(_NARROW_HEADFOOT_MM)
+        ps.HSecDef.HSet.SetItem("ApplyTo", 3)          # 3 = 문서 전체
+        if not act.Execute("PageSetup", ps.HSecDef.HSet):
+            return False
+
+        # 필드 이름은 HColDef 실물에서 확인한 것이다(Count·SameSize·SameGap·Layout).
+        # ApplyClass 24 / ApplyTo 6 이라야 Execute 가 성공한다 — 다른 조합(832/3 등)은
+        # 조용히 False 만 돌려주고 단이 안 바뀐다(2026-08-03 실측).
+        act.GetDefault("MultiColumn", ps.HColDef.HSet)
+        ps.HColDef.Count = 2
+        ps.HColDef.SameSize = 1
+        ps.HColDef.SameGap = hwp.MiliToHwpUnit(gap_mm)
+        ps.HColDef.Layout = hwp.ColLayoutType("Left")
+        ps.HColDef.HSet.SetItem("ApplyClass", 24)
+        ps.HColDef.HSet.SetItem("ApplyTo", 6)
+        return bool(act.Execute("MultiColumn", ps.HColDef.HSet))
+    except Exception as e:
+        applog.exc("시험지 판형(2단) 적용 실패 — 기본 판형으로 계속", e)
+        return False
+
+
 def save_active_as(dest_path):
     """지금 한글에 떠 있는 문서를 통째로 저장한다. 반환: 본문 글자(미리보기용).
 
@@ -1838,15 +1943,14 @@ def insert_rich_line(segments):
         if image:
             # \사진이름\ — 사진 폴더의 그림을 글자처럼 삽입.
             # embedded=True 라 문서에 포함된다(원본 폴더를 지워도 그림은 남음).
-            # sizeoption=3 = 셀 안이면 셀 크기에 맞춰 비율 유지(셀 밖이면 원본 크기).
+            # 크기는 _insert_picture_sized 가 정한다(셀 밖이면 PNG 의 실제 크기).
             pos = None
             try:
                 pos = hwp.GetPos()
             except Exception as e:
                 applog.exc("사진 삽입 전 위치 기록 실패 — 삽입 후 커서를 못 되돌린다", e)
             try:
-                hwp.insert_picture(str(image), treat_as_char=True, embedded=True,
-                                   sizeoption=3)
+                _insert_picture_sized(hwp, image)
             except Exception as e:
                 applog.exc(f"사진 삽입 실패 ({image}) — 자리 표시 텍스트로 대체", e)
                 insert_plain(f"[사진 실패: {image}]")

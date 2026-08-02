@@ -23,6 +23,8 @@ def main(argv=None):
                     help="조판할 마크다운 파일 경로 (UTF-8)")
     ap.add_argument("--append", action="store_true",
                     help="새 문서를 만들지 않고 지금 활성 문서의 커서 위치에 조판")
+    ap.add_argument("--exam-page", action="store_true",
+                    help="시험지 판형(2단)으로 쪽을 설정한 뒤 조판한다 (--append 와 함께 쓰지 않음)")
     args = ap.parse_args(argv)
 
     src = pathlib.Path(args.markdown_file)
@@ -65,6 +67,9 @@ def main(argv=None):
 
     if not args.append:
         hwp_engine.new_document()
+        if args.exam_page and not engine_library.apply_exam_page():
+            print("주의: 시험지 판형(2단) 적용에 실패해 기본 판형으로 조판합니다.",
+                  file=sys.stderr)
 
     result = engine_library.execute_library_plan(
         ops, library.template_path, form_path_fn=library.template_path)
