@@ -1569,6 +1569,7 @@ class SettingsWindow(tk.Toplevel):
             # 정의가 지워져 매번 NameError) — 되살리는 순간 잠자던 버그가 났다.
             # 안 메우면 창의 그 자리에 창이 아예 없는 상태로 남아, 그리지도
             # 눌리지도 않는다. 제목줄 ✕ 까지 그 안에 들면 창을 닫을 수도 없다.
+            self._dock.clear_owner()    # 위계를 먼저 푼다 (2026-08-02, 041)
             self._dock.clear_hole()
             if pre_restore:
                 try:

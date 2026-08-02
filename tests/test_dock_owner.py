@@ -37,6 +37,12 @@ class _FakeDock:
     def stop_follow(self):
         self.log.append("pause")
 
+    def clear_topmost(self):
+        self.log.append("unpin")
+
+    def clear_owner(self):
+        self.log.append("unown")
+
     def clear_hole(self):
         self.log.append("fill")
 
@@ -70,7 +76,7 @@ class OwnerLedger(unittest.TestCase):
         main, edit = _FakeDock(), _FakeDock()
         self.assertTrue(hwp_dock.claim(main, hwp_dock.PRIORITY_MAIN))
         self.assertTrue(hwp_dock.claim(edit, hwp_dock.PRIORITY_EDIT))
-        self.assertEqual(main.log, ["pause", "fill"])
+        self.assertEqual(main.log, ["pause", "unpin", "unown", "fill"])
         self.assertIs(hwp_dock.owner(), edit)
 
     def test_편집이_끝나면_메인이_저절로_돌아온다(self):
@@ -82,7 +88,7 @@ class OwnerLedger(unittest.TestCase):
         hwp_dock.claim(main, hwp_dock.PRIORITY_MAIN)
         hwp_dock.claim(edit, hwp_dock.PRIORITY_EDIT)
         hwp_dock.release(edit)
-        self.assertEqual(main.log, ["pause", "fill", "resume"])
+        self.assertEqual(main.log, ["pause", "unpin", "unown", "fill", "resume"])
         self.assertIs(hwp_dock.owner(), main)
 
     def test_되살릴_때_호출부의_준비를_먼저_부른다(self):
@@ -128,7 +134,7 @@ class OwnerLedger(unittest.TestCase):
         hwp_dock.claim(main, hwp_dock.PRIORITY_MAIN)
         hwp_dock.claim(edit, hwp_dock.PRIORITY_EDIT)
         hwp_dock.release(edit)
-        self.assertEqual(main.log, ["pause", "fill"])   # resume 이 없다
+        self.assertEqual(main.log, ["pause", "unpin", "unown", "fill"])   # resume 이 없다
         self.assertIsNone(hwp_dock.owner())
 
     def test_판이_열리면_순서를_다시_잡는다(self):
@@ -205,6 +211,118 @@ class HoleAlwaysFilled(unittest.TestCase):
         """start() 는 구멍을 먼저 뚫는다 — 그 뒤 실패하면 잘린 창만 남는다."""
         body = _read("hwp_dock").split("def start(")[1].split("\n    def ")[0]
         self.assertIn("clear_hole()", body)
+
+
+class OwnerHierarchy(unittest.TestCase):
+    r"""도킹은 **소유자 위계**로 붙는다 (2026-08-02, 041 — 사용자 지적).
+
+        "도킹을 할 때 뒷자리가 비는게 좀 신경쓰이는데 저렇게 구멍을 뚫지
+         않고는 해결을 할 수 없나? 명확한 위계를 세우면 되는거잖아"
+
+    맞는 말이었다. 윈도우에는 창 사이의 위계(소유자, GWLP_HWNDPARENT)가
+    실제로 있고, 소유 창은 소유자보다 늘 위에 있도록 윈도우가 지켜 준다.
+
+    실측 (spikes/dock_hierarchy_spike.py):
+      · 소유자만 세우면 z 순서를 안 맞춰도 한글이 위
+      · 우리 창이 '항상 위'여도 한글이 그 위에 남는다 → 036 금지를 풀 근거
+    안전 실측 (spikes/owner_survival_spike.py):
+      · 소유자를 세운 프로세스를 정리 없이 즉사시켜도 한글은 살아남고
+        소유자 값은 저절로 0 으로 풀렸다 (임베드와 다른 결정적 차이)
+    """
+
+    def setUp(self):
+        hwp_dock._reset_owners_for_test()
+        self.addCleanup(hwp_dock._reset_owners_for_test)
+
+    def test_구멍보다_위계를_먼저_시도한다(self):
+        body = _read("hwp_dock").split("def start(")[1].split("\n    def ")[0]
+        self.assertIn("_set_owner()", body)
+        self.assertLess(body.index("_set_owner()"), body.index("_punch_hole()"),
+                        "위계를 먼저 세워야 구멍을 안 뚫는다")
+
+    def test_위계가_실패하면_구멍으로_후퇴한다(self):
+        r"""다른 프로세스 창에 쓰는 API 라 어느 판에서 막힐지 모른다.
+
+        후퇴 경로가 없으면 그런 판에서 도킹이 통째로 죽는다.
+        """
+        body = _read("hwp_dock").split("def start(")[1].split("\n    def ")[0]
+        self.assertIn("if not self._set_owner():", body)
+        self.assertIn("_punch_hole()", body)
+
+    def test_뗄_때_위계를_푼다(self):
+        """안 풀면 한글이 죽은 창을 소유자로 물고 따라다닌다."""
+        for where, src in (("stop(", "hwp_dock"),):
+            body = _read(src).split("def " + where)[1].split("\n    def ")[0]
+            self.assertIn("clear_owner()", body)
+        body = _read("palette_ui").split("def _exit_dock_layout")[1] \
+                                  .split("\n    def ")[0]
+        self.assertIn("clear_owner()", body)
+
+    def test_시작에_실패해도_위계를_푼다(self):
+        body = _read("hwp_dock").split("def start(")[1].split("\n    def ")[0]
+        self.assertIn("clear_owner()", body)
+
+    def test_원래_소유자로_되돌린다(self):
+        """0 이 아니라 **원래 값**으로 — 남이 세워 둔 관계를 지우지 않는다."""
+        body = _read("hwp_dock").split("def clear_owner")[1] \
+                                .split("\n    def ")[0]
+        self.assertIn("self._owner0", body)
+
+    def test_위계로_붙었는지_밖에서_물어볼_수_있다(self):
+        """'항상 위'를 풀어도 되는지 판정하는 유일한 근거."""
+        self.assertFalse(hwp_dock.owner_has_hierarchy())    # 주인 없음
+        d = _FakeDock()
+        hwp_dock.claim(d, hwp_dock.PRIORITY_MAIN)
+        self.assertFalse(hwp_dock.owner_has_hierarchy(),
+                         "위계를 안 세운 주인은 False 여야 한다")
+        d._owner_set = True
+        self.assertTrue(hwp_dock.owner_has_hierarchy())
+
+    def test_구멍은_위계가_섰으면_아예_안_뚫는다(self):
+        r"""start 에서만 막으면 **따라가는 스레드가 곧바로 다시 뚫는다.**
+
+        실측에서 그렇게 됐다 — 위계가 서 있는데도 창이 오려진 채였다
+        (spikes/dock_e2e_verify.py 1차). 막는 자리는 _punch_hole 안이어야 한다.
+        """
+        body = _read("hwp_dock").split("def _punch_hole")[1] \
+                                .split("\n    def ")[0]
+        self.assertIn("if self._owner_set:", body)
+        self.assertLess(body.index("if self._owner_set:"),
+                        body.index("GetWindowRect"),
+                        "좌표를 재기 전에 빠져나와야 한다")
+
+    def test_한글을_우리와_같은_띠로_올린다(self):
+        r"""소유 관계는 **같은 띠 안에서만** 위아래를 지켜 준다.
+
+        우리 창만 '항상 위' 띠로 올라가면 한글은 아래 띠에 남아 가려진다 —
+        실측에서 판이 우리 창으로 덮였다.
+        """
+        body = _read("hwp_dock").split("def keep_order")[1] \
+                                .split("\n    def ")[0]
+        self.assertIn("_root_is_topmost()", body)
+        self.assertIn("HWND_TOPMOST", body)
+
+    def test_뗄_때_한글을_띠에서_내린다(self):
+        """우리가 올린 것만 내린다 — 원래 항상 위였으면 그대로 둔다."""
+        body = _read("hwp_dock").split("def clear_topmost")[1] \
+                                .split("\n    def ")[0]
+        self.assertIn("_hwp_was_topmost", body)
+        stop = _read("hwp_dock").split("def stop(")[1].split("\n    def ")[0]
+        self.assertIn("clear_topmost()", stop)
+
+    def test_항상_위를_켜면_순서를_다시_잡는다(self):
+        """안 잡으면 한글이 아래 띠에 남아 판이 우리 창으로 덮인다."""
+        body = _read("app").split("def _toggle_top")[1].split("\ndef ")[0]
+        self.assertIn("reorder_now()", body)
+
+    def test_도킹_중에도_항상_위를_쓸_수_있다(self):
+        r"""036 의 금지를 푼다 — 다만 **위계로 붙었을 때만**.
+
+        구멍 뚫기로 후퇴한 판에서는 옛 문제(판이 하얗게 빔)가 그대로다.
+        """
+        body = _read("app").split("def _toggle_top")[1].split("\ndef ")[0]
+        self.assertIn("owner_has_hierarchy()", body)
+        self.assertIn("_is_docked()", body)
 
 
 class ZOrderOwner(unittest.TestCase):

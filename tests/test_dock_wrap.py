@@ -261,18 +261,54 @@ class AppRules(unittest.TestCase):
         **안 떠 있으면** 물어본다. (예전에도 이때는 connect 가 빈 문서를 몰래
         만들었으므로, 묻는 쪽이 7-30 결정의 취지에도 맞다.)
 
-        그래서 지키는 것: 파일 열기(askopenfilename)는 반드시 '창이 없는지
-        확인' **뒤에만** 나온다.
+        그래서 지키는 것: **묻는 일은 '창이 없는지 확인' 뒤에만** 일어난다.
+
+        (2026-08-02) 물음이 창에서 띠로 바뀌며 함수가 둘로 갈렸다 —
+        `fn_dock_hwp` 는 창이 있는지 보고 갈래를 정하고, 실제 열기는
+        `_dock_with` 가 한다. 지키는 규칙은 그대로다.
         """
-        body = _fn_body(_read("app"), "fn_dock_hwp")
+        code = _read("app")
+        body = _fn_body(code, "fn_dock_hwp")
         self.assertIn("_hwp_window_handles", body,
                       "한글 창이 떠 있는지 확인하지 않는다")
-        self.assertIn("askopenfilename", body,
-                      "창이 없을 때 파일을 물어보는 갈래가 없다")
+        self.assertNotIn("askopenfilename", body,
+                         "창 확인과 같은 자리에서 파일을 물으면 갈래가 섞인다")
+        self.assertIn("_ask_dock_target", body,
+                      "창이 없을 때 물어보는 갈래가 없다")
         self.assertLess(body.index("_hwp_window_handles"),
-                        body.index("askopenfilename"),
-                        "창 확인보다 먼저 파일을 물어본다 — 떠 있는 한글을 "
-                        "감싸는 길이 막힌다")
+                        body.index("_ask_dock_target"),
+                        "창 확인보다 먼저 물어본다 — 떠 있는 한글을 감싸는 "
+                        "길이 막힌다")
+        # 파일 열기는 '열기를 고른 경우'에만 — 다른 갈래로는 못 샌다
+        run = _fn_body(code, "_dock_with")
+        self.assertIn("askopenfilename", run)
+        self.assertLess(run.index('choice == "open"'),
+                        run.index("askopenfilename"))
+
+    def test_띠에서_취소하면_도킹하지_않는다(self):
+        r"""취소를 None 으로 두면 '아무것도 묻지 않았다'와 구분이 안 된다.
+
+        그러면 취소가 그대로 도킹으로 이어진다 — 묻는 의미가 없어진다.
+        """
+        code = _read("app")
+        self.assertIn('("취소", "cancel", "normal")', code,
+                      "취소가 None 이면 '안 물었음'과 섞인다")
+        run = _fn_body(code, "_dock_with")
+        self.assertIn('if choice == "cancel":', run)
+
+    def test_물음은_창이_아니라_띠로_연다(self):
+        r"""사용자 지적 2026-08-02: "따로 저렇게 위젯이 뜨지 않고 아래에
+        선택할 수 있는 칸이 나오게끔 수정하십시오."
+
+        물음 하나 때문에 창이 뜨면 그 창을 찾아 옮기고 닫는 일이 통째로 는다.
+        """
+        code = _read("app")
+        ask = _fn_body(code, "_ask_dock_target")
+        self.assertIn("ask_inline", ask)
+        self.assertNotIn("messagebox", ask, "다시 창으로 묻고 있다")
+        # 띠는 도구줄 바로 아래에 붙는다 — 자리를 pack 차례에 맡기면 밀린다
+        inline = _fn_body(code, "ask_inline")
+        self.assertIn("after=misc_row", inline)
 
 
 if __name__ == "__main__":

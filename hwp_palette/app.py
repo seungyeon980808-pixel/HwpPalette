@@ -1232,6 +1232,76 @@ def _bar_icon(name):
     return _bar_icons[name]
 
 
+def ask_inline(question, options, hint=""):
+    r"""도구줄 **바로 아래 띠**로 묻는다 — 창을 하나 더 띄우지 않는다.
+
+    사용자 지적 (2026-08-02): *"따로 저렇게 위젯이 뜨지 않고 아래에 선택할
+    수 있는 칸이 나오게끔 수정하십시오."* 맞는 말이다 — 물음 하나 때문에
+    창이 뜨면 그 창을 찾아 옮기고 닫는 일이 통째로 늘어난다. 여기는 알림이
+    뜨는 자리 바로 아래라 눈이 이미 가 있는 곳이다.
+
+    options 는 [(라벨, 값, 꼴)] — 꼴은 "primary" 면 강조색. 고르면 띠가
+    접히고 on_pick(값) 이 불린다. `취소`는 호출부가 목록에 넣는다.
+
+    한 번에 하나만 떠 있다 — 새로 물으면 앞의 물음은 접힌다.
+    """
+    close_inline_ask()
+    box = tk.Frame(root, bg=ACCENT_SOFT, padx=10, pady=7,
+                   highlightbackground=BORDER, highlightthickness=1)
+    _inline["box"] = box
+    # misc_row(도구줄) 바로 아래로 — pack 순서가 아니라 after 로 자리를 못박는다
+    box.pack(fill="x", after=misc_row)
+    head = tk.Frame(box, bg=ACCENT_SOFT)
+    head.pack(fill="x")
+    tk.Label(head, text=question, font=_font(9, "bold"), bg=ACCENT_SOFT,
+             fg=TEXT, anchor="w").pack(side="left")
+    if hint:
+        tk.Label(head, text=hint, font=_font(8), bg=ACCENT_SOFT, fg=MUTED,
+                 anchor="w").pack(side="left", padx=(8, 0))
+    row = tk.Frame(box, bg=ACCENT_SOFT)
+    row.pack(fill="x", pady=(6, 0))
+
+    def pick(value, fn):
+        close_inline_ask()
+        try:
+            fn(value)
+        except Exception as e:
+            applog.exc("띠에서 고른 뒤 실행 실패", e)
+
+    for label, value, kind in options:
+        on = kind == "primary"
+        RoundButton(row, text=label,
+                    command=lambda v=value: pick(v, _inline["cb"]),
+                    bg=ACCENT if on else CARD, fg="white" if on else TEXT,
+                    radius=theme.RADIUS["ctl"], font=_font(9),
+                    outline="" if on else BORDER, zone_bg=ACCENT_SOFT
+                    ).fit(pad_x=14, pad_y=5).pack(side="right", padx=(6, 0))
+    return box
+
+
+def close_inline_ask():
+    """떠 있는 물음 띠를 접는다 (없으면 아무 일도 없다)."""
+    box, _inline["box"] = _inline.get("box"), None
+    if box is not None:
+        try:
+            box.destroy()
+        except Exception:
+            pass
+
+
+_inline = {"box": None, "cb": lambda v: None}
+
+
+def _ask_dock_target(on_pick):
+    """도킹할 대상을 띠로 묻는다 — 한글이 안 떠 있을 때만."""
+    _inline["cb"] = on_pick
+    ask_inline("한글이 떠 있지 않습니다",
+               [("파일 불러오기", "open", "primary"),
+                ("새 문서", "new", "normal"),
+                ("취소", "cancel", "normal")],
+               hint="무엇과 도킹할까요?")
+
+
 def _bar_btn(text, cmd, tip, icon=None):
     img = _bar_icon(icon) if icon else None
     b = RoundButton(misc_row, text="" if img else text, command=cmd, bg=CARD,
@@ -1513,11 +1583,18 @@ def _toggle_top():
     끌 수 있게 하되 **기본은 켬**이다: 이 창은 한글 옆에 두고 쓰는 물건이라,
     한글을 누를 때마다 뒤로 숨으면 도구로서 쓸모가 없다.
     """
-    # 도킹 중에는 순서의 주인이 keep_order 하나여야 한다 (2026-08-01, 피드백 036).
-    # 우리 창이 '항상 위'가 되면 최상위 띠로 올라가, 그 아래에 평범한 창(한글)을
-    # 넣을 수 없어 도킹 판이 하얗게 빈다.
-    if _is_docked():
-        notify("info", "도킹 중에는 '항상 위'를 바꿀 수 없습니다 — 도킹을 뗀 뒤 바꿔 주세요")
+    # 도킹 중에도 쓸 수 있다 (2026-08-02, 041 — 036 의 금지를 푼다).
+    #
+    # 예전에 막았던 이유: 우리 창이 최상위 띠로 올라가면 그 아래에 평범한
+    # 창(한글)을 넣을 수 없어 도킹 판이 하얗게 빘다. 그런데 그것은 z 순서를
+    # 폴링으로 맞추던 시절의 이야기다 — 이제 도킹은 **소유자 위계**를 쓴다.
+    # 소유 창은 소유자가 최상위 띠에 있어도 그 위에 남는다
+    # (실측 spikes/dock_hierarchy_spike.py 의 B·C·D).
+    #
+    # 위계를 못 세워 구멍 뚫기로 후퇴한 판에서는 옛 문제가 그대로이므로
+    # 그때만 막는다.
+    if _is_docked() and not hwp_dock.owner_has_hierarchy():
+        notify("info", "지금은 '항상 위'를 바꿀 수 없습니다 — 도킹을 뗀 뒤 바꿔 주세요")
         return
     on = not bool(settings.get_config_value(_TOP_KEY, True))
     settings.set_config_value(_TOP_KEY, on)
@@ -1525,6 +1602,10 @@ def _toggle_top():
         root.attributes("-topmost", on)
     except Exception as e:
         applog.exc("항상 위 전환 실패", e)
+    # 도킹 중이면 한글도 같은 띠로 옮겨야 한다 (2026-08-02, 041) — 우리만
+    # 올라가면 한글이 아래 띠에 남아 판이 우리 창으로 덮인다.
+    if _is_docked():
+        hwp_dock.reorder_now()
     _bar_active(_top_btn, on)
     # 상태에 따라 문구가 바뀌는 단추 — **두 문구 모두**에 단축키를 붙인다
     _tip(_top_btn, "항상 위 — 켜짐 (PageUp)" if on else "항상 위 — 꺼짐 (PageUp)")
@@ -2855,29 +2936,44 @@ def fn_dock_hwp():
     # 그걸 감싸는 — 묻지 않은 결정이 이미 일어나고 있었다. 물을 것이 있으면
     # 묻는 편이 규칙에 맞다. 한글이 떠 있으면 예전처럼 아무것도 묻지 않는다.
     if not hwp_engine._hwp_window_handles():
-        choice = messagebox._ask(
-            root, "한글이 떠 있지 않습니다", "무엇과 도킹할까요?",
-            [("취소", None, "normal"), ("새 문서", "new", "normal"),
-             ("파일 불러오기", "open", "primary")], cancel=None)
-        if choice is None:
+        # 창을 하나 더 띄우지 않는다 (사용자 지적 2026-08-02: "따로 저렇게
+        # 위젯이 뜨지 않고 아래에 선택할 수 있는 칸이 나오게끔"). 물음이
+        # 도구줄 바로 아래 띠로 열리고, 고르면 그 자리에서 이어 간다.
+        _ask_dock_target(_dock_with)
+        return
+    _dock_with(None)
+
+
+def _dock_with(choice):
+    r"""도킹을 실제로 시작한다. choice 는 한글이 안 떠 있을 때만 온다.
+
+    None    = 한글이 이미 떠 있다 (아무것도 묻지 않았다)
+    "new"   = 한글이 켜지며 제 빈 문서를 만든다 (우리가 만드는 게 아니다)
+    "open"  = 파일을 골라 연 뒤 감싼다
+    "cancel"= 물음 띠에서 그만두었다
+
+    ⚠ 취소를 None 으로 두면 '아무것도 묻지 않았다'와 구분이 안 돼, 취소가
+    그대로 도킹으로 이어진다. 그래서 따로 이름을 준다.
+    """
+    if choice == "cancel":
+        return
+    if choice == "open":
+        path = filedialog.askopenfilename(
+            parent=root, title="도킹할 한글 파일",
+            filetypes=[("한글 문서", "*.hwp *.hwpx"), ("모든 파일", "*.*")])
+        if not path:
             return
-        if choice == "open":
-            path = filedialog.askopenfilename(
-                parent=root, title="도킹할 한글 파일",
-                filetypes=[("한글 문서", "*.hwp *.hwpx"), ("모든 파일", "*.*")])
-            if not path:
-                return
-            if not ensure_hwp():
-                return
-            try:
-                # strip_markers 없이 그냥 연다 — 사용자의 파일을 고치지 않는다
-                engine_library.open_form(path)
-            except Exception as e:
-                applog.exc("도킹: 파일 열기 실패", e)
-                notify("error", "파일을 열지 못해 도킹하지 못했습니다")
-                return
-        # "new" 는 그냥 지나간다 — 아래 ensure_hwp() 의 connect 가 한글을
-        # 띄우고, 한글이 제 빈 문서를 만든다 (우리가 만드는 게 아니다).
+        if not ensure_hwp():
+            return
+        try:
+            # strip_markers 없이 그냥 연다 — 사용자의 파일을 고치지 않는다
+            engine_library.open_form(path)
+        except Exception as e:
+            applog.exc("도킹: 파일 열기 실패", e)
+            notify("error", "파일을 열지 못해 도킹하지 못했습니다")
+            return
+    # "new" 는 그냥 지나간다 — 아래 ensure_hwp() 의 connect 가 한글을
+    # 띄우고, 한글이 제 빈 문서를 만든다 (우리가 만드는 게 아니다).
     if not ensure_hwp():
         return
     try:

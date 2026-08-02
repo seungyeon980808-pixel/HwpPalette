@@ -66,6 +66,15 @@ _user32 = ctypes.windll.user32
 _kernel32 = ctypes.windll.kernel32
 # CreateRectRgn 은 pywin32 의 win32gui 에 없다 (실측 2026-07-30)
 _gdi32 = ctypes.windll.gdi32
+# 창 사이의 **소유자 위계** (2026-08-02, 041) — 소유 창은 소유자보다 늘 위에
+# 있도록 윈도우가 지켜 준다. Dock._set_owner 참고.
+_GWLP_HWNDPARENT = -8
+# 64비트에서 GetWindowLongPtrW 는 핸들을 돌려주므로 int 로 못 받으면 잘린다.
+_user32.GetWindowLongPtrW.restype = ctypes.c_void_p
+_user32.GetWindowLongPtrW.argtypes = (wintypes.HWND, ctypes.c_int)
+_user32.SetWindowLongPtrW.restype = ctypes.c_void_p
+_user32.SetWindowLongPtrW.argtypes = (wintypes.HWND, ctypes.c_int,
+                                      ctypes.c_void_p)
 # **z순서를 건드리지 않는다** (실측 2026-07-30, spikes/dock_click_spike.py):
 # 여태 매 틱 HWND_TOPMOST 로 밀어 올렸는데, 우리 창도 '항상 위'라 둘이 같은
 # 띠에서 자리다툼을 했다. 그 결과 한글이 활성화되는 순간 우리 빈 판이 위로
@@ -194,6 +203,17 @@ def owner_priority():
         return _owner_stack[-1][1] if _owner_stack else 0
 
 
+def owner_has_hierarchy():
+    r"""지금 주인이 **소유자 위계**로 붙어 있는가 (2026-08-02, 041).
+
+    위계로 붙었으면 우리 창이 '항상 위'가 되어도 한글이 그 위에 남는다 —
+    도킹 중 '항상 위' 금지(036)를 풀 수 있는 조건이 이것 하나다.
+    구멍 뚫기로 후퇴한 판에서는 옛 문제가 그대로라 False 를 준다.
+    """
+    d = owner()
+    return bool(d is not None and getattr(d, "_owner_set", False))
+
+
 def claim(dock, priority, on_resume=None):
     r"""이 Dock 이 한글 창의 주인이 된다. 잡았으면 True.
 
@@ -211,9 +231,13 @@ def claim(dock, priority, on_resume=None):
             try:
                 prev = _owner_stack[-1][0]
                 prev.stop_follow()
+                # 위계도 내려놓는다 — 한글은 새 주인에게 간다. 안 놓으면 잠든
+                # 창이 계속 한글을 자기 위에 붙들어 편집 창과 다툰다.
+                prev.clear_topmost()
+                prev.clear_owner()
                 # 오려 낸 자리도 메운다 — 한글은 새 주인에게 갔으므로 그 구멍에는
                 # 비칠 것이 없다. 안 메우면 잠든 창에 바탕화면이 뚫려 보인다.
-                # (깨어날 때 start() 가 다시 뚫는다.)
+                # (깨어날 때 start() 가 둘 다 다시 세운다.)
                 prev.clear_hole()
             except Exception as e:
                 applog.exc("도킹 주인 재우기 실패 — 두 창이 한글을 다툴 수 있음", e)
@@ -329,6 +353,9 @@ class Dock:
         self._hook_tid = None        # 훅 스레드의 Win32 스레드 id (WM_QUIT 용)
         self._focus_bind = None      # 우리 창 활성화 → 한글 다시 올리기
         self._hole = None            # 우리 창에 오려 낸 판 자리 (액자 구멍)
+        self._owner_set = False      # 소유자 위계를 세웠는가 (041)
+        self._owner0 = 0             # 원래 소유자 — 뗄 때 돌려놓는다
+        self._hwp_was_topmost = False    # 한글이 원래 '항상 위'였는가
         self._stop_evt = threading.Event()
         self._thread = None
 
@@ -345,6 +372,10 @@ class Dock:
             # 배치만 저장하면 모니터를 건너간 뒤 원복이 밀린다 (실측 2026-07-30:
             # 뗀 뒤 한글이 163px 옆으로 갔다) — 실제 사각형도 함께 떠 둔다.
             self._rect0 = win32gui.GetWindowRect(self.hwnd)
+            # 우리가 '항상 위'로 올렸는지 뗄 때 가리려면 원래 값을 알아야 한다
+            self._hwp_was_topmost = bool(
+                win32gui.GetWindowLong(self.hwnd, win32con.GWL_EXSTYLE)
+                & win32con.WS_EX_TOPMOST)
             # 최대화·최소화 상태면 SetWindowPos 가 안 먹는다 — 먼저 보통으로
             if (self._placement[1] == win32con.SW_SHOWMAXIMIZED
                     or win32gui.IsIconic(self.hwnd)):
@@ -356,7 +387,9 @@ class Dock:
             self._root_hwnd = win32gui.GetAncestor(self._host_hwnd,
                                                    win32con.GA_ROOT)
             self._hole = None            # 마지막으로 뚫은 구멍 (판의 상대 자리)
-            self._punch_hole()
+            # 위계를 먼저 세워 본다 — 되면 구멍을 안 뚫는다 (2026-08-02, 041).
+            if not self._set_owner():
+                self._punch_hole()       # 위계 실패 — 옛 길로 후퇴
             self._stop_evt.clear()
             self._thread = threading.Thread(target=self._follow_loop,
                                             daemon=True, name="hwp-dock")
@@ -380,13 +413,107 @@ class Dock:
         except Exception as e:
             applog.exc("한글 창 도킹 실패 — 도킹 없이 계속", e)
             self._placement = None
-            # 여기 오기 전에 구멍을 이미 뚫었을 수 있다 — 실패한 채 남기면
-            # 창에 눌리지도 그려지지도 않는 자리가 생긴다 (2026-08-01).
+            # 여기 오기 전에 위계를 세우거나 구멍을 뚫었을 수 있다 — 실패한 채
+            # 남기면 한글이 엉뚱한 창을 따라다니거나, 창에 눌리지도 그려지지도
+            # 않는 자리가 생긴다 (2026-08-01·02).
+            self.clear_topmost()
+            self.clear_owner()
             self.clear_hole()
             return False
 
+    def _set_owner(self):
+        r"""한글을 우리 창의 **소유 창**으로 삼는다 — 진짜 위계 (2026-08-02, 041).
+
+        사용자 지적: *"저렇게 구멍을 뚫지 않고는 해결을 할 수 없나?
+        명확한 위계를 세우면 되는거잖아"* — 맞는 말이었다.
+
+        윈도우에는 창 사이의 위계가 실제로 있다(소유자, GWLP_HWNDPARENT).
+        소유 창은 **소유자보다 늘 위에 있도록 윈도우가 지켜 준다** — 우리가
+        z 순서를 폴링할 필요도, 판을 오려 낼 필요도 없다.
+
+        실측 (spikes/dock_hierarchy_spike.py):
+          · 소유자만 세우면 순서를 안 맞춰도 한글이 위 — keep_order 없이도 지켜짐
+          · 우리 창을 '항상 위'로 올려도 한글이 그 위에 남는다
+            → 도킹 중 '항상 위' 금지(036)를 풀 수 있는 근거가 이것이다
+
+        왜 안전한가 — 임베드(SetParent)와 무엇이 다른가
+        (실측 spikes/owner_survival_spike.py):
+          · 소유자를 세운 프로세스를 **정리 없이 즉사**시켜도 한글은 살아남고,
+            소유자 값은 저절로 0 으로 풀렸다.
+          · 임베드는 달랐다 — 우리 프레임을 부수자 한글의 COM 이 죽고
+            (원격 프로시저 호출 실패) 프로세스가 좀비로 남았다
+            (spikes/embed_spike.log). 그래서 임베드는 버렸다.
+          소유는 **z 순서 관계**일 뿐 창의 부모 자식 관계가 아니다.
+
+        실패하면 False — 호출부가 옛 길(구멍 뚫기)로 후퇴한다. 이 API 는
+        다른 프로세스의 창에 쓰는 것을 문서가 권하지 않으므로, 어느 판에서
+        막히더라도 도킹 자체는 굴러가야 한다.
+        """
+        self._owner_set = False
+        try:
+            if not (self._root_hwnd and win32gui.IsWindow(self.hwnd)):
+                return False
+            self._owner0 = _user32.GetWindowLongPtrW(self.hwnd,
+                                                     _GWLP_HWNDPARENT)
+            _user32.SetWindowLongPtrW(self.hwnd, _GWLP_HWNDPARENT,
+                                      self._root_hwnd)
+            got = _user32.GetWindowLongPtrW(self.hwnd, _GWLP_HWNDPARENT)
+            if got != self._root_hwnd:
+                applog.warn("도킹: 소유자 위계를 세우지 못했다 — 구멍 뚫기로 간다")
+                return False
+            self._owner_set = True
+            return True
+        except Exception as e:
+            applog.exc("도킹: 소유자 위계 실패 — 구멍 뚫기로 간다", e)
+            return False
+
+    def _root_is_topmost(self):
+        """우리 창이 지금 '항상 위' 띠에 있는가."""
+        try:
+            if not self._root_hwnd:
+                return False
+            ex = win32gui.GetWindowLong(self._root_hwnd, win32con.GWL_EXSTYLE)
+            return bool(ex & win32con.WS_EX_TOPMOST)
+        except Exception:
+            return False
+
+    def clear_topmost(self):
+        r"""한글을 '항상 위' 띠에서 내린다 — **우리가 올렸을 때만** (041).
+
+        원래부터 사용자가 한글을 항상 위로 두고 썼다면 그대로 둔다.
+        """
+        try:
+            if self._hwp_was_topmost or not win32gui.IsWindow(self.hwnd):
+                return
+            win32gui.SetWindowPos(
+                self.hwnd, win32con.HWND_NOTOPMOST, 0, 0, 0, 0,
+                win32con.SWP_NOMOVE | win32con.SWP_NOSIZE
+                | win32con.SWP_NOACTIVATE)
+        except Exception as e:
+            applog.exc("도킹: 한글을 '항상 위'에서 내리지 못했다", e)
+
+    def clear_owner(self):
+        r"""소유 관계를 푼다 (도킹을 뗄 때).
+
+        **반드시 0 으로 되돌린다.** 죽은 창을 소유자로 물고 있으면 한글이
+        엉뚱한 창을 따라다닌다. 우리가 즉사한 경우엔 윈도우가 알아서 0 으로
+        풀어 주지만(실측), 정상 종료에서는 우리가 치우는 것이 맞다.
+        """
+        if not getattr(self, "_owner_set", False):
+            return
+        self._owner_set = False
+        try:
+            if win32gui.IsWindow(self.hwnd):
+                _user32.SetWindowLongPtrW(self.hwnd, _GWLP_HWNDPARENT,
+                                          self._owner0 or 0)
+        except Exception as e:
+            applog.exc("도킹: 소유 관계를 풀지 못했다", e)
+
     def _punch_hole(self):
         r"""우리 창에서 **판 자리를 오려 낸다** — 액자처럼 (2026-07-30 재작성).
+
+        ⚠ 이제는 **후퇴 경로**다 (2026-08-02, 041): 평소에는 _set_owner 의
+        위계로 해결되고, 그것이 막히는 판에서만 여기로 온다.
 
         왜 이렇게까지 하나 (실측 spikes/dock_real_spike.py): 한글을 우리 창
         위로 올리는 방식은 실제 화면에서 계속 밀렸다. 우리 창이 활성 창이면
@@ -400,6 +527,12 @@ class Dock:
         있어 늘 보인다.
         """
         try:
+            # 위계로 붙어 있으면 **뚫지 않는다** (2026-08-02, 041 — 실측 회귀).
+            # 이 함수는 start() 뿐 아니라 따라가는 스레드(_snap)도 매 틱 부른다.
+            # start 에서만 안 부르게 막았더니 스레드가 곧바로 다시 뚫어,
+            # 위계가 서 있는데도 창이 오려진 채였다 (spikes/dock_e2e_verify.py).
+            if self._owner_set:
+                return
             if not (self._root_hwnd and win32gui.IsWindow(self._host_hwnd)):
                 return
             wl, wt, wr, wb = win32gui.GetWindowRect(self._root_hwnd)
@@ -475,7 +608,15 @@ class Dock:
                 return                      # 남의 프로그램을 쓰는 중 — 건드리지 않는다
             flags = (win32con.SWP_NOMOVE | win32con.SWP_NOSIZE
                      | win32con.SWP_NOACTIVATE)
-            win32gui.SetWindowPos(self.hwnd, win32con.HWND_TOP, 0, 0, 0, 0,
+            # 한글을 **우리와 같은 띠**로 올린다 (2026-08-02, 041).
+            #
+            # 윈도우의 z 순서에는 '항상 위' 띠가 따로 있다. 소유 관계는 같은 띠
+            # 안에서만 위아래를 지켜 주므로, 우리 창만 그 띠로 올라가면 한글은
+            # 아래 띠에 남아 가려진다 — 실측에서 판이 우리 창으로 덮였다
+            # (spikes/dock_e2e_verify.py). 우리가 '항상 위'면 한글도 함께 올린다.
+            band = (win32con.HWND_TOPMOST if self._root_is_topmost()
+                    else win32con.HWND_TOP)
+            win32gui.SetWindowPos(self.hwnd, band, 0, 0, 0, 0,
                                   flags | win32con.SWP_SHOWWINDOW)
             if self._root_hwnd:             # 우리 창은 한글 바로 아래로
                 win32gui.SetWindowPos(self._root_hwnd, self.hwnd, 0, 0, 0, 0,
@@ -651,5 +792,7 @@ class Dock:
     def stop(self):
         """추적을 멈추고 되돌린다 — 한 번에 끝내는 기본 경로."""
         self.stop_follow()
+        self.clear_topmost()        # 우리가 올렸으면 '항상 위'에서 내린다
+        self.clear_owner()          # 위계를 먼저 푼다 (안 풀면 한글이 계속 따라온다)
         self.clear_hole()
         self.restore()
