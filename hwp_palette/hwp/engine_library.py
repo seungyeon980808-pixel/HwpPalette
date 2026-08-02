@@ -396,6 +396,16 @@ def fill_slots(anchor, fills, end_para=None, slot_count=None):
     filled = 0
     used = 0
     want = sum(1 for v in fills if v is not None)
+    # 여러 줄 덩어리({ })를 채우면 문단이 그만큼 늘어난다. end_para 를 그대로
+    # 두면 뒤쪽 빈칸이 '범위 밖'으로 밀려 채우기가 멈춘다(2026-08-03 실측:
+    # 여러 줄 지문 뒤의 점수·보기·선지가 통째로 안 채워짐) — 늘어난 만큼
+    # 범위를 함께 민다. 실패 방향은 여전히 '빈칸이 남는다' 쪽이다: 범위를
+    # 넉넉히 잡아도 개수 상한(slot_count)이 아래쪽 사용자 문서를 지킨다.
+    grow = 0
+
+    def _limit():
+        return None if end_para is None else end_para + grow
+
     # 새 문법 토큰(\이름\ · \\)을 홑 \ 로 줄인다 — 그 아래 채우기 코드는
     # 옛 모습(홑 \ 나열)만 알면 된다. 채우는 길을 둘로 가르지 않는 핵심 장치.
     normalize_slot_tokens(anchor, end_para)
@@ -407,7 +417,7 @@ def fill_slots(anchor, fills, end_para=None, slot_count=None):
             applog.warn(f"빈칸을 더 찾지 못해 채우기를 멈춥니다 "
                         f"({filled}/{want}개 채움)")
             break
-        if _before_anchor(anchor) or _beyond(end_para):
+        if _before_anchor(anchor) or _beyond(_limit()):
             applog.warn(f"빈칸이 삽입 범위를 벗어나 채우기를 멈춥니다 "
                         f"({filled}/{want}개 채움)")
             break
@@ -417,6 +427,9 @@ def fill_slots(anchor, fills, end_para=None, slot_count=None):
         elif isinstance(value, md_parser.MultiLine):
             # { … } 로 묶은 덩어리 — 이 빈칸 하나에 여러 줄을 넣는다.
             # 표 셀 안이면 BreakPara 가 셀 안에서 문단을 나눈다(칸이 세로로 늘어남).
+            grow += len(value.lines) - 1    # BreakPara 수만큼 본문 문단이 는다
+            grow += sum(1 for lv in value.lines
+                        if isinstance(lv, md_parser.Table))   # 표 닻 문단 여유분
             delete_selection()              # 빈칸 표시(\)를 먼저 지운다
             for n, line_value in enumerate(value.lines):
                 if n:
@@ -443,7 +456,7 @@ def fill_slots(anchor, fills, end_para=None, slot_count=None):
     # 남은 빈칸만 청소한다. slot_count 를 알면 "이 템플릿에 남은 개수"가 정확한
     # 상한이 된다 — 그만큼만 지우므로 아래쪽 사용자 문서는 절대 안 건드린다.
     remaining = None if slot_count is None else max(int(slot_count) - used, 0)
-    strip_slot_markers(anchor, end_para, max_delete=remaining)
+    strip_slot_markers(anchor, _limit(), max_delete=remaining)
     return filled, want
 
 
