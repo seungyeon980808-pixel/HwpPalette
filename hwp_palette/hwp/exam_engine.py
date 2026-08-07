@@ -153,7 +153,7 @@ def insert_bogi_box(items=None):
 
     if items:
         labels = ["ㄱ", "ㄴ", "ㄷ", "ㄹ", "ㅁ"]
-        real = [it for it in items if it.strip()]
+        real = [it for it in items if it is not None and str(it).strip()]
         for i, item in enumerate(real[:5]):
             if i > 0:
                 act.Run("BreakPara")

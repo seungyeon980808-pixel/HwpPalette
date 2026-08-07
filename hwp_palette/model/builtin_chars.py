@@ -203,6 +203,7 @@ BUILTINS = _build()
 
 # 라벨 → 텍스트 빠른 조회
 BUILTIN_LOOKUP = {label: text for label, text, _ in BUILTINS}
+assert len(BUILTIN_LOOKUP) == len(BUILTINS), "Duplicate builtin labels detected"
 
 
 def search(query):

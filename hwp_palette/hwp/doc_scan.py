@@ -95,10 +95,10 @@ def _scan_tables():
                     "rows": rows, "cols": cols,
                 })
             idx += 1
-            ctrl = ctrl.Next
         except Exception as e:
-            applog.exc("문서 해체: 표 하나를 건너뜀", e)
-            break
+            applog.exc(f"표 스캔 실패 (#{idx+1})", e)
+        finally:
+            ctrl = ctrl.Next
     return found
 
 

@@ -22,6 +22,7 @@ r"""문항 엑셀 — 작성 서식 정의와 빈 양식 만들기.
 빈칸 순서(slots)로 옮기는 일은 excel_read.py 가 감춘다.
 """
 
+from hwp_palette.core import applog
 from hwp_palette.model import library
 
 # ===== 템플릿 빈칸 지도 =====================================================
@@ -102,8 +103,8 @@ def slots_of(label):
             # 있으면 순서가 어긋나 값이 엉뚱한 칸으로 간다.
             if names and len(names) == int(entry[1].get("slot_count") or 0):
                 return names
-    except Exception:
-        pass
+    except Exception as e:
+        applog.exc("슬롯 읽기 실패", e)
     return TEMPLATES.get(label, [])
 
 
@@ -119,6 +120,9 @@ def styles_for(qtype):
         labels = {v for v in mapping.values() if v}
         if not labels or labels <= have:
             out.append(name)
+        elif labels:
+            applog.warn(f"스타일 '{name}'의 일부 라벨이 없어 숨깁니다 "
+                        f"(없는 라벨: {labels - have})")
     return out or [STYLES[qtype][0][0]]
 
 
@@ -367,5 +371,6 @@ def photo_names():
     try:
         return sorted(name for name, (kind, _e) in library.label_lookup().items()
                       if kind == "사진")
-    except Exception:
+    except Exception as e:
+        applog.exc("사진 목록 읽기 실패", e)
         return []

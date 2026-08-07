@@ -223,5 +223,10 @@ def data_dir():
     return folder
 
 
-DATA_DIR = data_dir()
+try:
+    DATA_DIR = data_dir()
+except Exception as e:
+    import sys, os
+    DATA_DIR = pathlib.Path(os.path.expanduser("~")) / "HwpPalette_data"
+    print(f"데이터 폴더 초기화 실패, 기본 경로 사용: {DATA_DIR}", file=sys.stderr)
 RESOURCE_DIR = resource_dir()

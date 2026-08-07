@@ -92,7 +92,8 @@ class RetiredLibraryToolTest(unittest.TestCase):
         import io
         import pathlib as _pl
         app = _pl.Path(__file__).resolve().parent.parent / "hwp_palette" / "app.py"
-        code = io.open(app, encoding="utf-8").read()
+        with io.open(app, encoding="utf-8") as f:
+            code = f.read()
         self.assertIn("def fn_open_library", code)
         self.assertIn('fn_open_library(cat="문자")', code)
         # 도구 잇기(BUILTIN_DISPATCH)에서는 빠져 있어야 한다

@@ -76,6 +76,7 @@ SPIN = {                      # key: (최소, 최대, 눈금)
 }
 
 FUNC_BY_KEY = {f["key"]: f for f in FUNCTIONS}
+assert len(FUNC_BY_KEY) == len(FUNCTIONS), "Duplicate function keys detected"
 
 # 글꼴 드롭다운 후보 (직접 입력도 허용). 실측 fontsUsed 기반.
 COMMON_FONTS = [

@@ -243,7 +243,11 @@ def _connected_hwnd():
         except Exception:
             pass                    # WindowHandle 이 없는 버전 — 열거로 대신
     handles = _hwp_window_handles()
-    return handles[0] if handles else None
+    if not handles:
+        return None
+    if len(handles) > 1:
+        applog.warn(f"한글 창이 {len(handles)}개 발견됨 — 첫 번째 창을 선택합니다")
+    return handles[0]
 
 
 def bring_to_front():
@@ -335,7 +339,14 @@ def _running_hwp_com():
     """
     import pythoncom
     import win32com.client as win32
-    pythoncom.CoInitialize()            # COM 사용 선언이 먼저다 — 다른 COM 호출보다 앞에
+    try:
+        pythoncom.CoInitializeEx(pythoncom.COINIT_APARTMENTTHREADED)
+    except Exception:
+        try:
+            if pythoncom.CoInitialize() == 0:  # S_OK = first init
+                pass
+        except Exception:
+            pass  # RPC_E_CHANGED_MODE — already initialized by another caller
     ctx = pythoncom.CreateBindCtx(0)
     rot = pythoncom.GetRunningObjectTable()
     hidden = None

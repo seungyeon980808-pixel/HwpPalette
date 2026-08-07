@@ -238,6 +238,7 @@ def _png_size_mm(path):
                 elif typ == b"IDAT":
                     break                       # 픽셀 데이터 전까지만 본다
             if not (w and h and ppm_x and ppm_y):
+                applog.warn(f"PNG pHYs 청크가 없어 이미지가 기본 크기로 삽입됩니다 ({path})")
                 return None
             return w / ppm_x * 1000.0, h / ppm_y * 1000.0
     except Exception as e:
@@ -254,10 +255,29 @@ def _insert_picture_sized(hwp, path):
 
     InsertPicture 의 Width/Height 인자는 이 버전에서 무시된다(실측) — 넣은 뒤
     개체 속성으로 지정해야 먹는다. 판면보다 넓은 그림은 비율을 지켜 줄인다.
+
+    스펙의 exam_image_style 이 설정돼 있으면 평가원 시험지 스타일로 자동 변환한다.
     """
-    ctrl = hwp.insert_picture(str(path), treat_as_char=True, embedded=True,
+    exam_style = hwp_engine.S.get("exam_image_style", "")
+    actual_path = path
+    if exam_style and pathlib.Path(path).suffix.lower() != ".hwp":
+        try:
+            from hwp_palette.hwp import exam_image
+            import tempfile
+            tmp = tempfile.NamedTemporaryFile(suffix="_exam.png", delete=False)
+            tmp.close()
+            actual_path = str(exam_image.convert(path, tmp.name, style=exam_style))
+        except Exception as e:
+            applog.exc(f"시험지 스타일 변환 실패 ({exam_style}) — 원본 그대로 삽입", e)
+            actual_path = path
+    ctrl = hwp.insert_picture(str(actual_path), treat_as_char=True, embedded=True,
                               sizeoption=3)
-    size = None if hwp_engine.in_table() else _png_size_mm(path)
+    if exam_style and actual_path != path:
+        try:
+            import os; os.unlink(actual_path)
+        except Exception:
+            pass
+    size = None if hwp_engine.in_table() else _png_size_mm(actual_path)
     if not size or ctrl is None:
         return
     w_mm, h_mm = size
@@ -274,14 +294,33 @@ def _insert_picture_sized(hwp, path):
         applog.exc(f"그림 크기 지정 실패 ({path}) — 한글이 넣은 크기로 둔다", e)
 
 
-def insert_photo(path):
+def insert_photo(path, exam_style=None):
     r"""사진 파일을 커서 자리에 글자처럼 삽입 (물감 설정 '사진' 탭의 삽입).
+
+    exam_style이 주어지면 평가원 시험지 스타일로 변환한 뒤 삽입한다.
+    사용 가능 스타일: 'exam-clean', 'exam-diagram', 'contour', 'sketch', 'threshold', 'adaptive'.
 
     옵션은 마크다운 변환의 \사진이름\ 삽입(insert_rich_line)과 같다.
     삽입 직후 한글이 그림 개체를 선택한 채로 두므로 선택을 풀어 준다.
     """
     hwp = _h()
-    _insert_picture_sized(hwp, path)
+    actual_path = path
+    if exam_style:
+        try:
+            from hwp_palette.hwp import exam_image
+            import tempfile, os
+            tmp = tempfile.NamedTemporaryFile(suffix="_exam.png", delete=False)
+            tmp.close()
+            actual_path = str(exam_image.convert(path, tmp.name, style=exam_style))
+        except Exception as e:
+            applog.exc(f"시험지 스타일 변환 실패 ({exam_style}) — 원본 그대로 삽입", e)
+            actual_path = path
+    _insert_picture_sized(hwp, actual_path)
+    if exam_style and actual_path != path:
+        try:
+            os.unlink(actual_path)
+        except Exception:
+            pass
     try:
         hwp.HAction.Run("Cancel")
     except Exception as e:
@@ -776,6 +815,11 @@ def doc_is_empty():
     """
     hwp = _h()
     try:
+        hwp.MoveDocBegin()
+        begin = tuple(hwp.GetPos())
+        hwp.MoveDocEnd()
+        if tuple(hwp.GetPos()) != begin:
+            return False
         if (hwp.GetTextFile("TEXT", "") or "").strip():
             return False
     except Exception as e:
@@ -788,14 +832,7 @@ def doc_is_empty():
             ctrl = ctrl.Next
     except Exception as e:
         applog.exc("빈 문서 판정: 컨트롤 훑기 실패 — 커서 위치로만 본다", e)
-    try:
-        hwp.MoveDocBegin()
-        begin = tuple(hwp.GetPos())
-        hwp.MoveDocEnd()
-        return tuple(hwp.GetPos()) == begin
-    except Exception as e:
-        applog.exc("빈 문서 판정: 커서 위치 확인 실패 — 비지 않았다고 본다", e)
-        return False
+    return True
 
 
 def _clear_doc():
@@ -1007,6 +1044,9 @@ def open_form_copy(path, note_lines=None):
     except Exception as e:
         applog.exc("새 탭 활성화 실패 — 활성 문서 그대로 진행", e)
     hwp.open(str(copy_path))
+    if note_lines:
+        _insert_edit_note(note_lines)
+        hwp.MoveDocBegin()
     if hwp.XHwpDocuments.Count <= before:
         # open 이 새 탭을 쓰지 않고 기존 문서를 갈아치웠다는 뜻 — 이 경우
         # 우리가 들고 있는 doc 이 사용자 문서일 수 있어 닫으면 안 된다.
@@ -1028,9 +1068,6 @@ def open_form_copy(path, note_lines=None):
     except Exception as e:
         applog.exc("양식 편집: 활성 문서 다시 읽기 실패 — Add 가 준 객체를 쓴다", e)
 
-    if note_lines:
-        _insert_edit_note(note_lines)
-        hwp.MoveDocBegin()
     return EditSession(doc, temp_path=copy_path)
 
 

@@ -14,7 +14,8 @@ import tkinter as tk
 
 from hwp_palette.design import theme
 
-_C = theme.colors()
+def _c():
+    return theme.colors()
 
 
 class Check(tk.Canvas):
@@ -59,9 +60,9 @@ class Check(tk.Canvas):
         r = min(theme.RADIUS["ctl"], s // 3)
         # 둥근 네모 (RoundButton 과 같은 어법 — 호 넷 + 변)
         self.create_rectangle(1, 1, s - 1, s - 1, width=0,
-                              fill=_C["accent"] if on else _C["card"])
+                              fill=_c()["accent"] if on else _c()["card"])
         self.create_rectangle(1, 1, s - 2, s - 2, width=1,
-                              outline=_C["accent"] if on else _C["border"])
+                              outline=_c()["accent"] if on else _c()["border"])
         if on:
             m = s / 2
             self.create_line(m - s * 0.22, m, m - s * 0.05, m + s * 0.18,
@@ -91,13 +92,13 @@ class Spin(tk.Frame):
         asz = max(7, theme.fs(6))
         for glyph, d in (("▴", +1), ("▾", -1)):
             b = tk.Label(col, text=glyph, font=(theme.FONT, asz),
-                         bg=_C["card"], fg=_C["muted"], cursor="hand2",
+                         bg=_c()["card"], fg=_c()["muted"], cursor="hand2",
                          padx=3, pady=0,
-                         highlightbackground=_C["border"], highlightthickness=1)
+                         highlightbackground=_c()["border"], highlightthickness=1)
             b.pack()
             b.bind("<ButtonRelease-1>", lambda e, dd=d: self._bump(dd))
-            b.bind("<Enter>", lambda e, w=b: w.config(fg=_C["accent"]))
-            b.bind("<Leave>", lambda e, w=b: w.config(fg=_C["muted"]))
+            b.bind("<Enter>", lambda e, w=b: w.config(fg=_c()["accent"]))
+            b.bind("<Leave>", lambda e, w=b: w.config(fg=_c()["muted"]))
         self.entry.bind("<Up>", lambda e: self._bump(+1))
         self.entry.bind("<Down>", lambda e: self._bump(-1))
 

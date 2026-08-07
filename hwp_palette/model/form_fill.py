@@ -199,7 +199,7 @@ def _write_zip(zf, dst_path, rewritten):
                 info.external_attr = item.external_attr
                 out.writestr(info, data)
         os.replace(tmp, dst)
-    except BaseException:
+    except Exception:
         try:
             os.remove(tmp)              # 실패한 찌꺼기는 치운다
         except OSError:
@@ -214,8 +214,8 @@ def fill(src_hwpx, dst_hwpx, replacements):
     안인가"로 세면, 실제로는 못 바꾼 것도 바꾼 것처럼 보고된다 (2026-07-31).
     """
     changed = [0]
+    counter = [-1]
     with zipfile.ZipFile(src_hwpx) as zf:
-        counter = [-1]
 
         def _sub(m):
             counter[0] += 1

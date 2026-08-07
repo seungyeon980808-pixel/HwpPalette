@@ -150,9 +150,15 @@ def question_to_markdown(row, qtype, num, styles=None):
         if slot == "배점":
             return pt or SKIP
         if slot.startswith("보기"):
-            return _cell(_esc(bogi[int(slot[-1]) - 1]))
+            m = re.match(r'보기(\d+)$', slot)
+            idx = int(m.group(1)) - 1 if m else -1
+            if 0 <= idx < len(bogi):
+                return _cell(_esc(bogi[idx]))
         if slot.startswith("선"):
-            return _cell(_esc(choices[int(slot[1]) - 1]))
+            m = re.match(r'선(\d+)$', slot)
+            idx = int(m.group(1)) - 1 if m else -1
+            if 0 <= idx < len(choices):
+                return _cell(_esc(choices[idx]))
         return SKIP
 
     return "\n".join(["\\%s\\" % label] + [value(s) for s in slots])

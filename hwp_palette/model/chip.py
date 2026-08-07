@@ -140,6 +140,8 @@ def peek(src_path):
                     if _MANIFEST in names else {})
         tab = (json.loads(zf.read(_TAB).decode("utf-8"))
                if _TAB in names else None)
+        if library._MANIFEST_NAME not in names:
+            raise ValueError("올바르지 않은 칩 파일입니다 — library.json이 없습니다")
         lib = json.loads(zf.read(library._MANIFEST_NAME).decode("utf-8"))
     items = lib.get("items", [])
 
@@ -204,6 +206,9 @@ def install(src_path):
     덮어쓰기는 하지 않는다 — 이름·라벨·탭 이름이 겹치면 번호를 붙인다.
     받은 파일 때문에 내 것이 사라지는 일은 없어야 한다.
     """
+    # peek()와 import_archive()가 각각 "known"을 다시 계산한다 — 둘 다 전체
+    # 라이브러리를 스캔하지만, peek은 UI 표시용이고 import_archive는 실제 등록이
+    # 필요해서다. 구조적으로 합칠 순 있지만 두 흐름이 달라 의도적으로 남긴다.
     info = peek(src_path)
     r = library.import_archive(src_path, from_chip=info["name"])
     out = dict(info)

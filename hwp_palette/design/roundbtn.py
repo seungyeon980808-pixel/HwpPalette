@@ -422,7 +422,10 @@ class RoundButton(tk.Canvas):
             return
         text, bg, fg = self._ribbon
         f = self._font or ("TkDefaultFont", 9)
-        size = max(6, int(f[1]) - 2 if len(f) > 1 else 7)
+        if isinstance(f, (list, tuple)) and len(f) > 1:
+            size = max(6, int(f[1]) - 2)
+        else:
+            size = 7
         rw = size + 6                       # 글자 한 자 폭 + 숨쉴 틈
         r = min(self._radius, rw // 2, (h - 2) // 2)
         pts = self._round_points(w - 1 - rw, 1, w - 2, h - 2, r)

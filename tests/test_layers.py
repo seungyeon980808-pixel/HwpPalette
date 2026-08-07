@@ -65,7 +65,8 @@ EXCEPTIONS = {
 
 def _imports(path):
     """그 파일이 부르는 hwp_palette 하위 층 이름들."""
-    tree = ast.parse(io.open(path, encoding="utf-8").read())
+    with io.open(path, encoding="utf-8") as f:
+        tree = ast.parse(f.read())
     out = set()
     for node in ast.walk(tree):
         mod = None

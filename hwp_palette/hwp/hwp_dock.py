@@ -228,19 +228,15 @@ def claim(dock, priority, on_resume=None):
         if _owner_stack and priority < _owner_stack[-1][1]:
             return False
         if _owner_stack:
-            try:
-                prev = _owner_stack[-1][0]
-                prev.stop_follow()
-                # 위계도 내려놓는다 — 한글은 새 주인에게 간다. 안 놓으면 잠든
-                # 창이 계속 한글을 자기 위에 붙들어 편집 창과 다툰다.
-                prev.clear_topmost()
-                prev.clear_owner()
-                # 오려 낸 자리도 메운다 — 한글은 새 주인에게 갔으므로 그 구멍에는
-                # 비칠 것이 없다. 안 메우면 잠든 창에 바탕화면이 뚫려 보인다.
-                # (깨어날 때 start() 가 둘 다 다시 세운다.)
-                prev.clear_hole()
-            except Exception as e:
-                applog.exc("도킹 주인 재우기 실패 — 두 창이 한글을 다툴 수 있음", e)
+            prev = _owner_stack[-1][0]
+            for attr, msg in (("stop_follow", "stop_follow"),
+                              ("clear_topmost", "clear_topmost"),
+                              ("clear_owner", "clear_owner"),
+                              ("clear_hole", "clear_hole")):
+                try:
+                    getattr(prev, attr)()
+                except Exception as e:
+                    applog.exc(f"도킹 주인 재우기 실패 ({attr})", e)
         _owner_stack.append([dock, priority, on_resume])
         return True
 
@@ -356,6 +352,7 @@ class Dock:
         self._owner_set = False      # 소유자 위계를 세웠는가 (041)
         self._owner0 = 0             # 원래 소유자 — 뗄 때 돌려놓는다
         self._hwp_was_topmost = False    # 한글이 원래 '항상 위'였는가
+        self._dead = False
         self._stop_evt = threading.Event()
         self._thread = None
 
@@ -458,7 +455,7 @@ class Dock:
             _user32.SetWindowLongPtrW(self.hwnd, _GWLP_HWNDPARENT,
                                       self._root_hwnd)
             got = _user32.GetWindowLongPtrW(self.hwnd, _GWLP_HWNDPARENT)
-            if got != self._root_hwnd:
+            if int(got) != int(self._root_hwnd):
                 applog.warn("도킹: 소유자 위계를 세우지 못했다 — 구멍 뚫기로 간다")
                 return False
             self._owner_set = True
@@ -595,6 +592,8 @@ class Dock:
         **우리 짝(우리 창 또는 한글)이 활성일 때만** 손댄다: 선생님이 다른
         프로그램을 쓰는 중에 한글을 올리면 남의 창을 가로채는 짓이 된다.
         """
+        if self._dead:
+            return
         try:
             if not win32gui.IsWindow(self.hwnd):
                 return
@@ -634,6 +633,8 @@ class Dock:
         목표 좌표를 부르는 쪽이 아니라 **여기서, 지금** 읽는다 — 이벤트가
         밀려 있어도 늦은 이벤트는 이미 맞는 자리를 확인만 하고 지나간다.
         """
+        if self._dead:
+            return
         try:
             if not (win32gui.IsWindow(self.hwnd)
                     and win32gui.IsWindow(self._host_hwnd)):
@@ -711,6 +712,7 @@ class Dock:
                 except Exception:
                     pass                 # 창이 이미 파괴됐다 — 바인딩도 함께 갔다
             self._focus_bind = None
+        self._dead = True
         self._stop_evt.set()
         if self._hook_tid:               # 대기 중인 펌프를 즉시 깨운다
             try:

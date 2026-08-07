@@ -86,9 +86,11 @@ class _Dialog(tk.Toplevel):
                 # 크기와 자리로 "이건 함부로 누르는 것이 아니다"를 말한다.
                 w = tk.Label(foot, text=label, bg=c["bg"], fg=DANGER,
                              font=(FONT, theme.fs(FS["sub"]), "underline"),
-                             cursor="hand2")
+                             cursor="hand2", takefocus=1)
                 w.pack(side="left")
                 w.bind("<Button-1>", lambda e, v=value: self._done(v))
+                w.bind("<Return>", lambda e, v=value: self._done(v))
+                w.bind("<space>", lambda e, v=value: self._done(v))
                 continue
             btn = RoundButton(
                 foot, text=label, command=lambda v=value: self._done(v),

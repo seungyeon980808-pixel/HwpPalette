@@ -1206,7 +1206,7 @@ def import_archive(src_path, from_chip=None):
             raise ValueError(
                 f"지원하지 않는 파일 형식입니다 (version={manifest.get('version')})")
         for rec in manifest.get("items", []):
-            cat = rec.pop("category", None)
+            cat = rec.get("category")
             if cat not in CATEGORIES:
                 applog.warn(f"가져오기: 알 수 없는 분류라 건너뜀 — {cat!r}")
                 continue

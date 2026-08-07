@@ -33,7 +33,8 @@ import tkinter as tk
 
 from hwp_palette.design import theme
 
-_C = theme.colors()
+def _c():
+    return theme.colors()
 FS = theme.FS
 SP = theme.SP
 
@@ -42,7 +43,7 @@ class Disclosure(tk.Frame):
 
     def __init__(self, parent, title, summary, lines, bg=None,
                  open_=False, on_toggle=None, body_height=None):
-        bg = bg or _C["card"]
+        bg = bg or _c()["card"]
         super().__init__(parent, bg=bg)
         self._lines = lines
         self._open = False
@@ -52,20 +53,20 @@ class Disclosure(tk.Frame):
 
         head = tk.Frame(self, bg=bg, cursor="hand2")
         head.pack(fill="x")
-        self._arrow = tk.Label(head, text="▸", bg=bg, fg=_C["muted"],
+        self._arrow = tk.Label(head, text="▸", bg=bg, fg=_c()["muted"],
                                font=(theme.FONT, theme.fs(FS["sub"])))
         self._arrow.pack(side="left", padx=(0, 4))
-        name = tk.Label(head, text=title, bg=bg, fg=_C["text"],
+        name = tk.Label(head, text=title, bg=bg, fg=_c()["text"],
                         font=(theme.FONT, theme.fs(FS["body"]), "bold"))
         name.pack(side="left")
         # 요약은 **한 줄로 잘린다** — 두 줄이 되면 접어 둔 뜻이 없다
-        self._sum = tk.Label(head, text=summary, bg=bg, fg=_C["muted"],
+        self._sum = tk.Label(head, text=summary, bg=bg, fg=_c()["muted"],
                              font=(theme.FONT, theme.fs(FS["sub"])),
                              anchor="w")
         self._sum.pack(side="left", fill="x", expand=True, padx=(SP["s"], 0))
         for w in (head, self._arrow, name, self._sum):
             w.bind("<Button-1>", lambda e: self.toggle())
-            w.bind("<Enter>", lambda e: self._tint(_C["subbg"]))
+            w.bind("<Enter>", lambda e: self._tint(_c()["subbg"]))
             w.bind("<Leave>", lambda e: self._tint(bg))
         self._head_parts = (head, self._arrow, name, self._sum)
 
@@ -108,10 +109,10 @@ class Disclosure(tk.Frame):
         body = tk.Text(self, height=rows, bd=0, bg=self._bg,
                        highlightthickness=0, wrap="word", cursor="arrow",
                        font=(theme.FONT, theme.fs(FS["sub"])),
-                       fg=_C["text"], padx=SP["m"], pady=SP["xs"], takefocus=0)
-        body.tag_configure("hl", foreground=_C["accent"],
+                       fg=_c()["text"], padx=SP["m"], pady=SP["xs"], takefocus=0)
+        body.tag_configure("hl", foreground=_c()["accent"],
                            font=(theme.FONT, theme.fs(FS["sub"]), "bold"))
-        body.tag_configure("head", foreground=_C["text"],
+        body.tag_configure("head", foreground=_c()["text"],
                            font=(theme.FONT, theme.fs(FS["sub"]), "bold"),
                            spacing1=6)
         for parts in self._lines:

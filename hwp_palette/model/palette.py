@@ -83,7 +83,6 @@ def _seed_main_tools(tabs):
     main = next((t for t in tabs if t.get("name") == MAIN_TAB), None)
     if main is None:
         return False
-    settings.set_config_value(MAIN_TOOLS_SEEDED_KEY, True)
     # 이미 다른 블럭이 있어도 **건너뛰면 안 된다** — 이 넷은 예전에 화면에 늘
     # 붙어 있던 것이라, 안 깔면 사용자는 쓰던 기능을 잃는다. 빈자리를 찾아
     # 나란히 놓는다(있던 블럭은 그대로 둔다).
@@ -95,6 +94,7 @@ def _seed_main_tools(tabs):
                                "name": builtin_actions.name_of(key),
                                "span": span, "rows": rows,
                                "row": row, "col": col})
+    settings.set_config_value(MAIN_TOOLS_SEEDED_KEY, True)
     return True
 
 

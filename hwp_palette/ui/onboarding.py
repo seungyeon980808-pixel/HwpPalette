@@ -121,10 +121,11 @@ def maybe_show(master, font_fn):
     if not should_show():
         return None
     try:
-        return Onboarding(master, font_fn)
+        result = Onboarding(master, font_fn)
+        mark_seen()
+        return result
     except Exception as e:
         # 조용히 삼키면 안 된다 — exe 로 만들었을 때 안내가 안 뜨는데 아무 흔적도
         # 없어서 원인을 찾는 데 한참 걸렸다(실측). 로그는 남기고 진행만 계속한다.
         applog.exc("첫 실행 안내를 띄우지 못했습니다 — 안내 없이 시작합니다", e)
-        mark_seen()             # 안내 때문에 프로그램이 못 뜨는 일은 없어야 한다
         return None

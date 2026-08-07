@@ -159,7 +159,7 @@ class DockBar(tk.Frame):
         others = [t for t in tabs if t.get("name") != palette.MAIN_TAB]
         personal = []
         if others:
-            cur = others[min(self._tab_index(), len(others) - 1)]
+            cur = others[max(0, min(self._tab_index(), len(others) - 1))]
             personal = self._sorted(cur.get("blocks", []))
 
         self._common.set_chips([self._chip(self._common, b) for b in common])
@@ -189,4 +189,4 @@ class DockBar(tk.Frame):
                   if t.get("name") != palette.MAIN_TAB]
         if not others:
             return "팔레트 없음"
-        return others[min(self._tab_index(), len(others) - 1)].get("name", "")
+        return others[max(0, min(self._tab_index(), len(others) - 1))].get("name", "")
